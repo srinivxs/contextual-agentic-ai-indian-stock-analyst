@@ -1,6 +1,9 @@
 # 004 — ECS Fargate and the minimum AWS footprint
 
-- **Status:** Accepted
+- **Status:** Accepted, **partially superseded by [ADR 008](008-minimal-aws-architecture.md)**
+  (2026-09-20): one service/task with two containers, no EventBridge Scheduler, and a second private
+  S3 bucket for uploaded documents. Where the two differ, ADR 008 wins; the destroyability rules and
+  the cost approach below still apply.
 - **Date:** 2026-09-19
 
 ## Context

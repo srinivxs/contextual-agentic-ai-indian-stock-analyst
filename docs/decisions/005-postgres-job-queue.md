@@ -56,3 +56,15 @@ Implement a queue as a **`ingestion_jobs` table in PostgreSQL**.
   `failed` status ourselves.
 - Migration to SQS later needs an outbox or reconciliation; the `JobQueue`
   interface keeps that change local.
+
+## Amendment (2026-09-20): MVP job types and scheduling
+
+- **Job types** are now `ingest_document` (created when a file is uploaded) and `poll_feed` (the RBI
+  feed, see ADR 007). The `refresh_stock` and `crawl_feed` types from the earlier design are dropped.
+- **Scheduling** is a small timer inside the worker container that enqueues `poll_feed` once per time
+  bucket; the partial unique index on the dedupe key makes duplicate ticks harmless (ADR 008). There is
+  no EventBridge schedule.
+- **Derived state** (rolling sentiment, ratios) is computed on read and never stored (ADR 009), so the
+  advisory lock "around derived-state recomputation" is no longer needed. Ingestion writes only base
+  records, protected by unique constraints and `ON CONFLICT`.
+- The `JobQueue` interface, the four statuses, retries, leases and `SKIP LOCKED` claims are unchanged.

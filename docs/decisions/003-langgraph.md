@@ -50,3 +50,15 @@ LLM cannot skip. Each node is unit-testable in isolation.
 - For a fixed pipeline, LangGraph adds a dependency and concepts; the benefit is
   clarity and branching, not raw capability.
 - Without a checkpointer we forgo built-in time-travel/resume; acceptable here.
+
+## Amendment (2026-09-20): MVP workflow simplified
+
+The MVP scope was reduced (ADRs 007–009), so the graph is kept deliberately small and explicit:
+
+`analyze` → `update_memory` → `retrieve` → `grade` (else `abstain`) → `generate` → `validate`
+(retry once, then drop claims or abstain) → `respond`
+
+The parallel fan-out and separate entity-resolution node described above are folded into `analyze`
+and `retrieve`. For a "recommend" question, `retrieve` also runs the deterministic matcher over the
+stored facts. One agent, no checkpointer, no MCP, in-process tools. The design principles above are
+unchanged: the LLM decides intent and writes prose; code decides the flow and validates the output.
