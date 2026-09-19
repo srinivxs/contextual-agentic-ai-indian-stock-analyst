@@ -1,0 +1,92 @@
+# =============================================================================
+# Secrets and local environment  (NEVER commit these)
+# =============================================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+secrets/
+.aws/
+credentials
+
+# =============================================================================
+# Terraform  (state can contain secrets; .terraform.lock.hcl IS committed)
+# =============================================================================
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfplan
+tfplan
+.terraformrc
+terraform.rc
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+dist/
+build/
+
+# =============================================================================
+# Node / frontend
+# =============================================================================
+node_modules/
+.vite/
+frontend/dist/
+frontend/coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =============================================================================
+# Docker / local data
+# =============================================================================
+docker-compose.override.yml
+pgdata/
+postgres-data/
+data/local/
+*.sqlite
+*.sqlite3
+*.db
+
+# =============================================================================
+# Editors, OS, logs, scratch
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+*.log
+scratch/
+tmp/
+
+# Local editor settings (never committed)
+.editor/settings.local.json
