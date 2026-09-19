@@ -1,0 +1,13 @@
+# Normalise line endings to LF in the repository AND in working copies, regardless of the
+# developer's core.autocrlf. Windows CRLF in shell scripts or Dockerfiles breaks Linux containers.
+* text=auto eol=lf
+
+# Never touch binary files.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
