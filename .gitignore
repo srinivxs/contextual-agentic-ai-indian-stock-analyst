@@ -61,6 +61,10 @@ node_modules/
 .vite/
 frontend/dist/
 frontend/coverage/
+frontend/.next/
+frontend/out/
+frontend/.npm-cache/
+frontend/next-env.d.ts
 *.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*

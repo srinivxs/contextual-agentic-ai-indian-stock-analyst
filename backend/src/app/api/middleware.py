@@ -35,8 +35,10 @@ def resolve_request_id(inbound: str | None) -> str:
 # Responses that depend on who is asking, or that set or clear a session cookie, must never be
 # stored by a browser or a shared cache. Deliberately NOT applied to all of /api/v1: unrelated
 # future endpoints stay cacheable unless they opt in themselves.
-_NO_STORE_EXACT = frozenset({"/api/v1/me"})
-_NO_STORE_PREFIXES = ("/api/v1/auth/",)
+# `/api/v1/stocks` carries the caller's own follows. The prefixes end in a slash, so look-alikes
+# such as `/api/v1/stocks-archive` or `/api/v1/authors` are not caught.
+_NO_STORE_EXACT = frozenset({"/api/v1/me", "/api/v1/stocks"})
+_NO_STORE_PREFIXES = ("/api/v1/auth/", "/api/v1/stocks/")
 
 
 def is_no_store_path(path: str) -> bool:
@@ -44,7 +46,7 @@ def is_no_store_path(path: str) -> bool:
 
 
 class NoStoreMiddleware:
-    """Adds ``Cache-Control: no-store`` to authentication and session responses.
+    """Adds ``Cache-Control: no-store`` to authentication, session and per-user responses.
 
     A middleware (not a per-route header) so it also covers the responses the framework builds by
     itself: a 401 or 403 error envelope, or a 405 for the wrong method.

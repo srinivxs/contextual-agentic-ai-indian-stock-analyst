@@ -10,13 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.integration.conftest import DbConfig, Migrator, make_alembic_config
 
-HEAD = "0002"
+HEAD = "0003"
 
 STATE_QUERIES = {
     "extension": "SELECT extversion FROM pg_extension WHERE extname = 'vector'",
     "stocks_table": "SELECT to_regclass('public.stocks') IS NOT NULL",
     "users_table": "SELECT to_regclass('public.users') IS NOT NULL",
     "sessions_table": "SELECT to_regclass('public.sessions') IS NOT NULL",
+    "follows_table": "SELECT to_regclass('public.user_follows') IS NOT NULL",
     "version_table": "SELECT to_regclass('public.alembic_version') IS NOT NULL",
 }
 
@@ -29,6 +30,7 @@ class State:
     stocks_table: bool
     users_table: bool
     sessions_table: bool
+    follows_table: bool
     revision: str | None
     stock_rows: tuple[tuple[object, ...], ...]
 
@@ -61,6 +63,7 @@ async def snapshot(admin_engine: AsyncEngine) -> State:
             stocks_table=bool(has_stocks),
             users_table=bool(await scalar("users_table")),
             sessions_table=bool(await scalar("sessions_table")),
+            follows_table=bool(await scalar("follows_table")),
             revision=revision,
             stock_rows=rows,
         )
@@ -71,6 +74,7 @@ EMPTY = State(
     stocks_table=False,
     users_table=False,
     sessions_table=False,
+    follows_table=False,
     revision=None,
     stock_rows=(),
 )
@@ -88,6 +92,7 @@ async def test_up_down_up_round_trip_verified_at_every_step(
     assert first.stocks_table is True
     assert first.users_table is True
     assert first.sessions_table is True
+    assert first.follows_table is True
     assert first.revision == HEAD
     assert [row[1] for row in first.stock_rows] == ["RELIANCE", "TCS", "HDFCBANK"]
 
@@ -98,21 +103,28 @@ async def test_up_down_up_round_trip_verified_at_every_step(
     assert await snapshot(admin_engine) == first  # and coming back gives exactly the same result
 
 
-async def test_downgrade_one_step_from_head_removes_only_the_auth_tables(
+async def test_each_downgrade_step_removes_only_what_its_revision_created(
     migrator: Migrator, admin_engine: AsyncEngine
 ) -> None:
-    """Revision 0002 owns users and sessions; the stocks and the extension belong to 0001."""
+    """0003 owns user_follows, 0002 owns users and sessions, 0001 owns stocks and the extension."""
     await migrator.upgrade("head")
     at_head = await snapshot(admin_engine)
 
     await migrator.downgrade("-1")
-    one_down = await snapshot(admin_engine)
-    assert one_down.revision == "0001"
-    assert one_down.users_table is False
-    assert one_down.sessions_table is False
-    assert one_down.vector_extension is True  # still installed
-    assert one_down.stocks_table is True
-    assert one_down.stock_rows == at_head.stock_rows  # the seed rows are untouched
+    no_follows = await snapshot(admin_engine)
+    assert no_follows.revision == "0002"
+    assert no_follows.follows_table is False
+    assert no_follows.users_table is True  # the tables follows depended on are still there
+    assert no_follows.sessions_table is True
+
+    await migrator.downgrade("-1")
+    no_auth = await snapshot(admin_engine)
+    assert no_auth.revision == "0001"
+    assert no_auth.users_table is False
+    assert no_auth.sessions_table is False
+    assert no_auth.vector_extension is True  # still installed
+    assert no_auth.stocks_table is True
+    assert no_auth.stock_rows == at_head.stock_rows  # the seed rows are untouched
 
     await migrator.downgrade("-1")
     assert await snapshot(admin_engine) == EMPTY

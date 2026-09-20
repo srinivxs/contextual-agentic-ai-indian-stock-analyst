@@ -12,7 +12,7 @@ import httpx
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import auth, health
+from app.api import auth, health, stocks
 from app.api.middleware import NoStoreMiddleware, RequestContextMiddleware
 from app.auth.jwks import JwksCache
 from app.core.config import Settings, get_settings
@@ -58,4 +58,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_exception_handlers(app)
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(stocks.router)
     return app

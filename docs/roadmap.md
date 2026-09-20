@@ -28,7 +28,7 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | P2 | Bedrock verification and model decision | ✅ done (ADR 010) |
 | P3 | Database foundation | ✅ done (ADR 011): compose DB, two roles, engine, `readyz`, Alembic, `stocks` |
 | P4 | Authentication and sessions | ✅ done (ADR 012): P4a sessions, `/me`, logout; P4b Google login (PKCE, ID-token verification); P4c docs and real-Google check |
-| P5 | Follow API and frontend shell | |
+| P5 | Follow API and frontend shell | ✅ done (ADR 013); manual local flow verified by the owner |
 | P6 | Docker | |
 | P7 | Terraform (cost table first) | |
 | P8 | CI/CD → **Gate A: login and follow live on AWS** | |
@@ -98,8 +98,14 @@ leaves a real product.
 - **Build:** `user_follows`; follow and unfollow endpoints (idempotent `PUT` and `DELETE`); Next.js
   static-export app with sign-in and a Stocks page (three cards, follow toggle).
 - **Explain first:** idempotent verbs; static export and its limits (ADR 006); same-origin cookies.
-- **Done when:** you log in locally, follow a stock, refresh, and it persists.
-- **You should be able to answer:** why is follow a `PUT`? What does static export forbid?
+- **Done when:** you log in locally, follow a stock, refresh, and it persists. Automated: one backend
+  flow test (`tests/integration/test_login_follow_flow_db.py`) and the frontend tests. The manual run
+  (`npm run dev` on port 3000 with the backend on 8000) was done by the owner on 2026-09-21.
+- **You should be able to answer:** why is follow a `PUT`? What does static export forbid? Why does
+  the check order go Origin, session, validation? How do concurrent follows converge on one row? Why
+  does local development need a proxy, and why is that not CORS? Why is a 500 from `/me` not a sign-out?
+- **Left for later (in ADR 013):** stock detail; the frontend Dockerfile and true single-origin parity
+  (P6); CloudFront cookie and `Origin` forwarding (P7); frontend deployment (P8); Playwright E2E (P16).
 
 ## P6 — Docker
 

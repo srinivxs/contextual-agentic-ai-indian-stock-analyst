@@ -19,18 +19,19 @@ def scripts() -> ScriptDirectory:
     return ScriptDirectory.from_config(config)
 
 
-def test_there_is_exactly_one_head_and_it_is_the_users_and_sessions_migration(
+def test_there_is_exactly_one_head_and_it_is_the_follows_migration(
     scripts: ScriptDirectory,
 ) -> None:
     """Two heads would mean two people branched the schema history; fail before it reaches CI."""
-    assert scripts.get_heads() == ["0002"]
+    assert scripts.get_heads() == ["0003"]
 
 
 def test_history_is_a_single_straight_line_from_an_empty_database(scripts: ScriptDirectory) -> None:
     revisions = list(scripts.walk_revisions())  # newest first
-    assert [r.revision for r in revisions] == ["0002", "0001"]
-    assert revisions[0].down_revision == "0001"  # the auth tables build on the stocks migration
-    assert revisions[1].down_revision is None  # the very first migration starts from nothing
+    assert [r.revision for r in revisions] == ["0003", "0002", "0001"]
+    assert revisions[0].down_revision == "0002"  # follows need users (and stocks)
+    assert revisions[1].down_revision == "0001"  # the auth tables build on the stocks migration
+    assert revisions[2].down_revision is None  # the very first migration starts from nothing
 
 
 def test_every_migration_can_be_reversed(scripts: ScriptDirectory) -> None:
