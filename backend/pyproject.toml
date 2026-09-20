@@ -41,6 +41,7 @@ markers = [
 [tool.coverage.run]
 source = ["src/app"]
 branch = true
+concurrency = ["thread", "greenlet"]
 
 [tool.coverage.report]
 fail_under = 80

@@ -169,3 +169,65 @@ def mint_hmac_forged_token(claims: dict[str, Any], *, kid: str = KID) -> str:
     payload = _b64(json.dumps(claims).encode())
     signature = hmac.new(public_pem, f"{header}.{payload}".encode(), hashlib.sha256).digest()
     return f"{header}.{payload}.{_b64(signature)}"
+
+
+class FakeGoogle:
+    """Both Google endpoints our backend talks to, served from one transport.
+
+    Routes by path: `/token` is the token endpoint, anything else is the JWKS document. Every token
+    request is recorded so tests can assert exactly what we sent (and what we did NOT send).
+    """
+
+    def __init__(self, *, jwks: dict[str, Any] | None = None) -> None:
+        self.jwks_document = CURRENT_JWKS if jwks is None else jwks
+        self.jwks_headers = {"Cache-Control": "max-age=3600"}
+        self.jwks_calls = 0
+
+        self.token_calls: list[dict[str, str]] = []  # the form body of each exchange
+        self.token_status = 200
+        self.token_body: str | None = None  # raw override, e.g. to serve invalid JSON
+        self.token_failure: Exception | None = None
+        self.id_token: str | None = None  # what the token endpoint hands back
+        self.access_token = "ya29.a0-fake-access-token-we-must-discard"  # noqa: S105
+        self.refresh_token: str | None = None  # set to check we never store it
+
+    @property
+    def calls(self) -> int:
+        return self.jwks_calls + len(self.token_calls)
+
+    async def _handle(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/token"):
+            return self._token(request)
+        self.jwks_calls += 1
+        return httpx.Response(
+            200, content=json.dumps(self.jwks_document), headers=self.jwks_headers
+        )
+
+    def _token(self, request: httpx.Request) -> httpx.Response:
+        from urllib.parse import parse_qs
+
+        body = request.content.decode()
+        self.token_calls.append(
+            {k: v[0] for k, v in parse_qs(body, keep_blank_values=True).items()}
+        )
+        if self.token_failure is not None:
+            raise self.token_failure
+        if self.token_body is not None:
+            return httpx.Response(self.token_status, content=self.token_body)
+        payload: dict[str, Any] = {
+            "access_token": self.access_token,
+            "expires_in": 3599,
+            "scope": "openid email",
+            "token_type": "Bearer",
+            "id_token": self.id_token if self.id_token is not None else mint_id_token(),
+        }
+        if self.refresh_token is not None:
+            payload["refresh_token"] = self.refresh_token
+        return httpx.Response(self.token_status, json=payload)
+
+    def client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.MockTransport(self._handle))
+
+    def token_endpoint_fails(self, status: int = 400, body: str | None = None) -> None:
+        self.token_status = status
+        self.token_body = body if body is not None else '{"error": "invalid_grant"}'

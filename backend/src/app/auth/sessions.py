@@ -33,6 +33,9 @@ _FIND_USER = text(
 
 _DELETE_SESSION = text("DELETE FROM sessions WHERE token_hash = :token_hash")
 
+# Housekeeping, run as part of logging in: no background job, no scheduler.
+_PURGE_EXPIRED = text("DELETE FROM sessions WHERE expires_at <= now()")
+
 
 @dataclass(frozen=True)
 class CurrentUser:
@@ -72,3 +75,12 @@ async def get_current_user(db: AsyncSession, token: str) -> CurrentUser | None:
 async def delete_session(db: AsyncSession, token: str) -> None:
     """Remove the session. Deleting one that does not exist is not an error."""
     await db.execute(_DELETE_SESSION, {"token_hash": hash_session_token(token)})
+
+
+async def purge_expired_sessions(db: AsyncSession) -> None:
+    """Delete every session that has already expired, for every user.
+
+    Expired sessions are already refused at lookup, so this is tidiness rather than security. Doing
+    it at login keeps the table from growing without adding a scheduler.
+    """
+    await db.execute(_PURGE_EXPIRED)
