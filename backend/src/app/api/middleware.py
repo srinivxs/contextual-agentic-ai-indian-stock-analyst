@@ -32,6 +32,41 @@ def resolve_request_id(inbound: str | None) -> str:
     return uuid.uuid4().hex
 
 
+# Responses that depend on who is asking, or that set or clear a session cookie, must never be
+# stored by a browser or a shared cache. Deliberately NOT applied to all of /api/v1: unrelated
+# future endpoints stay cacheable unless they opt in themselves.
+_NO_STORE_EXACT = frozenset({"/api/v1/me"})
+_NO_STORE_PREFIXES = ("/api/v1/auth/",)
+
+
+def is_no_store_path(path: str) -> bool:
+    return path in _NO_STORE_EXACT or path.startswith(_NO_STORE_PREFIXES)
+
+
+class NoStoreMiddleware:
+    """Adds ``Cache-Control: no-store`` to authentication and session responses.
+
+    A middleware (not a per-route header) so it also covers the responses the framework builds by
+    itself: a 401 or 403 error envelope, or a 405 for the wrong method.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not is_no_store_path(scope["path"]):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_no_store(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                message.setdefault("headers", [])
+                MutableHeaders(scope=message)["Cache-Control"] = "no-store"
+            await send(message)
+
+        await self.app(scope, receive, send_with_no_store)
+
+
 class RequestContextMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app

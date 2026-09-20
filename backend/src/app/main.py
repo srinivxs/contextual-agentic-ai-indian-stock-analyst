@@ -11,8 +11,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import health
-from app.api.middleware import RequestContextMiddleware
+from app.api import auth, health
+from app.api.middleware import NoStoreMiddleware, RequestContextMiddleware
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
@@ -44,7 +44,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
 
+    app.add_middleware(NoStoreMiddleware)
     app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)
     app.include_router(health.router)
+    app.include_router(auth.router)
     return app

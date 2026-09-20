@@ -6,11 +6,12 @@ startup with a clear error instead of misbehaving later. Only variables the code
 are declared; each milestone adds its own (see ``.env.example`` for the full planned list).
 """
 
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/src/app/core/config.py -> parents[4] is the repository root.
@@ -43,6 +44,43 @@ class Settings(BaseSettings):
     db_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     # How long /api/readyz waits for `SELECT 1`. Kept below the pool timeout on purpose.
     db_ready_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
+
+    # The origin the BROWSER sees (CloudFront in AWS, the dev server locally). It is the one place
+    # redirect URIs and the Origin check come from: never from Host or X-Forwarded-* headers.
+    public_base_url: AnyHttpUrl
+    # `Secure` cookies are only sent over HTTPS. Off for plain-HTTP localhost, and mandatory in
+    # production (see the validator below).
+    cookie_secure: bool = False
+    # A session lives exactly this long from login. It is never renewed by use.
+    session_lifetime_hours: int = Field(default=168, ge=1, le=720)  # default: 7 days
+
+    @property
+    def public_origin(self) -> str:
+        """`scheme://host[:port]` of the public URL: what a browser puts in the Origin header."""
+        url = self.public_base_url
+        default_port = 443 if url.scheme == "https" else 80
+        port = f":{url.port}" if url.port and url.port != default_port else ""
+        return f"{url.scheme}://{url.host}{port}"
+
+    @property
+    def session_lifetime(self) -> timedelta:
+        return timedelta(hours=self.session_lifetime_hours)
+
+    @property
+    def session_cookie_name(self) -> str:
+        # The `__Host-` prefix makes browsers accept the cookie only if it is Secure, has Path=/ and
+        # no Domain, so a sibling subdomain cannot overwrite it. Plain-HTTP localhost cannot store
+        # a Secure cookie, so development uses the plain name.
+        return "__Host-session" if self.app_env == "production" else "session"
+
+    @model_validator(mode="after")
+    def _production_must_be_secure(self) -> "Settings":
+        if self.app_env == "production":
+            if not self.cookie_secure:
+                raise ValueError("COOKIE_SECURE must be true in production")
+            if self.public_base_url.scheme != "https":
+                raise ValueError("PUBLIC_BASE_URL must be an https URL in production")
+        return self
 
     @field_validator("database_url")
     @classmethod

@@ -10,9 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.integration.conftest import DbConfig, Migrator, make_alembic_config
 
+HEAD = "0002"
+
 STATE_QUERIES = {
     "extension": "SELECT extversion FROM pg_extension WHERE extname = 'vector'",
     "stocks_table": "SELECT to_regclass('public.stocks') IS NOT NULL",
+    "users_table": "SELECT to_regclass('public.users') IS NOT NULL",
+    "sessions_table": "SELECT to_regclass('public.sessions') IS NOT NULL",
     "version_table": "SELECT to_regclass('public.alembic_version') IS NOT NULL",
 }
 
@@ -23,17 +27,21 @@ class State:
 
     vector_extension: bool
     stocks_table: bool
+    users_table: bool
+    sessions_table: bool
     revision: str | None
     stock_rows: tuple[tuple[object, ...], ...]
 
 
 async def snapshot(admin_engine: AsyncEngine) -> State:
     async with admin_engine.connect() as connection:
-        extension = (
-            await connection.execute(text(STATE_QUERIES["extension"]))
-        ).scalar_one_or_none()
-        has_stocks = (await connection.execute(text(STATE_QUERIES["stocks_table"]))).scalar_one()
-        has_version = (await connection.execute(text(STATE_QUERIES["version_table"]))).scalar_one()
+
+        async def scalar(name: str) -> object:
+            return (await connection.execute(text(STATE_QUERIES[name]))).scalar_one_or_none()
+
+        extension = await scalar("extension")
+        has_stocks = await scalar("stocks_table")
+        has_version = await scalar("version_table")
         revision = None
         if has_version:
             revision = (
@@ -48,10 +56,24 @@ async def snapshot(admin_engine: AsyncEngine) -> State:
                 )
             )
             rows = tuple(tuple(row) for row in result)
-    return State(extension is not None, has_stocks, revision, rows)
+        return State(
+            vector_extension=extension is not None,
+            stocks_table=bool(has_stocks),
+            users_table=bool(await scalar("users_table")),
+            sessions_table=bool(await scalar("sessions_table")),
+            revision=revision,
+            stock_rows=rows,
+        )
 
 
-EMPTY = State(vector_extension=False, stocks_table=False, revision=None, stock_rows=())
+EMPTY = State(
+    vector_extension=False,
+    stocks_table=False,
+    users_table=False,
+    sessions_table=False,
+    revision=None,
+    stock_rows=(),
+)
 
 
 async def test_up_down_up_round_trip_verified_at_every_step(
@@ -64,23 +86,39 @@ async def test_up_down_up_round_trip_verified_at_every_step(
     first = await snapshot(admin_engine)
     assert first.vector_extension is True
     assert first.stocks_table is True
-    assert first.revision == "0001"
+    assert first.users_table is True
+    assert first.sessions_table is True
+    assert first.revision == HEAD
     assert [row[1] for row in first.stock_rows] == ["RELIANCE", "TCS", "HDFCBANK"]
 
     await migrator.downgrade("base")
-    assert await snapshot(admin_engine) == EMPTY  # everything the migration made is gone again
+    assert await snapshot(admin_engine) == EMPTY  # everything the migrations made is gone again
 
     await migrator.upgrade("head")
     assert await snapshot(admin_engine) == first  # and coming back gives exactly the same result
 
 
-async def test_downgrade_one_step_from_head_returns_to_an_empty_database(
+async def test_downgrade_one_step_from_head_removes_only_the_auth_tables(
     migrator: Migrator, admin_engine: AsyncEngine
 ) -> None:
+    """Revision 0002 owns users and sessions; the stocks and the extension belong to 0001."""
     await migrator.upgrade("head")
+    at_head = await snapshot(admin_engine)
+
+    await migrator.downgrade("-1")
+    one_down = await snapshot(admin_engine)
+    assert one_down.revision == "0001"
+    assert one_down.users_table is False
+    assert one_down.sessions_table is False
+    assert one_down.vector_extension is True  # still installed
+    assert one_down.stocks_table is True
+    assert one_down.stock_rows == at_head.stock_rows  # the seed rows are untouched
+
     await migrator.downgrade("-1")
     assert await snapshot(admin_engine) == EMPTY
+
     await migrator.upgrade("head")  # leave the test database at head for the other tests
+    assert await snapshot(admin_engine) == at_head
 
 
 async def test_running_upgrade_twice_changes_nothing(
@@ -118,7 +156,7 @@ async def test_the_url_may_come_from_a_separate_migration_env_file(
     await from_file.downgrade("base")
     assert await snapshot(admin_engine) == EMPTY
     await from_file.upgrade("head")
-    assert (await snapshot(admin_engine)).revision == "0001"
+    assert (await snapshot(admin_engine)).revision == HEAD
 
 
 async def test_the_environment_wins_over_the_env_file(
@@ -137,7 +175,7 @@ async def test_the_environment_wins_over_the_env_file(
 
     # Would fail (connection refused on port 1) if the file's URL were used instead of the variable.
     await Migrator(make_alembic_config(env_file=env_file)).upgrade("head")
-    assert (await snapshot(admin_engine)).revision == "0001"
+    assert (await snapshot(admin_engine)).revision == HEAD
 
 
 async def test_the_runtime_role_cannot_run_migrations(

@@ -11,17 +11,23 @@ repository root (the same file docker compose reads). Nothing here prints a pass
 import asyncio
 import os
 import socket
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from dotenv import dotenv_values
-from sqlalchemy import URL
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy import URL, text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
 
 from app.core.config import Settings
@@ -175,6 +181,38 @@ def migrator(db_config: DbConfig, monkeypatch: pytest.MonkeyPatch) -> Migrator:
 async def migrated_db(migrator: Migrator) -> None:
     """The test database at the latest revision. It is left at head afterwards."""
     await migrator.upgrade("head")
+
+
+@pytest.fixture
+def session_factory(app_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Sessions for the runtime role, the way application code gets them."""
+    return async_sessionmaker(app_engine, expire_on_commit=False)
+
+
+@pytest.fixture
+async def clean_auth_tables(admin_engine: AsyncEngine) -> None:
+    """Every auth test starts with no users and no sessions (the rows, not the tables)."""
+    async with admin_engine.begin() as connection:
+        await connection.execute(text("TRUNCATE sessions, users CASCADE"))
+
+
+MakeUser = Callable[..., Awaitable[UUID]]
+
+
+@pytest.fixture
+def make_user(admin_engine: AsyncEngine, clean_auth_tables: None) -> MakeUser:
+    """Insert a user directly (P4a has no login yet) and return its id."""
+
+    async def make(*, sub: str | None = None, email: str = "reader@example.test") -> UUID:
+        async with admin_engine.begin() as connection:
+            result = await connection.execute(
+                text("INSERT INTO users (google_sub, email) VALUES (:sub, :email) RETURNING id"),
+                {"sub": sub or f"sub-{uuid4()}", "email": email},
+            )
+            user_id: UUID = result.scalar_one()
+            return user_id
+
+    return make
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
