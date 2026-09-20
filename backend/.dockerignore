@@ -1,0 +1,20 @@
+# What is NOT sent to the Docker daemon as build context. This matters twice: it keeps secrets out
+# of every image layer, and it stops the project's local caches (kept inside the project on purpose)
+# from being uploaded on every build.
+
+# Secrets and local configuration: never in a build context.
+.env
+.env.*
+
+# Python environments and caches
+.venv
+.uv-cache
+**/__pycache__
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.coverage
+
+# Not needed at runtime
+.git
+tests

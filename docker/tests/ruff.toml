@@ -1,0 +1,7 @@
+# The container tests shell out to the docker CLI on purpose, so the "subprocess" and "/tmp" security
+# rules do not apply here. Everything else follows the backend's configuration.
+extend = "../../backend/pyproject.toml"
+src = ["."]
+
+[lint]
+extend-ignore = ["S101", "S603", "S607", "S108"]

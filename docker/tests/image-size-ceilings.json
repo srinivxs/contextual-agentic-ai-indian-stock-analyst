@@ -1,0 +1,10 @@
+{
+  "backend": {
+    "measured_on": "2026-09-21",
+    "measure": "sum of the image's unpacked layer sizes (docker history), in MB (10^6 bytes)",
+    "baseline_mb": 229,
+    "compressed_mb_informational": 70,
+    "ceiling_mb": 275,
+    "justification": "First clean build of backend/Dockerfile on python:3.11.16-slim-bookworm: about 229 MB unpacked, about 70 MB compressed (what a registry pull transfers). Roughly 148 MB of that is the Debian and Python base image and about 80 MB is the locked production virtual environment (SQLAlchemy 24 MB, cryptography 16 MB, asyncpg 11 MB, and precompiled bytecode because the runtime filesystem is read-only). The application code, migrations and alembic.ini are under 1 MB. The ceiling is the baseline plus about 20%: enough to absorb ordinary dependency patch updates, tight enough to catch accidental bloat such as a forgotten cache, a dev dependency or a copied directory. Deliberately not optimised further. New runtime dependencies in later phases (for example a PDF library, LangGraph, boto3) will legitimately grow the image: raise the ceiling in the same change, re-measure, and rewrite this justification (the test refuses a ceiling more than 25% above the recorded baseline)."
+  }
+}
