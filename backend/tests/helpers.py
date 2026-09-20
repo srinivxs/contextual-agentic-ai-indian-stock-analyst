@@ -19,6 +19,10 @@ from app.main import create_app
 TEST_DATABASE_URL = "postgresql+asyncpg://nobody:not-a-real-password@localhost:5432/not_a_database"
 # The origin the browser sees. Local, plain HTTP: session cookies are not `Secure` in this setup.
 TEST_PUBLIC_BASE_URL = "http://localhost:8000"
+# Fake Google credentials: tests never talk to Google, and these must never appear in output.
+TEST_GOOGLE_CLIENT_ID = "1234567890-testclient.apps.googleusercontent.com"
+TEST_GOOGLE_CLIENT_SECRET = "GOCSPX-test-client-secret-never-real"  # noqa: S105
+TEST_SESSION_SECRET = "test-session-secret-at-least-32-characters-long"  # noqa: S105
 
 
 def build_settings(**overrides: Any) -> Settings:
@@ -28,6 +32,9 @@ def build_settings(**overrides: Any) -> Settings:
         "log_level": "INFO",
         "database_url": TEST_DATABASE_URL,
         "public_base_url": TEST_PUBLIC_BASE_URL,
+        "google_client_id": TEST_GOOGLE_CLIENT_ID,
+        "google_client_secret": TEST_GOOGLE_CLIENT_SECRET,
+        "session_secret": TEST_SESSION_SECRET,
         **overrides,
     }
     return Settings(_env_file=None, **values)

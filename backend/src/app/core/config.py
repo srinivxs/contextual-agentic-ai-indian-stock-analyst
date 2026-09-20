@@ -54,6 +54,37 @@ class Settings(BaseSettings):
     # A session lives exactly this long from login. It is never renewed by use.
     session_lifetime_hours: int = Field(default=168, ge=1, le=720)  # default: 7 days
 
+    # --- Google sign-in -------------------------------------------------------------------
+    # Required: a deployment that cannot complete a login should fail at startup with a clear
+    # message, not when a user first clicks "Sign in".
+    #
+    # The client ID is NOT a secret: it appears in every authorization URL the browser sees.
+    google_client_id: str
+    # The client secret authenticates our server at the token endpoint. Never sent to a browser.
+    google_client_secret: SecretStr
+    # Keys the signature on the short-lived `oauth_login` cookie. A guessable value would let
+    # anyone forge `state`, which is exactly what that cookie exists to prevent.
+    session_secret: SecretStr = Field(min_length=32)
+    # How long a started login may take to come back from Google (10 minutes).
+    oauth_login_ttl_seconds: int = Field(default=600, ge=60, le=3600)
+    # Timeout for our server-to-server calls to Google, so a slow Google cannot hang a login.
+    google_timeout_seconds: float = Field(default=5.0, ge=1, le=120)
+
+    @field_validator("google_client_id")
+    @classmethod
+    def _require_a_non_blank_client_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("google_client_id must not be blank")
+        return value
+
+    @field_validator("google_client_secret")
+    @classmethod
+    def _require_a_non_blank_client_secret(cls, value: SecretStr) -> SecretStr:
+        if not value.get_secret_value().strip():
+            # The message names the field, never the value.
+            raise ValueError("google_client_secret must not be blank")
+        return value
+
     @property
     def public_origin(self) -> str:
         """`scheme://host[:port]` of the public URL: what a browser puts in the Origin header."""
