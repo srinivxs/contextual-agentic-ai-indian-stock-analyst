@@ -8,6 +8,7 @@ Connection details come from the process environment first, then the git-ignored
 repository root (the same file docker compose reads). Nothing here prints a password.
 """
 
+import asyncio
 import os
 import socket
 from collections.abc import AsyncIterator
@@ -16,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from dotenv import dotenv_values
 from sqlalchemy import URL
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -25,8 +28,12 @@ from app.core.config import Settings
 from tests.helpers import build_settings
 
 _HERE = Path(__file__).resolve().parent
-_REPO_ROOT = _HERE.parents[2]  # backend/tests/integration -> repository root
+_BACKEND = _HERE.parents[1]  # backend/tests/integration -> backend
+_REPO_ROOT = _HERE.parents[2]  # ... -> repository root
 _DOTENV = dotenv_values(_REPO_ROOT / ".env")
+
+ALEMBIC_INI = _BACKEND / "alembic.ini"
+MIGRATIONS_DIR = _BACKEND / "migrations"
 
 # Created by docker/postgres-init/01-roles-and-databases.sh next to the development database.
 TEST_DATABASE = "stock_analyst_test"
@@ -108,6 +115,66 @@ async def app_engine(db_config: DbConfig) -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(db_config.url(), poolclass=NullPool)
     yield engine
     await engine.dispose()
+
+
+class Migrator:
+    """Runs real Alembic commands against the TEST database as the migration role.
+
+    Alembic's async env.py calls ``asyncio.run``, which cannot be called from inside the running
+    event loop of a pytest-asyncio test, so each command runs in a worker thread
+    (``asyncio.to_thread``).
+    """
+
+    def __init__(self, config: Config) -> None:
+        self.config = config
+
+    async def upgrade(self, revision: str = "head") -> None:
+        await asyncio.to_thread(command.upgrade, self.config, revision)
+
+    async def downgrade(self, revision: str = "base") -> None:
+        await asyncio.to_thread(command.downgrade, self.config, revision)
+
+
+def make_alembic_config(*, env_file: Path | None = None) -> Config:
+    config = Config(str(ALEMBIC_INI))
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+    # Tests must never pick up a developer's real .env.migration.
+    config.set_main_option("migration_env_file", str(env_file or _REPO_ROOT / "no-such-file"))
+    # Do not let Alembic reconfigure the logging of the pytest process it runs inside.
+    config.attributes["configure_logger"] = False
+    return config
+
+
+@pytest.fixture(scope="session", autouse=True)
+def rebuilt_test_database(db_config: DbConfig) -> None:
+    """Start every integration session from a database built by the migrations alone.
+
+    Without this the tests would trust whatever an earlier run (or an edited migration) left behind.
+    Runs synchronously, so Alembic's own ``asyncio.run`` has no running event loop to clash with.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv(
+            "MIGRATION_DATABASE_URL",
+            db_config.url(admin=True).render_as_string(hide_password=False),
+        )
+        config = make_alembic_config()
+        command.downgrade(config, "base")
+        command.upgrade(config, "head")
+
+
+@pytest.fixture
+def migrator(db_config: DbConfig, monkeypatch: pytest.MonkeyPatch) -> Migrator:
+    """The migration URL comes from the environment, exactly as in the one-off AWS task."""
+    monkeypatch.setenv(
+        "MIGRATION_DATABASE_URL", db_config.url(admin=True).render_as_string(hide_password=False)
+    )
+    return Migrator(make_alembic_config())
+
+
+@pytest.fixture
+async def migrated_db(migrator: Migrator) -> None:
+    """The test database at the latest revision. It is left at head afterwards."""
+    await migrator.upgrade("head")
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
