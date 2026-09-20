@@ -27,7 +27,7 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | D1 | Docs re-cut around the MVP | ✅ this commit |
 | P2 | Bedrock verification and model decision | ✅ done (ADR 010) |
 | P3 | Database foundation | ✅ done (ADR 011): compose DB, two roles, engine, `readyz`, Alembic, `stocks` |
-| P4 | Authentication and sessions | |
+| P4 | Authentication and sessions | ✅ done (ADR 012): P4a sessions, `/me`, logout; P4b Google login (PKCE, ID-token verification); P4c docs and real-Google check |
 | P5 | Follow API and frontend shell | |
 | P6 | Docker | |
 | P7 | Terraform (cost table first) | |
@@ -77,7 +77,20 @@ leaves a real product.
   `GET /me`; logout; CSRF protection.
 - **Explain first:** the OAuth/OIDC flow step by step; why we hash session tokens; cookie flags.
 - **Done when:** tests (with a mocked Google) cover a tampered `state`, an expired session and logout.
+  Met, and checked once against the real Google. The tests: a tampered or mismatched `state`
+  (`tests/api/test_auth_callback.py`, `tests/unit/test_login_state.py`), an expired session
+  (`tests/integration/test_auth_sessions_db.py::test_an_expired_session_finds_nobody`) and logout
+  (`tests/integration/test_auth_api_db.py`, `tests/api/test_auth_no_db.py`). ADR 012 section 6 maps
+  every security guarantee to its test.
+- **Built in three steps:** P4a (`users`, `sessions`, `/me`, logout, Origin check), P4b (PKCE and signed
+  login state; JWKS cache and ID-token verification; the login and callback routes) and P4c (ADR 012
+  and the real-Google end-to-end check).
 - **You should be able to answer:** what does `state` protect against? Why server-side sessions?
+  Why store only a hash of the session token? Why does the login cookie not use `__Host-`? What stops
+  a forged callback from ever reaching Google? Why is the database opened only after the ID token is
+  verified?
+- **Left for later (in ADR 012):** rate limiting, CSP, the JWKS stale-refresh cooldown (P16); the
+  second Google client and SSM secrets (P8); CloudFront cookie forwarding (P7).
 
 ## P5 — Follow API and frontend shell
 
