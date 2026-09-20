@@ -25,8 +25,8 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | M0 | Repository governance | ✅ done |
 | M1 | Backend skeleton | ✅ done |
 | D1 | Docs re-cut around the MVP | ✅ this commit |
-| P2 | Bedrock verification and model decision | next |
-| P3 | Database foundation | |
+| P2 | Bedrock verification and model decision | ✅ done (ADR 010) |
+| P3 | Database foundation | next |
 | P4 | Authentication and sessions | |
 | P5 | Follow API and frontend shell | |
 | P6 | Docker | |
@@ -210,7 +210,8 @@ leaves a real product.
 
 ## Prerequisites you own
 
-- **Before P2:** an AWS profile configured locally (no resources created).
+- **Before P2:** an AWS profile configured locally (no resources created). ✅ done (least-privilege CLI
+  user with `aws login`; see ADR 010).
 - **Before P9's demo data:** download the company documents (see the manifest, added in P9).
 - **Before P8:** a Google Cloud OAuth client (testing mode) with your own account and any interviewer
   accounts you choose to add as test users. The company's two challenge test users are no longer needed.

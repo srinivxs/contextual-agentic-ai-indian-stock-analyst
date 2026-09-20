@@ -21,8 +21,8 @@ the job queue (see ADR 005).
 
 - The extension is enabled by the **first Alembic migration**, not Terraform
   (RDS lives in private subnets, so Terraform cannot reach it to run SQL).
-- The embedding column dimension is fixed by the embedding model. It is **not
-  chosen yet**; it is decided after Bedrock model availability is verified.
+- The embedding column dimension is fixed by the embedding model: **1024**
+  (Titan Text Embeddings V2), chosen in [ADR 010](010-bedrock-models-and-region.md).
 - Use an HNSW index with cosine distance, but measure against exact search
   filtered by ticker before trusting it. At our scale filtered exact search may
   already be fast enough.
