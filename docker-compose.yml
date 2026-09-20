@@ -1,0 +1,44 @@
+# Local development database: PostgreSQL 16 + pgvector. The API itself still runs from the venv
+# (see the project notes "How to run"); a Dockerfile for the app arrives in P6.
+#
+#   docker compose up -d --wait     start the database and wait until it is really ready
+#   docker compose down             stop it (data is kept in the named volume)
+#   docker compose down -v          stop it AND delete the data; the init script then re-runs
+#
+# Passwords come from the git-ignored `.env` at the repository root. Nothing secret lives here.
+name: stock-analyst
+
+services:
+  db:
+    # Pinned to a specific verified tag (pgvector 0.8.6 on PostgreSQL 16, Debian bookworm).
+    image: pgvector/pgvector:0.8.6-pg16-bookworm
+    restart: unless-stopped
+    environment:
+      # The image creates this user as a superuser: it plays the role of the RDS master user, i.e.
+      # the privileged MIGRATION role (creates extensions and tables). The API never uses it.
+      POSTGRES_USER: ${POSTGRES_USER:-stock_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}
+      POSTGRES_DB: ${POSTGRES_DB:-stock_analyst}
+      # Read by docker/postgres-init/01-roles-and-databases.sh to create the RUNTIME role.
+      APP_DB_USER: ${APP_DB_USER:-stock_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env (copy .env.example)}
+    ports:
+      # Loopback only: the database is never exposed to the network. DB_PORT avoids clashes with a
+      # PostgreSQL you may already run locally.
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Scripts here run once, when the volume is first created (hence `down -v` to re-run them).
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # -h 127.0.0.1 matters: while the image runs the init scripts it starts a temporary server
+      # that listens on a unix socket only. Checking over TCP means "healthy" is reported only
+      # after the init scripts have finished and the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  pgdata:

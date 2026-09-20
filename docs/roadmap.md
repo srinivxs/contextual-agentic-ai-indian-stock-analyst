@@ -26,7 +26,7 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | M1 | Backend skeleton | ✅ done |
 | D1 | Docs re-cut around the MVP | ✅ this commit |
 | P2 | Bedrock verification and model decision | ✅ done (ADR 010) |
-| P3 | Database foundation | next |
+| P3 | Database foundation | P3a ✅ (compose DB, roles, engine, `readyz`); P3b next (Alembic, `stocks`) |
 | P4 | Authentication and sessions | |
 | P5 | Follow API and frontend shell | |
 | P6 | Docker | |
