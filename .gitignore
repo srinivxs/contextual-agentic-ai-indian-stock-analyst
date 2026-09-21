@@ -33,6 +33,10 @@ override.tf.json
 tfplan
 .terraformrc
 terraform.rc
+# backend.hcl names the state bucket (which contains the account number); backend.hcl.example is
+# committed instead. The plugin cache is one shared, very large copy of the AWS provider.
+infra/**/backend.hcl
+infra/.terraform-plugin-cache/
 
 # =============================================================================
 # Python

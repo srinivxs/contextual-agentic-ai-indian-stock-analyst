@@ -1,0 +1,7 @@
+extend = "../../backend/pyproject.toml"
+src = ["."]
+
+[lint]
+# These tests run git on purpose, so the "subprocess" rules do not apply. Everything else follows
+# the backend's configuration.
+extend-ignore = ["S101", "S603", "S607"]
