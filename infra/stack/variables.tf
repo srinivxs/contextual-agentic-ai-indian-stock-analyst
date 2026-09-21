@@ -40,3 +40,17 @@ variable "vpc_cidr" {
     error_message = "vpc_cidr must be a valid CIDR block ending in /16, for example 10.0.0.0/16."
   }
 }
+
+variable "db_password_version" {
+  type        = number
+  description = "Bump this to rotate the database passwords."
+  default     = 1
+
+  # Write-only attributes are never stored, so Terraform has nothing to compare against and cannot
+  # tell whether the value changed. This number is the signal: the secret is re-sent only when it
+  # goes up. Both the database and the two parameters use the same one, so they can never disagree.
+  validation {
+    condition     = var.db_password_version >= 1
+    error_message = "db_password_version must be 1 or greater."
+  }
+}

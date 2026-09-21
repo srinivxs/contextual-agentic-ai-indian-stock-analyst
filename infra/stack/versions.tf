@@ -21,5 +21,13 @@ terraform {
       # serves all of them.
       version = "~> 6.65"
     }
+
+    # Used for one thing only: generating the database passwords as EPHEMERAL values, which exist
+    # for the duration of a single operation and are never written to the state file. 3.9 is the
+    # first release with `ephemeral "random_password"`.
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.9"
+    }
   }
 }

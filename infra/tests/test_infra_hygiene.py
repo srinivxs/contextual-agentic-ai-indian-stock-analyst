@@ -37,8 +37,13 @@ EXPECTED_FILES = {
         "variables.tf",
         "network.tf",
         "security.tf",
+        "database.tf",
+        "secrets.tf",
+        "registry.tf",
+        "identity.tf",
         "outputs.tf",
         "tests/network.tftest.hcl",
+        "tests/data_and_identity.tftest.hcl",
     ],
 }
 
@@ -417,3 +422,77 @@ def test_the_vpcs_own_default_security_group_is_left_alone() -> None:
     pattern = re.compile(r'^\s*resource\s+"aws_default_security_group"', re.MULTILINE)
     offenders = [str(p.relative_to(REPO)) for p in files if pattern.search(p.read_text("utf-8"))]
     assert not offenders, f"the VPC's default security group must not be managed: {offenders}"
+
+
+# --- the data tier (P7c): secrets that never reach the state file, and the identity boundary ------
+
+
+def test_the_stack_pins_the_random_provider() -> None:
+    """Only used to generate the passwords as ephemeral values. 3.9 is the first release with it."""
+    text = stack_file("versions.tf")
+    assert re.search(r'source\s*=\s*"hashicorp/random"', text), (
+        "the random provider is not declared"
+    )
+    assert re.search(r'version\s*=\s*"~>\s*3\.\d+"', text), (
+        "the random provider is not pinned to 3.x"
+    )
+
+
+def test_no_secret_is_ever_written_with_the_stateful_attribute() -> None:
+    """`password` on aws_db_instance and `value` on aws_ssm_parameter are documented as being
+    stored in the state file in PLAIN TEXT. Only the write-only forms may be used, and there must
+    be no quiet fallback to the stateful ones if a provider version misbehaves.
+    """
+    database = stack_file("database.tf")
+    assert not re.search(r"^\s*password\s*=", database, re.MULTILINE), (
+        "database.tf must use password_wo, never the stateful password attribute"
+    )
+    assert re.search(r"^\s*password_wo\s*=", database, re.MULTILINE), (
+        "database.tf must set password_wo"
+    )
+    assert re.search(r"^\s*password_wo_version\s*=", database, re.MULTILINE), (
+        "password_wo needs password_wo_version, or the value is never re-sent"
+    )
+
+    secrets = stack_file("secrets.tf")
+    assert not re.search(r"^\s*value\s*=", secrets, re.MULTILINE), (
+        "secrets.tf must use value_wo, never the stateful value attribute"
+    )
+    assert re.search(r"^\s*value_wo\s*=", secrets, re.MULTILINE), "secrets.tf must set value_wo"
+    assert re.search(r"^\s*value_wo_version\s*=", secrets, re.MULTILINE), (
+        "value_wo needs value_wo_version, or the value is never re-sent"
+    )
+
+
+def test_the_database_stays_on_postgresql_major_sixteen() -> None:
+    """A change of major version is a different database, and must never happen quietly."""
+    text = stack_file("database.tf")
+    assert re.search(r'^\s*engine\s*=\s*"postgres"\s*$', text, re.MULTILINE), (
+        'engine must be "postgres"'
+    )
+    assert re.search(r'^\s*engine_version\s*=\s*"16"\s*$', text, re.MULTILINE), (
+        'engine_version must be exactly "16": major pinned, minor left to AWS'
+    )
+    assert re.search(r'^\s*family\s*=\s*"postgres16"\s*$', text, re.MULTILINE), (
+        'the parameter group family must be "postgres16"'
+    )
+    others = {major for major in re.findall(r'"postgres(\d+)"', text) if major != "16"}
+    assert not others, f"another PostgreSQL major version is named in database.tf: {sorted(others)}"
+
+
+def test_no_iam_policy_grants_a_wildcard_resource() -> None:
+    """Every statement names the exact ARN it applies to. "*" would quietly undo the boundary
+    between the api role and the admin database URL."""
+    text = stack_file("identity.tf")
+    assert not re.search(r'Resource\s*=\s*\[?\s*"\*"', text), (
+        'an IAM statement in identity.tf uses Resource = "*"'
+    )
+
+
+def test_no_output_can_carry_a_secret() -> None:
+    """Outputs are printed by `terraform output`, appear in plan output and are stored in state."""
+    text = stack_file("outputs.tf")
+    leaks = [
+        token for token in ("ephemeral.", "random_password", "password", ".value") if token in text
+    ]
+    assert not leaks, f"outputs.tf refers to something secret: {leaks}"
