@@ -15,7 +15,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 INFRA = REPO / "infra"
-ROOTS = ("preflight", "bootstrap")
+ROOTS = ("preflight", "bootstrap", "stack")
 # Local caches and the provider download folders: never scanned, never committed.
 SKIPPED_DIRS = {".terraform", ".terraform-plugin-cache"}
 TEXT_SUFFIXES = (".tf", ".tftest.hcl", ".hcl", ".example", ".md", ".json")
@@ -28,6 +28,17 @@ EXPECTED_FILES = {
         "variables.tf",
         "outputs.tf",
         "tests/state_bucket.tftest.hcl",
+    ],
+    "stack": [
+        "versions.tf",
+        "main.tf",
+        "backend.tf",
+        "backend.hcl.example",
+        "variables.tf",
+        "network.tf",
+        "security.tf",
+        "outputs.tf",
+        "tests/network.tftest.hcl",
     ],
 }
 
@@ -211,8 +222,18 @@ def test_no_secret_shaped_material_is_written_under_infra() -> None:
 
 
 def test_no_real_twelve_digit_account_id_is_written_under_infra() -> None:
-    """The account id is not a secret, but it stays out of Git (it arrives as a variable)."""
-    files = infra_files(*TEXT_SUFFIXES)
+    """The account id is not a secret, but it stays out of GIT (it arrives as a variable).
+
+    Files git ignores are exempt, because the rule is about what gets committed, not what sits on
+    the disk. infra/stack/backend.hcl is the case that matters: it is generated from the
+    bootstrap's output, it necessarily carries the bucket name, and the bucket name necessarily
+    carries the account id. It can never be committed, so it can never leak.
+    """
+    files = [
+        path
+        for path in infra_files(*TEXT_SUFFIXES)
+        if not is_ignored(path.relative_to(REPO).as_posix())
+    ]
     assert files, "no infra files to scan yet"
     hits = []
     for path in files:
@@ -305,3 +326,94 @@ def test_the_bootstrap_root_keeps_its_own_state_locally() -> None:
         if re.search(r'backend\s+"s3"', p.read_text("utf-8"))
     ]
     assert not offenders, f"the bootstrap must not use the S3 backend: {offenders}"
+
+
+# --- the application stack (P7b): state, routing and the trust chain ------------------------------
+
+
+def stack_file(name: str) -> str:
+    """The text of a file in infra/stack, failing clearly when it has not been written yet."""
+    path = INFRA / "stack" / name
+    assert path.is_file(), f"infra/stack/{name} does not exist yet"
+    return path.read_text(encoding="utf-8")
+
+
+def test_the_stack_keeps_its_state_in_the_bucket_the_bootstrap_made() -> None:
+    """The backend block is empty on purpose: settings arrive from the git-ignored backend.hcl."""
+    body = block_body(stack_file("backend.tf"), r'backend\s+"s3"')
+    assert body is not None, 'infra/stack/backend.tf has no backend "s3" block'
+    inline = [
+        setting
+        for setting in ("bucket", "key", "region", "dynamodb_table")
+        if re.search(rf"^\s*{setting}\s*=", body, re.MULTILINE)
+    ]
+    assert not inline, f"backend settings belong in backend.hcl, not in the code: {inline}"
+
+
+def test_the_backend_example_shows_how_to_point_at_the_state_bucket() -> None:
+    text = stack_file("backend.hcl.example")
+    missing = [
+        key for key in ("bucket", "key", "region", "encrypt", "use_lockfile") if key not in text
+    ]
+    assert not missing, f"backend.hcl.example must show {missing}"
+    assert "dynamodb" not in text.lower(), "locking uses the S3 lock file, nothing else"
+
+
+def test_the_stack_never_creates_a_second_state_bucket() -> None:
+    """The bootstrap's bucket is the only one; the stack reuses it and must never make its own."""
+    files = [p for p in infra_files(".tf") if "stack" in p.relative_to(INFRA).parts]
+    assert files, "no infra/stack .tf files yet"
+    pattern = re.compile(
+        r'^\s*resource\s+"aws_s3_bucket"\s+"(?:state|tfstate|terraform_state)"', re.MULTILINE
+    )
+    offenders = [str(p.relative_to(REPO)) for p in files if pattern.search(p.read_text("utf-8"))]
+    assert not offenders, f"the stack must reuse the bootstrap's state bucket: {offenders}"
+
+
+def test_only_the_public_route_table_ever_gets_a_route() -> None:
+    """The isolated subnets have no way out, and no route may quietly give them one."""
+    text = stack_file("network.tf")
+    names = re.findall(r'resource\s+"aws_route"\s+"(\w+)"', text)
+    assert names, 'no resource "aws_route" in infra/stack/network.tf'
+    for name in names:
+        body = block_body(text, rf'resource\s+"aws_route"\s+"{name}"')
+        assert body is not None
+        assert "aws_route_table.public" in body, (
+            f"aws_route.{name} must belong to the public route table"
+        )
+        assert "nat_gateway_id" not in body, "there is no NAT gateway in this design (ADR 004/008)"
+
+
+def test_no_security_group_rule_lets_the_whole_internet_in() -> None:
+    """Inbound is always from a prefix list or another security group, never from 0.0.0.0/0."""
+    text = stack_file("security.tf")
+    names = re.findall(r'resource\s+"aws_vpc_security_group_ingress_rule"\s+"(\w+)"', text)
+    assert names, "no inbound security group rules found"
+    for name in names:
+        body = block_body(text, rf'resource\s+"aws_vpc_security_group_ingress_rule"\s+"{name}"')
+        assert body is not None
+        assert "0.0.0.0/0" not in body, f"inbound rule {name} is open to the whole internet"
+
+
+def test_security_group_descriptions_use_only_characters_aws_accepts() -> None:
+    """AWS accepts only this character set in a security group description, and enforces it at
+    APPLY time. A mock provider does not, so an apostrophe in "Google's" sailed through every
+    offline test and then failed the real apply with 22 of 23 resources already created.
+    """
+    text = stack_file("security.tf")
+    descriptions = re.findall(r'^\s*description\s*=\s*"([^"]*)"', text, re.MULTILINE)
+    assert descriptions, "no descriptions found in infra/stack/security.tf"
+    allowed = re.compile(r"^[a-zA-Z0-9. _\-:/()#,@\[\]+=&;{}!$*]*$")
+    rejected = [d for d in descriptions if not allowed.match(d) or len(d) >= 256]
+    assert not rejected, f"AWS will reject these descriptions at apply time: {rejected}"
+
+
+def test_the_vpcs_own_default_security_group_is_left_alone() -> None:
+    """Terraform manages only groups this project creates. The VPC's default group is not adopted:
+    nothing is ever placed in it and it is deleted with the VPC, so managing it would mean changing
+    a resource we did not create for no gain."""
+    files = [p for p in infra_files(".tf") if "stack" in p.relative_to(INFRA).parts]
+    assert files, "no infra/stack .tf files yet"
+    pattern = re.compile(r'^\s*resource\s+"aws_default_security_group"', re.MULTILINE)
+    offenders = [str(p.relative_to(REPO)) for p in files if pattern.search(p.read_text("utf-8"))]
+    assert not offenders, f"the VPC's default security group must not be managed: {offenders}"

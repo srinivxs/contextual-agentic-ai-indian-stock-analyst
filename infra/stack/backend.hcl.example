@@ -1,0 +1,21 @@
+# Copy this file to backend.hcl and fill in the bucket name, then run:
+#
+#   terraform init -backend-config=backend.hcl
+#
+# backend.hcl is git-ignored because the bucket's name contains the AWS account number. Rather than
+# typing it, generate the real file from the bootstrap, which already knows it:
+#
+#   cd ../bootstrap
+#   terraform output -raw backend_config_hcl > ../stack/backend.hcl
+#
+# bucket        the state bucket created by infra/bootstrap. Never create another one.
+# key           where inside that bucket this stack's state file lives.
+# region        the bucket's region, which is also the only region this project uses.
+# encrypt       encrypt the state on the way in, on top of the bucket's own default encryption.
+# use_lockfile  S3-native locking: while one run holds the lock, S3 refuses a second writer.
+
+bucket       = "stock-analyst-tfstate-<your 12-digit account id>-ap-south-1"
+key          = "stack/terraform.tfstate"
+region       = "ap-south-1"
+encrypt      = true
+use_lockfile = true
