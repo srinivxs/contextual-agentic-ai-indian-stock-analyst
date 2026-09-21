@@ -15,6 +15,7 @@ import pytest
 
 from helpers import (
     BACKEND,
+    FRONTEND,
     INIT_SCRIPTS,
     LABEL,
     REPO,
@@ -23,6 +24,7 @@ from helpers import (
     docker,
     wait_for,
 )
+from stack import Stack
 
 
 @pytest.fixture(scope="session")
@@ -145,3 +147,30 @@ def database(daemon: None) -> Iterator[ThrowawayDatabase]:
     finally:
         docker("rm", "-f", "-v", db.host, check=False)
         docker("network", "rm", db.network, check=False)
+
+
+@pytest.fixture(scope="session")
+def web_image(daemon: None) -> Iterator[str]:
+    """The frontend image, built once from the real Dockerfile in the real frontend/ context."""
+    tag = f"stock-analyst-web-p6test:{RUN_ID}"
+    docker("build", "--label", LABEL, "-t", tag, str(FRONTEND), timeout=1200)
+    yield tag
+    docker("rmi", "-f", tag, check=False)
+
+
+@pytest.fixture(scope="module")
+def stack(daemon: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
+    """The whole app profile (db, migrate, api, web) running in an isolated Compose project."""
+    running = Stack(tmp_path_factory.mktemp("stack"))
+    # Fail fast, and for the right reason, before building or starting anything.
+    expected = {"db", "migrate", "api", "web"}
+    found = running.services()
+    assert found == expected, (
+        f"the `app` profile should define {sorted(expected)}, found {sorted(found)}"
+    )
+    try:
+        result = running.up()
+        assert result.returncode == 0, (result.stdout + result.stderr)[-3000:]
+        yield running
+    finally:
+        running.down()

@@ -17,6 +17,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 BACKEND = REPO / "backend"
+FRONTEND = REPO / "frontend"
 INIT_SCRIPTS = REPO / "docker" / "postgres-init"
 RUN_ID = uuid.uuid4().hex[:8]
 LABEL = "stock-analyst-p6test=1"

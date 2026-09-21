@@ -1,0 +1,19 @@
+# What is NOT sent to the Docker daemon as build context. It keeps secrets out of every image layer
+# and stops the project's local caches (kept inside the project on purpose) and the developer's
+# node_modules and previous build output from being uploaded on every build.
+#
+# tests/ is deliberately NOT ignored: `next build` type-checks it (see tsconfig.json).
+
+# Secrets and local configuration: never in a build context.
+.env
+.env.*
+
+# Dependencies and build output: the image installs and builds its own.
+node_modules
+.next
+out
+.npm-cache
+
+# Tooling output
+coverage
+*.tsbuildinfo

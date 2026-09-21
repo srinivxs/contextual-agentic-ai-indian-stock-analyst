@@ -1,12 +1,36 @@
-# Local development database: PostgreSQL 16 + pgvector. The API itself still runs from the venv
-# (see the project notes "How to run"); a Dockerfile for the app arrives in P6.
+# Local stack. Two ways to run it:
 #
-#   docker compose up -d --wait     start the database and wait until it is really ready
+#   docker compose up -d --wait                       the database only (the API runs from the venv,
+#                                                     see the project notes "How to run")
+#   docker compose --profile app up --build --wait    the whole app in containers: database, one-off
+#                                                     migration, api, and the web container
+#                                                     (nginx) on http://localhost:${WEB_PORT:-3000}
+#
 #   docker compose down             stop it (data is kept in the named volume)
 #   docker compose down -v          stop it AND delete the data; the init script then re-runs
 #
 # Passwords come from the git-ignored `.env` at the repository root. Nothing secret lives here.
+#
+# The `app` profile publishes the web container on the same port as `npm run dev` (3000), so it
+# reuses the Google redirect URI you already registered, and the two cannot run at the same time.
+# It is a local stand-in for CloudFront + S3 (ADR 006); the api itself is never published.
 name: stock-analyst
+
+# One image, several commands (ADR 008): `api` and `migrate` are built from the same definition.
+# No `image:` name is set anywhere on purpose: Compose tags what it builds with the project name,
+# so a second project (the container tests) can never overwrite the images of this one.
+x-backend-build: &backend-build
+  context: ./backend
+
+# What the api container is not allowed to do. Both containers below run with these.
+x-hardened: &hardened
+  read_only: true # the image contents cannot be changed at run time
+  tmpfs:
+    - /tmp # the only writable place
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
 
 services:
   db:
@@ -39,6 +63,57 @@ services:
       timeout: 3s
       retries: 12
       start_period: 10s
+
+  # ---- the `app` profile: not started by a plain `docker compose up` ---------------------------
+
+  # Runs `alembic upgrade head` once, with the privileged role, then exits. It is the ONLY service
+  # that receives the admin credentials.
+  migrate:
+    profiles: [app]
+    build: *backend-build
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    environment:
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-stock_admin}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-stock_analyst}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # The API, as the runtime role (no DDL rights). Not published to the host: the browser reaches it
+  # through `web`. Variables are listed one by one (never `env_file`), so nothing reaches the
+  # container by accident. The Google and session settings use `${VAR:-}` rather than `${VAR:?}`:
+  # Compose checks `:?` even for services in an inactive profile, which would break the plain
+  # database-only command. An empty value makes the api refuse to start, naming the setting.
+  api:
+    profiles: [app]
+    build: *backend-build
+    <<: *hardened
+    environment:
+      APP_ENV: local
+      COOKIE_SECURE: "false" # plain-HTTP localhost cannot store a Secure cookie
+      # The origin the BROWSER uses (the published web port): it drives the redirect URI and the
+      # Origin check. The PUBLIC_BASE_URL in `.env` is for tools run on the host, not for this.
+      PUBLIC_BASE_URL: http://localhost:${WEB_PORT:-3000}
+      DATABASE_URL: postgresql+asyncpg://${APP_DB_USER:-stock_app}:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@db:5432/${POSTGRES_DB:-stock_analyst}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # nginx serving the static export and forwarding /api to the api (see frontend/nginx.conf). It
+  # holds no configuration and no secrets. Loopback only, like the database.
+  web:
+    profiles: [app]
+    build:
+      context: ./frontend
+    <<: *hardened
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:
