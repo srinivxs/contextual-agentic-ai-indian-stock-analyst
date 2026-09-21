@@ -1,6 +1,6 @@
 # 008 — Minimal AWS architecture: one task, two containers
 
-- **Status:** Accepted (amends [ADR 004](004-ecs-fargate.md))
+- **Status:** Accepted (amends [ADR 004](004-ecs-fargate.md); amended by [ADR 014](014-containers-and-local-compose.md), see Amendments)
 - **Date:** 2026-09-20
 
 ## Context
@@ -85,3 +85,18 @@ Terraform phase (P7).** No AWS resource is created by this decision.
   catch per-job exceptions so only a process-level failure takes the task down.
 - The in-process timer only runs while the worker runs; acceptable for a demo deployment.
 - Splitting into two services later is a configuration change, not a redesign.
+
+## Amendments
+
+### 2026-09-21: what P6 delivered of the two containers ([ADR 014](014-containers-and-local-compose.md))
+
+The decision above is unchanged. This records what exists locally and what does not yet.
+
+- **One image, several commands.** P6 delivers the `api` command (the image default) and `migrate`
+  (`alembic upgrade head`) from the one backend image. Migration remains a one-off task run before the
+  service starts, with the admin credentials only in that task (point 4 above).
+- **The `worker` command, and its Compose service, are not part of P6.** They arrive with the first job
+  type in P9. The image has no `ENTRYPOINT`, so the worker is one more `command:`.
+- **The Compose topology is not the ECS topology.** Locally `db`, `migrate`, `api` and `web` are four
+  Compose services; in AWS `api` and `worker` share one task, migration is a one-off ECS task, the
+  database is RDS, and `web` does not exist (CloudFront and S3 replace it).

@@ -134,7 +134,8 @@ def local_secret_values() -> dict[str, str]:
     return found
 
 
-# Flags Compose will apply to the api in P6b. The image must work under all of them.
+# The flags Compose applies to the api (the `x-hardened` block in docker-compose.yml). The image
+# must work under all of them.
 HARDENING = [
     "--read-only",
     "--tmpfs",

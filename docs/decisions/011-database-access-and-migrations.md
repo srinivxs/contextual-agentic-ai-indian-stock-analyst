@@ -1,6 +1,6 @@
 # 011 — Database access, roles, migrations and the first schema
 
-- **Status:** Accepted
+- **Status:** Accepted (amended by [ADR 014](014-containers-and-local-compose.md), see Amendments)
 - **Date:** 2026-09-20
 
 ## Context
@@ -122,3 +122,21 @@ vector columns exist yet.
   credentials; the long-running service holds only runtime credentials.
 - P4 onward adds one migration per phase for that phase's tables.
 - ADR 013 (P5) decided that data access stays plain SQL (`text()`), not an ORM, as it was in P4.
+
+## Amendments
+
+### 2026-09-21: the two roles in containers (P6, [ADR 014](014-containers-and-local-compose.md))
+
+The decision above is unchanged; P6 makes it true of running containers, and tests it.
+
+- The Compose service `migrate` is the local counterpart of the one-off ECS migration task. It runs
+  `alembic upgrade head` from the backend image and is the **only** service given
+  `MIGRATION_DATABASE_URL` and the admin credentials. The `api` container receives the runtime role's
+  `DATABASE_URL` and nothing that can change the schema. Tests fail if `api` or `web` is given the admin
+  credentials, if a container is given an `env_file`, or if the migrate command is missing its URL.
+- Inside containers the migration URL comes only from the environment. The git-ignored `.env.migration`
+  is a host-side convenience and is never used in a container.
+- The application's `DATABASE_URL` used by the containers is derived by Compose (runtime role, host `db`).
+  The `DATABASE_URL` in `.env` is for tools run on the host.
+- The limits above are unchanged: the local admin role is a superuser and RDS's is not, and the roles'
+  bootstrap script still runs only when the data volume is first created.

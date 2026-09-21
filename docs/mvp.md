@@ -80,7 +80,8 @@ The dataset is intentionally small and **real**.
 13. A prompt-injection sentence inside a document changes neither the user's profile nor the answer's
     behaviour.
 14. Unit and integration tests pass with at least 80% coverage, plus one end-to-end flow.
-15. `docker compose up` runs the whole stack locally.
+15. `docker compose --profile app up --build` runs the whole stack locally (database, migration, api,
+    web); the worker joins at P9.
 16. `terraform apply` builds the AWS stack and `terraform destroy` removes it completely.
 17. A push to `main` runs tests, builds and pushes the image, migrates the database, deploys, checks
     health, and updates the frontend, all automatically. A failing test blocks the deploy.

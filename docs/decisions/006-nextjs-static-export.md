@@ -1,6 +1,6 @@
 # 006 — Next.js as a static export on S3 + CloudFront
 
-- **Status:** Accepted
+- **Status:** Accepted (amended by [ADR 014](014-containers-and-local-compose.md), see Amendments)
 - **Date:** 2026-09-19
 
 ## Context
@@ -50,3 +50,21 @@ free at demo volume) and matches the destroy-and-recreate lifecycle. Every featu
 - Larger toolchain than Vite (slower installs and builds).
 - Static-export limits (no dynamic ticker routes) shape URL design.
 - If SSR is ever needed, this decision must be revisited together with ADR 004.
+
+## Amendments
+
+### 2026-09-21: the frontend container (P6, [ADR 014](014-containers-and-local-compose.md))
+
+The sentence "A frontend Dockerfile exists only for local parity, not for production" is now real, and
+nothing in the decision above changes.
+
+- `frontend/Dockerfile` builds the export with `npm ci` and `next build` and serves the resulting files
+  with nginx (`nginxinc/nginx-unprivileged`) on port 8080. It contains no Node server, no sources and no
+  configuration. It is **not deployed**: AWS still serves the same files from S3 through CloudFront.
+- The nginx container is a stand-in for CloudFront + S3 for local use, on `127.0.0.1:${WEB_PORT:-3000}`.
+  It differs from production on purpose and by necessity: `try_files` replaces the CloudFront Function
+  that rewrites extension-less URLs, it forwards `/api` to the api container instead of an ALB, and it
+  serves plain HTTP. Its one job is to show pages and API on **one origin**, without rewriting API errors
+  into pages (the rule this ADR already states for the CloudFront Function).
+- The static-export rules (no SSR, no route handlers, no dynamic ticker routes, unoptimised images,
+  `trailingSlash`) are unchanged, and the production build is the same `next build`.

@@ -1,6 +1,6 @@
 # 013 — The follow API, plain SQL, and the static frontend shell
 
-- **Status:** Accepted
+- **Status:** Accepted (amended by [ADR 014](014-containers-and-local-compose.md), see Amendments)
 - **Date:** 2026-09-21
 
 ## Context
@@ -147,3 +147,22 @@ registered on the local Google client, a real Google account, real Postgres): si
 refresh and find it still followed, unfollow, sign out, sign in again, and the `login_error` messages.
 The owner reported that every step behaved as described, with no CORS errors. Only that summary is
 recorded here; no cookie, token or credential was shared.
+
+## Amendments
+
+### 2026-09-21: the production shape, partly testable now (P6, [ADR 014](014-containers-and-local-compose.md))
+
+Nothing above is rewritten; this updates two statements that were true when they were written.
+
+- **"Not testable locally: the production shape."** Half of it is now tested. The `--profile app` stack
+  serves the static export and the API from **one origin** through nginx, and container tests prove that
+  the `Origin` header, the session cookie, the login redirect and the backend's JSON errors pass through
+  untouched. What is still untestable locally, and waits for P7 and P8: the CloudFront rules
+  (caching off for `/api/*`, cookies, query strings and `Origin` forwarded), the CloudFront Function,
+  HTTPS and the production-mode cookie (`__Host-session`, `Secure`).
+- **"Deferred: the frontend Dockerfile (P6)."** Done in P6.
+- **A second local workflow (section 5).** Besides `npm run dev` (with its dev-only rewrite to a backend
+  on port 8000), `docker compose --profile app up --build --wait` serves the same app on
+  `http://localhost:3000` from containers. They use the same port and cannot run at the same time. With
+  the containers the api is not published, and its `PUBLIC_BASE_URL` is derived by Compose from
+  `WEB_PORT`, so the redirect URI already registered for port 3000 keeps working.

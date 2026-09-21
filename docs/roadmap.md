@@ -29,7 +29,7 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | P3 | Database foundation | ✅ done (ADR 011): compose DB, two roles, engine, `readyz`, Alembic, `stocks` |
 | P4 | Authentication and sessions | ✅ done (ADR 012): P4a sessions, `/me`, logout; P4b Google login (PKCE, ID-token verification); P4c docs and real-Google check |
 | P5 | Follow API and frontend shell | ✅ done (ADR 013); manual local flow verified by the owner |
-| P6 | Docker | |
+| P6 | Docker | ✅ done (ADR 014): P6a backend image and `migrate`; P6b frontend image and the Compose `app` profile; P6c docs and the manual check |
 | P7 | Terraform (cost table first) | |
 | P8 | CI/CD → **Gate A: login and follow live on AWS** | |
 | P9 | Document ingestion core | |
@@ -109,12 +109,29 @@ leaves a real product.
 
 ## P6 — Docker
 
-- **Goal:** the whole stack runs from one command, in containers we understand.
-- **Build:** backend multi-stage Dockerfile (one image, `api` and `worker` commands); frontend
-  Dockerfile for local parity; `docker-compose.yml`.
-- **Explain first:** layers, multi-stage builds, non-root user, why one image serves two processes.
-- **Done when:** `docker compose up` gives working login and follow.
-- **You should be able to answer:** why multi-stage? Why not bake config into the image?
+- **Goal:** the whole application runs from one command, in containers we understand, behind one origin.
+- **Build (P6a):** the backend multi-stage image: one image, the `api` command (default) and `migrate`
+  (`alembic upgrade head`); non-root, pinned, small, with its own liveness healthcheck.
+- **Build (P6b):** the frontend image (a Node build, then nginx serving the static export) and the
+  Compose `app` profile: `db` → `migrate` → `api` → `web`. Plain `docker compose up -d --wait` stays
+  database-only. The api is never published; only `migrate` holds admin credentials; `api` and `web` run
+  read-only with no capabilities.
+- **Build (P6c):** ADR 014 and the amendments to ADRs 006, 008, 011 and 013; this file, `the project notes`
+  and `docs/mvp.md` brought in line; the manual check below.
+- **Explain first:** layers, multi-stage builds, non-root users, why config and secrets are never baked
+  into an image, why one image serves several commands, what a reverse proxy must not touch.
+- **Done when:** `docker compose --profile app up --build --wait` gives working login and follow at
+  `http://localhost:3000`, and the follow survives a refresh, an api restart and `down` then `up`.
+  Automated: the container suite (`docker/tests`, 91 collected items) plus the backend and frontend
+  suites. The manual run, including real Google sign-in through the containers, was done by the owner
+  on 2026-09-21 (all twelve steps passed; recorded in ADR 014).
+- **You should be able to answer:** why multi-stage? Why not bake config into the image? Why does only
+  `migrate` get the admin credentials? Why is the api not published? What must nginx not touch, and
+  what breaks if it does (Origin, cookies, error bodies)? Why do the Google settings use `${VAR:-}` and
+  not `${VAR:?}`? What does the nginx container prove about production, and what does it not?
+- **Left for later (ADR 014):** the `worker` command and its Compose service (P9); CloudFront rules,
+  HTTPS and the production-mode cookie (P7, P8); image digest pinning, scanning and signing (P8); making
+  nginx follow a recreated api container (P7 or P8, if the deployment needs it).
 
 ## P7 — Terraform
 
