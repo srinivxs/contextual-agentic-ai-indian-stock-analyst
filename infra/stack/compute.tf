@@ -105,6 +105,13 @@ resource "aws_ecs_task_definition" "api" {
         { name = "APP_ENV", value = var.app_env },
         { name = "GOOGLE_CLIENT_ID", value = var.google_client_id },
         { name = "PUBLIC_BASE_URL", value = local.public_base_url },
+
+        # DERIVED, never set by hand. The backend refuses to start in production unless this is
+        # true (config.py, _production_must_be_secure), because that mode uses the __Host- cookie
+        # prefix and a Secure cookie. Deriving it from app_env makes the two impossible to
+        # contradict; a separate variable would just be another thing to forget, which is exactly
+        # how the first production apply failed.
+        { name = "COOKIE_SECURE", value = tostring(var.app_env == "production") },
       ]
 
       # Fetched from SSM by the EXECUTION role at start and injected as environment variables. The

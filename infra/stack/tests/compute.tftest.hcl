@@ -340,12 +340,12 @@ run "the_api_container_is_given_the_runtime_url_and_never_the_admin_one" {
   # The client ID is not a secret: it travels in the browser's address bar during sign-in.
   assert {
     condition = alltrue([
-      for name in ["GOOGLE_CLIENT_ID", "PUBLIC_BASE_URL", "APP_ENV"] :
+      for name in ["GOOGLE_CLIENT_ID", "PUBLIC_BASE_URL", "APP_ENV", "COOKIE_SECURE"] :
       contains([
         for env in jsondecode(aws_ecs_task_definition.api.container_definitions)[0].environment : env.name
       ], name)
     ])
-    error_message = "GOOGLE_CLIENT_ID, PUBLIC_BASE_URL and APP_ENV belong in environment, not secrets."
+    error_message = "GOOGLE_CLIENT_ID, PUBLIC_BASE_URL, APP_ENV and COOKIE_SECURE belong in environment."
   }
 }
 
@@ -610,6 +610,19 @@ run "the_application_calls_itself_by_the_name_the_edge_published" {
       env.name == "PUBLIC_BASE_URL" && startswith(env.value, "https://")
     ])
     error_message = "The browser-facing origin must be https, or the __Host- cookie is rejected."
+  }
+}
+
+run "production_also_means_a_secure_cookie" {
+  # Found by the first real production apply, not by any test: the container exited with
+  # "COOKIE_SECURE must be true in production" and the service sat in a restart loop. The flag is
+  # now derived from app_env rather than set separately, so it cannot be forgotten again.
+  assert {
+    condition = anytrue([
+      for env in jsondecode(aws_ecs_task_definition.api.container_definitions)[0].environment :
+      env.name == "COOKIE_SECURE" && env.value == "true"
+    ])
+    error_message = "production requires COOKIE_SECURE=true, or the backend refuses to start."
   }
 }
 

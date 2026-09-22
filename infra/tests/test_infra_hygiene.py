@@ -763,3 +763,41 @@ def test_each_edge_parameter_is_read_from_its_own_name() -> None:
         assert f"local.{parameter}_parameter_name" in body, (
             f"the {parameter} data source must read the {parameter} parameter, not the other one"
         )
+
+
+def test_the_task_definition_supplies_every_setting_the_backend_demands() -> None:
+    """The generalisation of a bug the first production apply found.
+
+    COOKIE_SECURE was missing from the api container, so it exited with
+    "COOKIE_SECURE must be true in production" and the service sat in a restart loop. Terraform was
+    happy, the offline tests were happy, and the mistake cost a real apply to find.
+
+    Rather than assert that one name, this reads the backend's own Settings class and checks that
+    every setting it refuses to start without appears in the api task definition -- as an injected
+    secret or as an environment entry. If someone adds a required setting to the backend and forgets
+    the deployment, this fails here instead of in CloudWatch.
+    """
+    import sys
+
+    backend_src = REPO / "backend" / "src"
+    if str(backend_src) not in sys.path:
+        sys.path.insert(0, str(backend_src))
+    from app.core.config import Settings  # type: ignore[import-not-found]
+
+    body = block_body(stack_file("compute.tf"), r'resource\s+"aws_ecs_task_definition"\s+"api"')
+    assert body is not None, 'no resource "aws_ecs_task_definition" "api" in compute.tf'
+
+    required = sorted(
+        name.upper() for name, field in Settings.model_fields.items() if field.is_required()
+    )
+    missing = [name for name in required if f'"{name}"' not in body]
+    assert not missing, (
+        f"the backend refuses to start without {missing}, but the api task definition never "
+        "supplies them"
+    )
+
+    # Not required by Pydantic -- it has a default -- but mandatory once app_env is production, and
+    # a default of False is exactly what made the container exit.
+    assert '"COOKIE_SECURE"' in body, (
+        "production requires COOKIE_SECURE; derive it from app_env so it cannot be forgotten"
+    )
