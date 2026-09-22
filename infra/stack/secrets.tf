@@ -70,9 +70,10 @@ locals {
 
 # --- the runtime URL ------------------------------------------------------------------------------
 #
-# Used by the API. stock_app is the no-DDL role that the first migration creates inside PostgreSQL
-# (ADR 011), using the password stored here. The role does not exist yet; the parameter does, so
-# that P9 has somewhere to read the password it must set.
+# Used by the API. stock_app is the no-DDL role of ADR 011. Nothing in AWS creates it -- RDS has no
+# init hook and Terraform cannot reach an instance in isolated subnets -- so the one-off provision
+# task creates it from inside the VPC (compute.tf), reading the password back out of this very
+# parameter. That is why the parameter is written before the role exists.
 resource "aws_ssm_parameter" "database_url" {
   name        = local.runtime_parameter_name
   description = "Connection URL for the no-DDL runtime role used by the API"

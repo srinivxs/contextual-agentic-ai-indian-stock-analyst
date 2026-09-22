@@ -1,6 +1,6 @@
 # 011 — Database access, roles, migrations and the first schema
 
-- **Status:** Accepted (amended by [ADR 014](014-containers-and-local-compose.md), see Amendments)
+- **Status:** Accepted (amended by [ADR 014](014-containers-and-local-compose.md) and by P7, see Amendments)
 - **Date:** 2026-09-20
 
 ## Context
@@ -24,8 +24,9 @@ private subnets, so Terraform cannot run SQL there). This ADR records how that i
 - `ALTER DEFAULT PRIVILEGES` (set once by the local init script) gives the runtime role DML on every
   table the migration role creates, and nothing more.
 - Locally the init script `docker/postgres-init/01-roles-and-databases.sh` creates the runtime role,
-  the second database used by tests, and the grants. **On AWS** the same bootstrap will be an idempotent
-  step of the one-off migration task (Terraform cannot run SQL); the exact mechanism is decided in P7/P8.
+  the second database used by tests, and the grants. **On AWS** the same bootstrap is a one-off ECS task
+  of its own (Terraform cannot run SQL against an instance in isolated subnets); see the amendment of
+  2026-09-22 below.
 
 ### 2. Alembic, written by hand
 
@@ -140,3 +141,39 @@ The decision above is unchanged; P6 makes it true of running containers, and tes
   The `DATABASE_URL` in `.env` is for tools run on the host.
 - The limits above are unchanged: the local admin role is a superuser and RDS's is not, and the roles'
   bootstrap script still runs only when the data volume is first created.
+
+### 2026-09-22: who creates the runtime role on AWS (P7)
+
+Section 1 left the mechanism open. Building the AWS stack made the gap concrete: **nothing was creating
+`stock_app` on RDS**, so the two-role boundary would not have existed there at all. RDS creates the
+database and the master user and stops; it has no `docker-entrypoint-initdb.d`. The api container would
+still have started (the engine opens no connection until the first query, so `/api/healthz` passes), and
+the first real query — `/api/readyz`, or signing in — would have failed.
+
+Terraform cannot close the gap: the instance is in the isolated subnets with no public access, so a
+`postgresql` provider running on a laptop or in CI cannot reach it. The fix has to run **inside the VPC**.
+
+**Decision: a third one-off ECS task, `provision`, running `python -m app.db.provision` from the same
+backend image** (`infra/stack/compute.tf`, `backend/src/app/db/provision.py`).
+
+- **Not inside an Alembic migration.** Alembic versions the *schema*. Putting role creation and a
+  password there would put credential management into schema history, and make every environment's
+  migration depend on a runtime secret being present. `CREATE EXTENSION` is in migration `0001` because
+  an extension is part of the schema; a login role is not.
+- **A separate task, not a step inside `migrate`.** Each is separately re-runnable and separately
+  readable in its own log group, and `migrate` keeps the exact argv `alembic upgrade head`.
+- **It reads the runtime password out of the runtime URL.** That password is generated ephemerally and
+  stored write-only in SSM, so after the apply nobody — including Terraform — can read it back. The task
+  is therefore given both parameters: the admin URL to connect with, the runtime URL to read the role and
+  password from. No new IAM: the migration execution role already grants exactly those two parameters.
+- **Idempotent and order-independent.** An existing role is `ALTER`ed rather than `CREATE`d, so a rotated
+  password takes effect; the grants are applied both `ON ALL TABLES` (for what the migration has already
+  created) and through `ALTER DEFAULT PRIVILEGES` (for what it creates later), so `provision` and
+  `migrate` may run in either order and either may be re-run.
+- **The SQL is the same SQL as the local init script**, which is the point: one boundary, one
+  explanation, proven in `backend/tests/integration/test_provision_db.py` against a database that never
+  ran the script.
+
+Role name and password are interpolated into DDL, because PostgreSQL does not accept bound parameters
+there. Both are validated against a strict allow-list first and refused rather than escaped; the password
+is alphanumeric by construction (`special = false` in `infra/stack/secrets.tf`).

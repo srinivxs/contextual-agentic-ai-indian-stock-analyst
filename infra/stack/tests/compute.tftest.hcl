@@ -22,10 +22,17 @@
 #               aws_lb_listener.http
 #               aws_lb_listener_rule.origin_verify
 #               aws_ecs_cluster.main
-#               aws_ecs_task_definition.api / .migrate
+#               aws_ecs_task_definition.api / .migrate / .provision
 #               aws_ecs_service.api
 #   outputs     alb_dns_name, ecs_cluster_name, api_task_definition_arn,
-#               migrate_task_definition_arn, ecs_service_name
+#               migrate_task_definition_arn, provision_task_definition_arn, ecs_service_name
+#
+# ADDED AFTER P7d (the runtime-role bootstrap)
+#               aws_cloudwatch_log_group.provision
+#               aws_ecs_task_definition.provision
+#   RDS has no docker-entrypoint-initdb.d, so nothing creates the no-DDL runtime role that ADR 011
+#   requires: the instance is only reachable from inside the VPC, so the SQL has to run there. This
+#   is a one-off task like `migrate`, running `app.db.provision` from the same image.
 #
 # WHY THESE TESTS ARE RED TODAY
 #   None of the names above are declared, so Terraform reports "reference to undeclared ...".
@@ -378,6 +385,80 @@ run "the_migration_task_is_a_one_off_that_uses_the_admin_url" {
   assert {
     condition     = aws_ecs_task_definition.migrate.runtime_platform[0].cpu_architecture == "X86_64"
     error_message = "Same architecture as the API task: it is the same image."
+  }
+}
+
+# --- the runtime-role bootstrap ---------------------------------------------------------------------
+
+run "the_provision_task_is_given_both_urls_because_it_creates_one_role_using_the_other" {
+  # It reads the runtime password out of the runtime URL -- Terraform cannot pass it, because that
+  # password is write-only and unreadable after the apply -- and applies it as the migration role.
+  # The migrate execution role already grants exactly these two parameters ("read-both-database-urls"
+  # in identity.tf), so this task needs no new IAM and the api role stays refused the admin URL.
+  assert {
+    condition = alltrue([
+      for arn in [
+        "arn:aws:ssm:ap-south-1:123456789012:parameter/stock-analyst/demo/migration_database_url",
+        "arn:aws:ssm:ap-south-1:123456789012:parameter/stock-analyst/demo/database_url",
+        ] : anytrue([
+          for secret in jsondecode(aws_ecs_task_definition.provision.container_definitions)[0].secrets :
+          secret.valueFrom == arn
+      ])
+    ])
+    error_message = "The provision container needs the admin URL to connect and the runtime URL to read the password out of."
+  }
+
+  assert {
+    condition     = aws_ecs_task_definition.provision.execution_role_arn == aws_iam_role.migrate_execution.arn
+    error_message = "It is the other privileged one-off task, so it reuses that execution role rather than widening the api one."
+  }
+}
+
+run "the_provision_task_runs_the_module_the_image_actually_contains" {
+  # Exactly the mistake the migrate task shipped with: `command` replaces the image's CMD outright
+  # (no ENTRYPOINT), and a command the image cannot run fails only at task start. Asserting the
+  # exact argv.
+  assert {
+    condition = jsondecode(aws_ecs_task_definition.provision.container_definitions)[0].command == [
+      "python", "-m", "app.db.provision",
+    ]
+    error_message = "The provision container must run python -m app.db.provision."
+  }
+
+  # The image keeps the code at /app/src and only uvicorn is told about it (`--app-dir src` in the
+  # Dockerfile CMD). `python -m` needs the same directory on the import path, or it exits with
+  # ModuleNotFoundError before it reaches a single line of ours.
+  assert {
+    condition = anytrue([
+      for env in jsondecode(aws_ecs_task_definition.provision.container_definitions)[0].environment :
+      env.name == "PYTHONPATH" && env.value == "/app/src"
+    ])
+    error_message = "Without PYTHONPATH=/app/src the module cannot be imported from WORKDIR /app."
+  }
+
+  assert {
+    condition     = startswith(jsondecode(aws_ecs_task_definition.provision.container_definitions)[0].image, aws_ecr_repository.backend.repository_url)
+    error_message = "The same image as the api and the migration: one build, three commands."
+  }
+
+  assert {
+    condition     = aws_ecs_task_definition.provision.runtime_platform[0].cpu_architecture == "X86_64"
+    error_message = "Same architecture as the other two tasks: it is the same image."
+  }
+}
+
+run "the_provision_task_logs_where_its_own_failures_can_be_read" {
+  assert {
+    condition = (
+      jsondecode(aws_ecs_task_definition.provision.container_definitions)[0].logConfiguration.options["awslogs-group"] ==
+      aws_cloudwatch_log_group.provision.name
+    )
+    error_message = "A one-off task that leaves no log is undebuggable: it has already exited."
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.provision.retention_in_days == var.log_retention_days
+    error_message = "Logs must expire on the same schedule as the rest, so nothing accumulates cost."
   }
 }
 

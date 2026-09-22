@@ -523,7 +523,9 @@ def test_the_api_task_definition_never_names_the_admin_parameter() -> None:
 def test_the_tasks_are_built_for_the_architecture_of_the_image() -> None:
     """The image is linux/amd64. An ARM task fails at start with a message about the platform."""
     text = stack_file("compute.tf")
-    assert text.count("X86_64") >= 2, "both task definitions must declare X86_64"
+    definitions = len(re.findall(r'resource\s+"aws_ecs_task_definition"', text))
+    assert definitions >= 3, "expected at least the api, migrate and provision task definitions"
+    assert text.count("X86_64") == definitions, "every task definition must declare X86_64"
     assert "ARM64" not in text, "ARM64 would not match the image that is actually built"
 
 
@@ -535,3 +537,87 @@ def test_the_service_never_defaults_to_running_tasks() -> None:
     assert re.search(r"^\s*default\s*=\s*0\s*$", body, re.MULTILINE), (
         "desired_count must default to 0, so applying the stack starts no compute"
     )
+
+
+# --- a container command must name something the image actually contains ------------------------
+#
+# This is the class of bug the migration task shipped with: `command = ["migrate"]` read like the
+# Compose service name, but the image has no ENTRYPOINT, so `command` replaces the CMD outright and
+# there is no `migrate` executable to run. It would have failed with `exec: "migrate": not found`
+# about ten minutes into an apply, and no mock provider can catch it -- the plan is perfectly valid.
+# So the check has to be made here, against the image's real contents.
+
+BACKEND = REPO / "backend"
+
+
+def task_definition_bodies() -> dict[str, str]:
+    """Every aws_ecs_task_definition in compute.tf, by name."""
+    text = stack_file("compute.tf")
+    names = re.findall(r'resource\s+"aws_ecs_task_definition"\s+"(\w+)"', text)
+    bodies = {}
+    for name in names:
+        body = block_body(text, rf'resource\s+"aws_ecs_task_definition"\s+"{name}"')
+        assert body is not None, f"could not read the body of task definition {name}"
+        bodies[name] = body
+    return bodies
+
+
+def container_command(body: str) -> list[str]:
+    """The argv of a container definition, or an empty list when it keeps the image's CMD."""
+    match = re.search(r"command\s*=\s*\[(.*?)\]", body, re.DOTALL)
+    if match is None:
+        return []
+    return re.findall(r'"([^"]*)"', match.group(1))
+
+
+def test_the_backend_image_still_has_no_entrypoint() -> None:
+    """The premise every `command` below depends on.
+
+    With no ENTRYPOINT, `command` replaces the image's CMD entirely, so it must be a complete argv.
+    If an ENTRYPOINT is ever added, every task definition's command becomes arguments to it instead,
+    and each one has to be re-read.
+    """
+    dockerfile = (BACKEND / "Dockerfile").read_text(encoding="utf-8")
+    assert not re.search(r"^\s*ENTRYPOINT", dockerfile, re.MULTILINE), (
+        "the backend image gained an ENTRYPOINT; every task definition's command now means "
+        "something different"
+    )
+
+
+def test_every_task_command_names_something_the_image_contains() -> None:
+    for name, body in task_definition_bodies().items():
+        command = container_command(body)
+        if not command:
+            continue  # keeps the image's own CMD (uvicorn), which is checked by the Dockerfile
+        if command[0] == "python":
+            assert command[1] == "-m", f"{name}: only `python -m <module>` is understood here"
+            module = BACKEND / "src" / (command[2].replace(".", "/") + ".py")
+            assert module.is_file(), (
+                f"{name} runs `{' '.join(command)}`, but {module.relative_to(REPO)} does not exist"
+            )
+        elif command[0] == "alembic":
+            assert (BACKEND / "alembic.ini").is_file(), (
+                f"{name} runs alembic, but backend/alembic.ini does not exist"
+            )
+            assert command[1:] == ["upgrade", "head"], (
+                f"{name}: the only alembic command we run in AWS is `upgrade head`"
+            )
+        else:
+            pytest.fail(
+                f"{name} runs `{command[0]}`, which this test does not know how to verify. "
+                "Add a case here rather than trusting that the image can run it."
+            )
+
+
+def test_a_module_run_with_python_m_is_given_the_import_path() -> None:
+    """WORKDIR is /app and the code is at /app/src.
+
+    Uvicorn is told with `--app-dir src`; `python -m` has no such flag, so without PYTHONPATH the
+    container exits with ModuleNotFoundError before running a line of ours.
+    """
+    for name, body in task_definition_bodies().items():
+        if container_command(body)[:2] != ["python", "-m"]:
+            continue
+        assert re.search(r'name\s*=\s*"PYTHONPATH"\s*,\s*value\s*=\s*"/app/src"', body), (
+            f"{name} runs a module with `python -m` but does not set PYTHONPATH=/app/src"
+        )

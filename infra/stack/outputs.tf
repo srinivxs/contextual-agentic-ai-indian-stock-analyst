@@ -109,6 +109,11 @@ output "migrate_task_definition_arn" {
   value       = aws_ecs_task_definition.migrate.arn
 }
 
+output "provision_task_definition_arn" {
+  description = "The one-off runtime-role blueprint, started with run-task on a cold start."
+  value       = aws_ecs_task_definition.provision.arn
+}
+
 output "ecs_service_name" {
   description = "Service name. Scale it to 1 to switch the demo on."
   value       = aws_ecs_service.api.name

@@ -64,8 +64,9 @@ resource "aws_db_instance" "main" {
   storage_encrypted = true
 
   # The same names the local Docker database uses (see .env.example), so nothing has to be
-  # reconciled later: stock_admin is the privileged role, stock_app is the no-DDL runtime role that
-  # the first migration creates inside the database.
+  # reconciled later: stock_admin is the privileged role RDS creates here, and stock_app is the
+  # no-DDL runtime role, which RDS does NOT create -- the one-off provision task does, from inside
+  # the VPC (compute.tf).
   db_name  = "stock_analyst"
   username = "stock_admin"
 

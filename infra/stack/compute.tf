@@ -36,6 +36,15 @@ resource "aws_cloudwatch_log_group" "migrate" {
   }
 }
 
+resource "aws_cloudwatch_log_group" "provision" {
+  name              = "/stock-analyst/demo/provision"
+  retention_in_days = var.log_retention_days
+
+  tags = {
+    Name = "${local.name_prefix}-provision"
+  }
+}
+
 resource "aws_ecs_cluster" "main" {
   name = local.name_prefix
 
@@ -181,6 +190,79 @@ resource "aws_ecs_task_definition" "migrate" {
 
   tags = {
     Name = "${local.name_prefix}-migrate"
+  }
+}
+
+# --- the runtime-role bootstrap ---------------------------------------------------------------------
+#
+# The gap RDS leaves. ADR 011 gives the project two database roles: the migration role owns the
+# schema, and the runtime role `stock_app` can read and write rows but cannot reshape anything.
+# Locally, docker/postgres-init/01-roles-and-databases.sh creates the runtime role when the volume
+# is first created. RDS has no equivalent hook -- it makes the database and the master user, and
+# nothing else -- and Terraform cannot close the gap either, because the instance is in the isolated
+# subnets and no `postgresql` provider outside the VPC can reach it. So the same SQL runs here, from
+# inside the VPC, as a one-off task beside the migration.
+#
+# It reads the runtime password out of the runtime URL, because there is nowhere else to read it
+# from: that password is generated ephemerally and stored write-only, so after the apply not even
+# Terraform can recover it (secrets.tf). Both URLs therefore have to reach this container.
+#
+# It is idempotent and order-independent: see backend/src/app/db/provision.py.
+resource "aws_ecs_task_definition" "provision" {
+  family                   = "${local.name_prefix}-provision"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "256"
+  memory                   = "512"
+
+  # The other privileged one-off task. Its execution role already grants exactly the two parameters
+  # this needs ("read-both-database-urls" in identity.tf), so nothing new is granted to anything and
+  # the api execution role stays refused the admin URL.
+  execution_role_arn = aws_iam_role.migrate_execution.arn
+  task_role_arn      = aws_iam_role.task.arn
+
+  runtime_platform {
+    cpu_architecture        = "X86_64"
+    operating_system_family = "LINUX"
+  }
+
+  container_definitions = jsonencode([
+    {
+      name      = "provision"
+      image     = local.container_image
+      essential = true
+
+      # The real argv, for the same reason the migration task carries one: the image has no
+      # ENTRYPOINT, so `command` replaces the uvicorn CMD outright, and a command the image cannot
+      # run fails at task start rather than at plan time.
+      command = ["python", "-m", "app.db.provision"]
+
+      # The image keeps the code at /app/src and WORKDIR is /app. Uvicorn is told where to look with
+      # `--app-dir src`; `python -m` has no such flag, so the import path is set here instead.
+      environment = [
+        { name = "PYTHONPATH", value = "/app/src" },
+      ]
+
+      # Both, and this is the only container that gets both: the admin URL to connect with, the
+      # runtime URL to read the role name and password out of.
+      secrets = [
+        { name = "MIGRATION_DATABASE_URL", valueFrom = local.migration_parameter_arn },
+        { name = "DATABASE_URL", valueFrom = local.runtime_parameter_arn },
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.provision.name
+          "awslogs-region"        = var.region
+          "awslogs-stream-prefix" = "provision"
+        }
+      }
+    },
+  ])
+
+  tags = {
+    Name = "${local.name_prefix}-provision"
   }
 }
 
