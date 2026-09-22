@@ -30,7 +30,7 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | P4 | Authentication and sessions | ✅ done (ADR 012): P4a sessions, `/me`, logout; P4b Google login (PKCE, ID-token verification); P4c docs and real-Google check |
 | P5 | Follow API and frontend shell | ✅ done (ADR 013); manual local flow verified by the owner |
 | P6 | Docker | ✅ done (ADR 014): P6a backend image and `migrate`; P6b frontend image and the Compose `app` profile; P6c docs and the manual check |
-| P7 | Terraform (cost table first) | |
+| P7 | Terraform (cost table first) | ✅ done (ADR 015): P7a bootstrap + state bucket; P7b network; P7c database, secrets, registry, IAM; P7d load balancer and ECS; P7e1 the persistent edge; P7e2 production mode and the live drill |
 | P8 | CI/CD → **Gate A: login and follow live on AWS** | |
 | P9 | Document ingestion core | |
 | P10 | Embeddings and retrieval | |
@@ -144,6 +144,19 @@ leaves a real product.
   Terraform ignores the task-definition image tag.
 - **Done when:** apply gives a live health endpoint through CloudFront; destroy leaves nothing behind.
 - **You should be able to answer:** what is Terraform state? What does destroy not remove?
+- **Done 2026-09-22.** The whole product ran on AWS over HTTPS and a real Google sign-in completed.
+  The design changed during P7e: the deployment is split by **lifetime**, not by layer
+  ([ADR 015](decisions/015-persistent-edge.md)), because a recreated CloudFront distribution gets a new
+  domain and that domain is the registered OAuth redirect URI. `infra/edge` (CloudFront, the static
+  site, the shared origin secret) is never destroyed and costs nothing per hour; `infra/stack` still
+  dies after every session at $1.41/day idle. Operating instructions: [docs/runbook.md](runbook.md).
+- **Three bugs were found by real applies that every offline gate had passed:** the migration task's
+  argv, `ALTER ROLE ... NOSUPERUSER` (legal locally, refused by `rds_superuser`), and a missing
+  `COOKIE_SECURE`. Each now has a test, and the last has a guard that reads the backend's own
+  `Settings` class. The lesson is in ADR 015.
+- **Deferred:** re-pointing the edge at a rebuilt load balancer is unproven — the next spin-up is the
+  test; the frontend is uploaded by hand until P8; `minimum_protocol_version` is stuck at TLSv1 while
+  the default CloudFront certificate is used.
 
 ## P8 — CI/CD → Gate A
 

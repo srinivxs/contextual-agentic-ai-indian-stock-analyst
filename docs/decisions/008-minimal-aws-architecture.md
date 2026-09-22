@@ -100,3 +100,22 @@ The decision above is unchanged. This records what exists locally and what does 
 - **The Compose topology is not the ECS topology.** Locally `db`, `migrate`, `api` and `web` are four
   Compose services; in AWS `api` and `worker` share one task, migration is a one-off ECS task, the
   database is RDS, and `web` does not exist (CloudFront and S3 replace it).
+
+### 2026-09-22: the deployment is split by lifetime ([ADR 015](015-persistent-edge.md))
+
+This ADR said the whole AWS stack is destroyed and recreated at will. **That is now true of everything
+that costs money, but not of everything.**
+
+A CloudFront distribution is given a new `*.cloudfront.net` domain every time it is created, and that
+domain is the OAuth redirect URI registered with Google. Destroying it nightly would mean a Google
+console change before every demo, waiting out a propagation delay of up to several hours.
+
+So the deployment is split by lifetime rather than by layer. `infra/edge` -- the distribution, the
+private S3 site bucket and the shared origin secret -- is applied once and kept. It has **no hourly or
+monthly rate at all**, so the saving it would have produced does not exist. `infra/stack` is unchanged:
+VPC, ALB, ECS, RDS, ECR and IAM still die after every session, and they are the $1.41 a day.
+
+The two roots exchange values in one direction each: persistent to ephemeral through SSM parameters
+that always exist, ephemeral to persistent through a command-line variable, because a data source must
+never point at something destroyed nightly. See ADR 015 for the wiring, the verification and the
+limitations.
