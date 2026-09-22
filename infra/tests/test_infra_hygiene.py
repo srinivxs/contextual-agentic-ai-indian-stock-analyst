@@ -15,7 +15,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 INFRA = REPO / "infra"
-ROOTS = ("preflight", "bootstrap", "stack")
+ROOTS = ("preflight", "bootstrap", "stack", "edge")
 # Local caches and the provider download folders: never scanned, never committed.
 SKIPPED_DIRS = {".terraform", ".terraform-plugin-cache"}
 TEXT_SUFFIXES = (".tf", ".tftest.hcl", ".hcl", ".example", ".md", ".json")
@@ -47,6 +47,20 @@ EXPECTED_FILES = {
         "tests/network.tftest.hcl",
         "tests/data_and_identity.tftest.hcl",
         "tests/compute.tftest.hcl",
+    ],
+    # The persistent half (ADR 015): applied once, never destroyed with the application.
+    "edge": [
+        "versions.tf",
+        "main.tf",
+        "backend.tf",
+        "backend.hcl.example",
+        "variables.tf",
+        "frontend.tf",
+        "cloudfront.tf",
+        "secrets.tf",
+        "outputs.tf",
+        "functions/rewrite-index.js",
+        "tests/edge.tftest.hcl",
     ],
 }
 
@@ -621,3 +635,55 @@ def test_a_module_run_with_python_m_is_given_the_import_path() -> None:
         assert re.search(r'name\s*=\s*"PYTHONPATH"\s*,\s*value\s*=\s*"/app/src"', body), (
             f"{name} runs a module with `python -m` but does not set PYTHONPATH=/app/src"
         )
+
+
+# --- the two cache decisions a mock provider cannot check --------------------------------------
+#
+# WHY THESE ARE TEXT ASSERTIONS AND NOT TERRAFORM ASSERTIONS
+#   infra/edge/tests/edge.tftest.hcl states both of these properly, comparing the behaviour's
+#   cache_policy_id to the data source it should name. Under `mock_provider` that comparison is
+#   worthless: every data source of one TYPE resolves to a single generated id, so the two managed
+#   cache policies share one, and swapping them changes nothing. `override_data` was tried and does
+#   not take effect -- a probe asserting the two ids DIFFER fails.
+#
+#   A deliberate breakage that pointed /api/* at CachingOptimized -- switching caching ON for
+#   responses selected by a session cookie -- was therefore NOT caught. That is the single most
+#   important property of the whole distribution, so the guarantee moves here, where the check is
+#   blunt but real. Same move P7c made for the plaintext-secret attribute.
+
+
+def edge_file(name: str) -> str:
+    """The text of a file in infra/edge, failing clearly when it has not been written yet."""
+    path = INFRA / "edge" / name
+    assert path.is_file(), f"infra/edge/{name} does not exist yet"
+    return path.read_text(encoding="utf-8")
+
+
+def test_the_api_behaviour_never_caches_and_forwards_the_session() -> None:
+    """A cached /api/v1/me would be handed to the next visitor as their own identity."""
+    text = edge_file("cloudfront.tf")
+    body = block_body(text, r"ordered_cache_behavior")
+    assert body is not None, "no ordered_cache_behavior block in cloudfront.tf"
+
+    assert '"/api/*"' in body, "the ordered behaviour this test checks must be the API one"
+    assert "caching_disabled" in body, (
+        "/api/* must name the CachingDisabled policy; caching session-bearing responses leaks them"
+    )
+    assert "caching_optimized" not in body, (
+        "/api/* must not name CachingOptimized -- that switches caching ON for the API"
+    )
+    assert "all_viewer_except_host" in body, (
+        "/api/* needs the cookie, query string and Origin forwarded, with Host left as the ALB's"
+    )
+
+
+def test_the_static_behaviour_is_the_one_that_caches() -> None:
+    """The mirror image: the export is public, immutable and should be cached at the edge."""
+    text = edge_file("cloudfront.tf")
+    body = block_body(text, r"default_cache_behavior")
+    assert body is not None, "no default_cache_behavior block in cloudfront.tf"
+
+    assert "caching_optimized" in body, "the static site should be cached"
+    assert "caching_disabled" not in body, (
+        "caching disabled on the static site would pay origin fetches for every request"
+    )
