@@ -56,9 +56,8 @@ resource "aws_ecs_cluster" "main" {
 locals {
   container_image = "${aws_ecr_repository.backend.repository_url}:${var.image_tag}"
 
-  # The origin the browser will see. Until CloudFront exists there is no HTTPS name, so the load
-  # balancer's own name stands in; P7e sets this variable to the CloudFront URL.
-  public_base_url = var.public_base_url != "" ? var.public_base_url : "http://${aws_lb.main.dns_name}"
+  # local.public_base_url is defined in edge.tf: it is the URL infra/edge published, not anything
+  # this root can work out for itself.
 }
 
 # --- the API task ------------------------------------------------------------------------------------

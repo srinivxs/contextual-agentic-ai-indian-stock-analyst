@@ -11,10 +11,12 @@
 #   terraform test
 #
 # WHAT THE IMPLEMENTATION MUST CALL THINGS (the contract, written before the implementation)
-#   variables   desired_count, public_base_url, google_client_id, google_client_secret,
+#   variables   desired_count, google_client_id, google_client_secret,
 #               log_retention_days, image_tag
 #   ephemeral   random_password.session_secret
-#   resources   random_password.origin_verify          (a value, not an AWS object)
+#   data        aws_ssm_parameter.origin_verify        published by infra/edge
+#               aws_ssm_parameter.public_base_url      published by infra/edge
+#   resources   (random_password.origin_verify MOVED to infra/edge in P7e2)
 #               aws_cloudwatch_log_group.api / .migrate
 #               aws_ssm_parameter.session_secret / .google_client_secret
 #               aws_lb.main
@@ -43,6 +45,12 @@
 #   healthy by the load balancer. Absence is checked in infra/tests/test_infra_hygiene.py.
 
 mock_provider "aws" {
+  mock_data "aws_ssm_parameter" {
+    defaults = {
+      value = "https://mock-distribution.cloudfront.net"
+    }
+  }
+
   mock_data "aws_availability_zones" {
     defaults = {
       names = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]
@@ -232,10 +240,10 @@ run "only_a_request_carrying_the_shared_secret_is_forwarded" {
       for c in aws_lb_listener_rule.origin_verify.condition :
       anytrue([
         for h in c.http_header :
-        contains(tolist(h.values), random_password.origin_verify.result)
+        contains(tolist(h.values), data.aws_ssm_parameter.origin_verify.value)
       ])
     ])
-    error_message = "The rule must match the generated secret, not a hard-coded string."
+    error_message = "The rule must match the secret the edge published, not one of its own."
   }
 
   assert {
@@ -582,18 +590,42 @@ run "more_than_one_task_is_rejected" {
   expect_failures = [var.desired_count]
 }
 
-# ADDED DURING IMPLEMENTATION, not before it, and flagged in the report rather than slipped in.
-# The backend refuses to start with APP_ENV=production unless the base URL is https, because that
-# mode uses the __Host- cookie prefix. Without a precondition that mistake appears as a container
-# that starts and immediately exits, several minutes into an apply. This proves it is caught at
-# plan time instead.
-run "production_without_an_https_base_url_is_refused_before_anything_is_built" {
-  command = plan
+# --- P7e2: the seam with the persistent edge ------------------------------------------------------
 
-  variables {
-    app_env         = "production"
-    public_base_url = "http://not-https.example.com"
+run "the_application_calls_itself_by_the_name_the_edge_published" {
+  # Before P7e2 this was the load balancer's own http name, so the cookie could never carry the
+  # __Host- prefix. It now comes from the parameter infra/edge writes, so the container and
+  # CloudFront cannot disagree about what the site is called.
+  assert {
+    condition = anytrue([
+      for env in jsondecode(aws_ecs_task_definition.api.container_definitions)[0].environment :
+      env.name == "PUBLIC_BASE_URL" && env.value == data.aws_ssm_parameter.public_base_url.value
+    ])
+    error_message = "PUBLIC_BASE_URL must be the value infra/edge published, not the load balancer's name."
   }
 
-  expect_failures = [aws_ecs_task_definition.api]
+  assert {
+    condition = anytrue([
+      for env in jsondecode(aws_ecs_task_definition.api.container_definitions)[0].environment :
+      env.name == "PUBLIC_BASE_URL" && startswith(env.value, "https://")
+    ])
+    error_message = "The browser-facing origin must be https, or the __Host- cookie is rejected."
+  }
+}
+
+run "the_application_runs_in_production_mode_by_default" {
+  # The whole point of P7e: production switches the session cookie to the __Host- prefix, which
+  # browsers accept only over HTTPS. Until CloudFront existed this had to default to "test".
+  assert {
+    condition     = var.app_env == "production"
+    error_message = "app_env must now default to production; CloudFront exists."
+  }
+
+  assert {
+    condition = anytrue([
+      for env in jsondecode(aws_ecs_task_definition.api.container_definitions)[0].environment :
+      env.name == "APP_ENV" && env.value == "production"
+    ])
+    error_message = "The container must actually be told production."
+  }
 }

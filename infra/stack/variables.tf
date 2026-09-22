@@ -64,20 +64,15 @@ variable "image_tag" {
 variable "app_env" {
   type        = string
   description = "APP_ENV for the container. production requires an https base URL."
-  default     = "test"
 
-  # The backend accepts exactly these three. "production" also switches the session cookie to the
-  # __Host- prefix, which browsers only accept over HTTPS, so it waits until CloudFront exists.
+  # CloudFront exists now (P7e1), so the browser-facing origin is https and this can finally be
+  # production -- which is what switches the session cookie to the __Host- prefix. "test" and
+  # "local" remain accepted for a deliberate downgrade while debugging.
+  default = "production"
   validation {
     condition     = contains(["local", "test", "production"], var.app_env)
     error_message = "app_env must be local, test or production."
   }
-}
-
-variable "public_base_url" {
-  type        = string
-  description = "Origin the browser sees. Empty means use the load balancer's own name."
-  default     = ""
 }
 
 variable "google_client_id" {

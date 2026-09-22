@@ -43,10 +43,12 @@ EXPECTED_FILES = {
         "identity.tf",
         "loadbalancer.tf",
         "compute.tf",
+        "edge.tf",
         "outputs.tf",
         "tests/network.tftest.hcl",
         "tests/data_and_identity.tftest.hcl",
         "tests/compute.tftest.hcl",
+        "tests/app_env.tftest.hcl",
     ],
     # The persistent half (ADR 015): applied once, never destroyed with the application.
     "edge": [
@@ -687,3 +689,77 @@ def test_the_static_behaviour_is_the_one_that_caches() -> None:
     assert "caching_disabled" not in body, (
         "caching disabled on the static site would pay origin fetches for every request"
     )
+
+
+# --- the seam between the two roots (P7e2) -----------------------------------------------------
+#
+# The same mock-provider limit as the cache policies: under mocks every aws_ssm_parameter data
+# source resolves to one generated value, so a Terraform assertion cannot tell the origin secret
+# from the public URL. These read the configuration as text instead.
+
+
+def test_the_stack_no_longer_mints_its_own_origin_secret() -> None:
+    """It moved to infra/edge, which survives the nightly destroy.
+
+    If the stack generated its own again, CloudFront and the load balancer would disagree after
+    every rebuild and every API request would get a 403 from the listener's default action.
+    """
+    text = stack_file("loadbalancer.tf")
+    assert 'resource "random_password" "origin_verify"' not in text, (
+        "the origin secret belongs to infra/edge now; the stack must read it, not mint it"
+    )
+    assert "data.aws_ssm_parameter.origin_verify.value" in text, (
+        "the listener rule must match the secret the edge published"
+    )
+
+
+def test_the_application_is_told_the_name_the_edge_published() -> None:
+    """PUBLIC_BASE_URL must be the CloudFront URL, not the load balancer's own http name.
+
+    The seam lives in edge.tf, so the chain is checked across both files: edge.tf reads the
+    parameter, compute.tf passes the resulting local to the container, and neither reaches for the
+    load balancer's own name -- which is http and changes on every rebuild.
+    """
+    seam = stack_file("edge.tf")
+    assert "data.aws_ssm_parameter.public_base_url.value" in seam, (
+        "edge.tf must read the parameter infra/edge writes"
+    )
+    assert "public_base_url = nonsensitive(" in seam, (
+        "a public URL is not a secret; unwrapping it keeps the api task definition readable"
+    )
+
+    compute = stack_file("compute.tf")
+    assert "local.public_base_url" in compute, (
+        "the container must be given the URL the seam resolved"
+    )
+    assert "aws_lb.main.dns_name" not in compute, (
+        "the load balancer's own name is http and changes every rebuild; it cannot be the origin"
+    )
+
+
+def test_production_is_the_default_now_that_cloudfront_exists() -> None:
+    """production switches the cookie to __Host-, which needs HTTPS. P7e is what enables it."""
+    text = stack_file("variables.tf")
+    body = block_body(text, r'variable\s+"app_env"')
+    assert body is not None, 'no variable "app_env" in variables.tf'
+    assert re.search(r'^\s*default\s*=\s*"production"\s*$', body, re.MULTILINE), (
+        "app_env must default to production"
+    )
+
+
+def test_each_edge_parameter_is_read_from_its_own_name() -> None:
+    """Swapping the two would be silent and awful.
+
+    The public URL would travel in the X-Origin-Verify header, so the listener rule would reject
+    every API request with its default 403, and the shared secret would become the origin the
+    browser is told to call. Under mock providers both data sources resolve to one value, so
+    Terraform cannot see the difference -- hence this reads the configuration as text.
+    """
+    text = stack_file("edge.tf")
+
+    for parameter in ("origin_verify", "public_base_url"):
+        body = block_body(text, rf'data\s+"aws_ssm_parameter"\s+"{parameter}"')
+        assert body is not None, f'no data "aws_ssm_parameter" "{parameter}" in edge.tf'
+        assert f"local.{parameter}_parameter_name" in body, (
+            f"the {parameter} data source must read the {parameter} parameter, not the other one"
+        )

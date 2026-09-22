@@ -13,18 +13,6 @@
 # Layer 1 alone is not enough, because anybody can create a CloudFront distribution and point it at
 # this load balancer; their traffic would arrive from the very same prefix list.
 
-# The shared secret between CloudFront and this load balancer.
-#
-# Unlike the database passwords, this one CANNOT be write-only: a listener rule condition is
-# ordinary configuration that Terraform has to compare on every plan, so the value lives in the
-# state file. That is acceptable here because the state is encrypted in S3 and access-controlled,
-# and because this header is defence in depth behind the prefix list rather than a primary
-# credential. It is a regular resource, not ephemeral, so it stays the same across applies.
-resource "random_password" "origin_verify" {
-  length  = 40
-  special = false
-}
-
 resource "aws_lb" "main" {
   name               = "${local.name_prefix}-alb"
   load_balancer_type = "application"
@@ -102,6 +90,12 @@ resource "aws_lb_listener" "http" {
 }
 
 # The one way in. CloudFront adds this header to every request it forwards; nobody else knows it.
+#
+# The secret itself is minted and held by infra/edge (see edge.tf), not here, because this root is
+# destroyed every night and the two ends must still agree in the morning. The value reaches the
+# state file either way -- a listener-rule condition is ordinary configuration Terraform compares
+# on every plan -- which is acceptable because the state is encrypted and this header is defence
+# in depth behind the CloudFront prefix list, not a primary credential.
 resource "aws_lb_listener_rule" "origin_verify" {
   listener_arn = aws_lb_listener.http.arn
   priority     = 100
@@ -114,7 +108,7 @@ resource "aws_lb_listener_rule" "origin_verify" {
   condition {
     http_header {
       http_header_name = "X-Origin-Verify"
-      values           = [random_password.origin_verify.result]
+      values           = [data.aws_ssm_parameter.origin_verify.value]
     }
   }
 }

@@ -52,6 +52,12 @@
 #   the drill. Absence of resources is checked by infra/tests/test_infra_hygiene.py, not here.
 
 mock_provider "aws" {
+  mock_data "aws_ssm_parameter" {
+    defaults = {
+      value = "https://mock-distribution.cloudfront.net"
+    }
+  }
+
   mock_data "aws_availability_zones" {
     defaults = {
       names = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]

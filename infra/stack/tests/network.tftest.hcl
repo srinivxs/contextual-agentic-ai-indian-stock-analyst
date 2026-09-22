@@ -47,6 +47,12 @@
 #   exists"), so infra/tests/test_infra_hygiene.py carries those checks instead.
 
 mock_provider "aws" {
+  mock_data "aws_ssm_parameter" {
+    defaults = {
+      value = "https://mock-distribution.cloudfront.net"
+    }
+  }
+
   mock_data "aws_availability_zones" {
     defaults = {
       names = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]
