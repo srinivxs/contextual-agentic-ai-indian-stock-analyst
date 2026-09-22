@@ -70,10 +70,16 @@ resource "aws_iam_role_policy" "api_execution_secrets" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "ReadRuntimeDatabaseUrl"
-        Effect   = "Allow"
-        Action   = ["ssm:GetParameter", "ssm:GetParameters"]
-        Resource = [local.runtime_parameter_arn]
+        # The runtime database URL and the two application secrets: everything the API container
+        # needs to start, and nothing else. The admin URL is deliberately absent.
+        Sid    = "ReadRuntimeSecrets"
+        Effect = "Allow"
+        Action = ["ssm:GetParameter", "ssm:GetParameters"]
+        Resource = [
+          local.runtime_parameter_arn,
+          local.session_secret_arn,
+          local.google_client_secret_arn,
+        ]
       },
       {
         # A SecureString cannot be read without also decrypting it.

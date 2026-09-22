@@ -33,18 +33,33 @@ ephemeral "random_password" "db_runtime" {
   special = false
 }
 
+# Signs the session cookie. The backend requires at least 32 characters and refuses to start
+# without it. Generated the same way, so it is never written down either; rotating it by raising
+# db_password_version simply logs everyone out.
+ephemeral "random_password" "session_secret" {
+  length  = 48
+  special = false
+}
+
 locals {
   # Fixed names. The IAM policies in identity.tf name these parameters exactly, so that the api role
   # can be granted one and refused the other.
   runtime_parameter_name   = "/stock-analyst/demo/database_url"
   migration_parameter_name = "/stock-analyst/demo/migration_database_url"
 
+  # The two application secrets the backend refuses to start without. The Google client ID is not
+  # here: it is not secret, so it travels as an ordinary environment variable.
+  session_secret_name       = "/stock-analyst/demo/session_secret"
+  google_client_secret_name = "/stock-analyst/demo/google_client_secret"
+
   # Built from the region and account rather than read back from the parameters' own arn attribute.
   # That keeps identity.tf independent of resource creation order, and it means the IAM tests
   # compare against real strings instead of values a mock invented.
-  parameter_arn_prefix    = "arn:aws:ssm:${var.region}:${var.allowed_account_id}:parameter"
-  runtime_parameter_arn   = "${local.parameter_arn_prefix}${local.runtime_parameter_name}"
-  migration_parameter_arn = "${local.parameter_arn_prefix}${local.migration_parameter_name}"
+  parameter_arn_prefix     = "arn:aws:ssm:${var.region}:${var.allowed_account_id}:parameter"
+  runtime_parameter_arn    = "${local.parameter_arn_prefix}${local.runtime_parameter_name}"
+  migration_parameter_arn  = "${local.parameter_arn_prefix}${local.migration_parameter_name}"
+  session_secret_arn       = "${local.parameter_arn_prefix}${local.session_secret_name}"
+  google_client_secret_arn = "${local.parameter_arn_prefix}${local.google_client_secret_name}"
 
   # ?ssl=require is not decoration: the parameter group sets rds.force_ssl = 1, so PostgreSQL will
   # refuse a connection that does not use TLS. Carrying it in the URL means the application needs no
@@ -90,5 +105,39 @@ resource "aws_ssm_parameter" "migration_database_url" {
 
   tags = {
     Name = "${local.name_prefix}-migration-database-url"
+  }
+}
+
+# --- the two application secrets (P7d) ---------------------------------------------------------------
+#
+# Both are injected into the API container by ECS at start, using the api execution role. The
+# application never reads SSM itself.
+
+resource "aws_ssm_parameter" "session_secret" {
+  name        = local.session_secret_name
+  description = "Signs the session cookie"
+  type        = "SecureString"
+
+  value_wo         = ephemeral.random_password.session_secret.result
+  value_wo_version = var.db_password_version
+
+  tags = {
+    Name = "${local.name_prefix}-session-secret"
+  }
+}
+
+# The one secret this project cannot generate: it comes from the Google console. Supplied as
+# TF_VAR_google_client_secret so it is never written in a file, and stored write-only so it does
+# not land in the state file either.
+resource "aws_ssm_parameter" "google_client_secret" {
+  name        = local.google_client_secret_name
+  description = "Google OAuth client secret"
+  type        = "SecureString"
+
+  value_wo         = var.google_client_secret
+  value_wo_version = var.db_password_version
+
+  tags = {
+    Name = "${local.name_prefix}-google-client-secret"
   }
 }

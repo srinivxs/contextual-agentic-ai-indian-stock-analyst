@@ -58,10 +58,47 @@ mock_provider "aws" {
       id = "pl-0mockcloudfront"
     }
   }
+
+  # P7d added resources whose ARNs the provider validates as arguments elsewhere, so a plan fails
+  # on the random strings a mock would otherwise invent. This file asserts nothing about them and
+  # only needs the plan to complete; compute.tftest.hcl uses override_resource for the same
+  # resources, because its assertions have to tell them apart.
+  mock_resource "aws_iam_role" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:role/mock-role"
+    }
+  }
+
+  mock_resource "aws_lb" {
+    defaults = {
+      arn      = "arn:aws:elasticloadbalancing:ap-south-1:123456789012:loadbalancer/app/mock-alb/0123456789abcdef"
+      dns_name = "mock-alb-1234567890.ap-south-1.elb.amazonaws.com"
+    }
+  }
+
+  mock_resource "aws_lb_target_group" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:ap-south-1:123456789012:targetgroup/mock-api/0123456789abcdef"
+    }
+  }
+
+  mock_resource "aws_lb_listener" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:ap-south-1:123456789012:listener/app/mock-alb/0123456789abcdef/0123456789abcdef"
+    }
+  }
+
+  mock_resource "aws_ecs_cluster" {
+    defaults = {
+      arn = "arn:aws:ecs:ap-south-1:123456789012:cluster/stock-analyst-demo"
+    }
+  }
 }
 
 variables {
-  allowed_account_id = "123456789012"
+  allowed_account_id   = "123456789012"
+  google_client_id     = "mock-client-id.apps.googleusercontent.com"
+  google_client_secret = "mock-google-client-secret"
 }
 
 # --- the VPC itself ------------------------------------------------------------------------------

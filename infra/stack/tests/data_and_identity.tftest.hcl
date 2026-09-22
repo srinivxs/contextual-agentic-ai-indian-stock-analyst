@@ -76,10 +76,46 @@ mock_provider "aws" {
       endpoint = "mock-db.ap-south-1.rds.amazonaws.com:5432"
     }
   }
+
+  # P7d resources, mocked only so the plan completes. Note `id` is deliberately NOT set on
+  # aws_iam_role: the run blocks below compare policy attachments by role id, and a shared id would
+  # make those comparisons pass no matter which role the policy was attached to.
+  mock_resource "aws_iam_role" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:role/mock-role"
+    }
+  }
+
+  mock_resource "aws_lb" {
+    defaults = {
+      arn      = "arn:aws:elasticloadbalancing:ap-south-1:123456789012:loadbalancer/app/mock-alb/0123456789abcdef"
+      dns_name = "mock-alb-1234567890.ap-south-1.elb.amazonaws.com"
+    }
+  }
+
+  mock_resource "aws_lb_target_group" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:ap-south-1:123456789012:targetgroup/mock-api/0123456789abcdef"
+    }
+  }
+
+  mock_resource "aws_lb_listener" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:ap-south-1:123456789012:listener/app/mock-alb/0123456789abcdef/0123456789abcdef"
+    }
+  }
+
+  mock_resource "aws_ecs_cluster" {
+    defaults = {
+      arn = "arn:aws:ecs:ap-south-1:123456789012:cluster/stock-analyst-demo"
+    }
+  }
 }
 
 variables {
-  allowed_account_id = "123456789012"
+  allowed_account_id   = "123456789012"
+  google_client_id     = "mock-client-id.apps.googleusercontent.com"
+  google_client_secret = "mock-google-client-secret"
 }
 
 # --- the database -----------------------------------------------------------------------------

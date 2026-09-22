@@ -83,3 +83,33 @@ output "task_role_arn" {
   description = "The identity the application code runs as. No permissions until P7d."
   value       = aws_iam_role.task.arn
 }
+
+# --- P7d: the compute tier ---------------------------------------------------------------------------
+#
+# The X-Origin-Verify secret is deliberately not published. CloudFront reads it directly from the
+# resource in P7e; an output would put it in plan output and in `terraform output`.
+
+output "alb_dns_name" {
+  description = "The load balancer's name. Reachable only from CloudFront, and only with the header."
+  value       = aws_lb.main.dns_name
+}
+
+output "ecs_cluster_name" {
+  description = "Cluster name, needed by run-task and by the CI deployment in P8."
+  value       = aws_ecs_cluster.main.name
+}
+
+output "api_task_definition_arn" {
+  description = "The API blueprint the service runs."
+  value       = aws_ecs_task_definition.api.arn
+}
+
+output "migrate_task_definition_arn" {
+  description = "The one-off migration blueprint, started with run-task."
+  value       = aws_ecs_task_definition.migrate.arn
+}
+
+output "ecs_service_name" {
+  description = "Service name. Scale it to 1 to switch the demo on."
+  value       = aws_ecs_service.api.name
+}

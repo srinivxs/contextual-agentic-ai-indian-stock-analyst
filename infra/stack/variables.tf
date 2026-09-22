@@ -41,6 +41,68 @@ variable "vpc_cidr" {
   }
 }
 
+variable "desired_count" {
+  type        = number
+  description = "How many copies of the API to run. 0 means the stack exists but no compute bills."
+  default     = 0
+
+  # The load balancer bills whether or not anything runs, but Fargate does not, so an apply must
+  # never start compute by itself. One is the maximum: the design is a single task (ADR 008), and a
+  # typo should not be able to start ten of them.
+  validation {
+    condition     = var.desired_count >= 0 && var.desired_count <= 1
+    error_message = "desired_count must be 0 or 1."
+  }
+}
+
+variable "image_tag" {
+  type        = string
+  description = "Tag of the backend image in ECR to run."
+  default     = "latest"
+}
+
+variable "app_env" {
+  type        = string
+  description = "APP_ENV for the container. production requires an https base URL."
+  default     = "test"
+
+  # The backend accepts exactly these three. "production" also switches the session cookie to the
+  # __Host- prefix, which browsers only accept over HTTPS, so it waits until CloudFront exists.
+  validation {
+    condition     = contains(["local", "test", "production"], var.app_env)
+    error_message = "app_env must be local, test or production."
+  }
+}
+
+variable "public_base_url" {
+  type        = string
+  description = "Origin the browser sees. Empty means use the load balancer's own name."
+  default     = ""
+}
+
+variable "google_client_id" {
+  type        = string
+  description = "Google OAuth client ID. Not a secret: it travels in the browser's address bar."
+}
+
+variable "google_client_secret" {
+  type        = string
+  description = "Google OAuth client secret, supplied as TF_VAR_google_client_secret."
+  sensitive   = true
+}
+
+variable "log_retention_days" {
+  type        = number
+  description = "How long container logs are kept before CloudWatch deletes them."
+  default     = 7
+
+  # CloudWatch accepts only this set of values, and rejects anything else at apply time.
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90], var.log_retention_days)
+    error_message = "log_retention_days must be one of 1, 3, 5, 7, 14, 30, 60 or 90."
+  }
+}
+
 variable "db_password_version" {
   type        = number
   description = "Bump this to rotate the database passwords."

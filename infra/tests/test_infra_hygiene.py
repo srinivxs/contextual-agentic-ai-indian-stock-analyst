@@ -41,9 +41,12 @@ EXPECTED_FILES = {
         "secrets.tf",
         "registry.tf",
         "identity.tf",
+        "loadbalancer.tf",
+        "compute.tf",
         "outputs.tf",
         "tests/network.tftest.hcl",
         "tests/data_and_identity.tftest.hcl",
+        "tests/compute.tftest.hcl",
     ],
 }
 
@@ -496,3 +499,39 @@ def test_no_output_can_carry_a_secret() -> None:
         token for token in ("ephemeral.", "random_password", "password", ".value") if token in text
     ]
     assert not leaks, f"outputs.tf refers to something secret: {leaks}"
+
+
+# --- the compute tier (P7d): the boundary again, and the switch that starts billing ---------------
+
+
+def test_the_api_task_definition_never_names_the_admin_parameter() -> None:
+    """The IAM boundary would still hold if this were wrong, but the task would fail to start and
+    the intent would be wrong. Asking for the admin URL must not even be expressible here."""
+    text = stack_file("compute.tf")
+    body = block_body(text, r'resource\s+"aws_ecs_task_definition"\s+"api"')
+    assert body is not None, 'no resource "aws_ecs_task_definition" "api" in compute.tf'
+    assert "migration_parameter" not in body, (
+        "the API task definition must never reference the admin database parameter"
+    )
+    migrate = block_body(text, r'resource\s+"aws_ecs_task_definition"\s+"migrate"')
+    assert migrate is not None, "the migration task definition is missing"
+    assert "migration_parameter" in migrate, (
+        "the migration task definition must reference the admin parameter"
+    )
+
+
+def test_the_tasks_are_built_for_the_architecture_of_the_image() -> None:
+    """The image is linux/amd64. An ARM task fails at start with a message about the platform."""
+    text = stack_file("compute.tf")
+    assert text.count("X86_64") >= 2, "both task definitions must declare X86_64"
+    assert "ARM64" not in text, "ARM64 would not match the image that is actually built"
+
+
+def test_the_service_never_defaults_to_running_tasks() -> None:
+    """The load balancer bills regardless, but Fargate should not start without being asked."""
+    text = stack_file("variables.tf")
+    body = block_body(text, r'variable\s+"desired_count"')
+    assert body is not None, 'no variable "desired_count" in variables.tf'
+    assert re.search(r"^\s*default\s*=\s*0\s*$", body, re.MULTILINE), (
+        "desired_count must default to 0, so applying the stack starts no compute"
+    )
