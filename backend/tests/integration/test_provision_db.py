@@ -233,3 +233,22 @@ async def test_a_rotated_password_replaces_the_old_one(probe: None, db_config: D
                 await connection.execute(text("SELECT 1"))
     finally:
         await old.dispose()
+
+
+async def test_a_role_that_has_been_widened_is_reported_rather_than_ignored(
+    probe: None, db_config: DbConfig, admin_engine: AsyncEngine
+) -> None:
+    """The real drill found that on RDS we cannot always take an attribute back.
+
+    The migration role there is `rds_superuser`, not a superuser, so `ALTER ROLE ... NOSUPERUSER`
+    is refused outright. Rather than quietly leaving a widened role in place, the task fails and
+    says what is wrong.
+    """
+    admin = _admin_url(db_config)
+    await provision(migration_url=admin, runtime_url=_probe_url(db_config, FIRST_CREDENTIAL))
+
+    async with admin_engine.begin() as connection:
+        await connection.execute(text("ALTER ROLE p7_provision_probe WITH CREATEDB"))
+
+    with pytest.raises(RuntimeError, match="create databases"):
+        await provision(migration_url=admin, runtime_url=_probe_url(db_config, FIRST_CREDENTIAL))

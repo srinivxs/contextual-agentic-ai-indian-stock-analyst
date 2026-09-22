@@ -118,14 +118,24 @@ def plan(*, migration_url: str, runtime_url: str, role_exists: bool) -> tuple[st
             "Grants are per database, so this would appear to succeed and change nothing."
         )
 
-    # ALTER, not CREATE, when it is already there: the password may have been rotated, and the
-    # flags are re-stated so the role cannot have been widened by hand in between.
-    verb = "ALTER" if role_exists else "CREATE"
-    keyword = "WITH " if role_exists else ""
+    # ALTER, not CREATE, when it is already there, so a rotated password takes effect.
+    #
+    # The ALTER path sets ONLY the password, and that is not an oversight. On RDS the migration
+    # role is `rds_superuser`, which is not a superuser, and PostgreSQL refuses
+    # `ALTER ROLE ... NOSUPERUSER` from anyone who is not one ("Only roles with the SUPERUSER
+    # attribute may change the SUPERUSER attribute"); NOREPLICATION is restricted the same way.
+    # CREATE may state them, because creating a role without an attribute is not *changing* that
+    # attribute. Restating them on ALTER made the second run fail on real RDS while passing
+    # locally, where the Compose admin user really is a superuser.
+    #
+    # What we cannot always set, we check instead: see privilege_problems below.
     role_statement = (
-        f'{verb} ROLE "{role.name}" {keyword}'
-        f"LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION "
-        f"PASSWORD '{role.password}'"
+        f"ALTER ROLE \"{role.name}\" WITH LOGIN PASSWORD '{role.password}'"
+        if role_exists
+        else (
+            f'CREATE ROLE "{role.name}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION '
+            f"PASSWORD '{role.password}'"
+        )
     )
 
     return (
@@ -144,6 +154,51 @@ def plan(*, migration_url: str, runtime_url: str, role_exists: bool) -> tuple[st
         f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "{role.name}"',
         f'ALTER DEFAULT PRIVILEGES FOR ROLE "{admin_role}" IN SCHEMA public '
         f'GRANT USAGE, SELECT ON SEQUENCES TO "{role.name}"',
+    )
+
+
+ROLE_ATTRIBUTES = (
+    "SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolcanlogin "
+    "FROM pg_roles WHERE rolname = :name"
+)
+
+
+def privilege_problems(
+    *,
+    rolsuper: bool,
+    rolcreatedb: bool,
+    rolcreaterole: bool,
+    rolreplication: bool,
+    rolcanlogin: bool,
+) -> tuple[str, ...]:
+    """What is wrong with the runtime role's attributes, in plain words.
+
+    The statements above cannot guarantee all of these on every database -- see the note on the
+    ALTER path -- so they are read back and reported. A boundary we cannot enforce is one we must
+    at least refuse to claim.
+    """
+    problems = []
+    if rolsuper:
+        problems.append("it is a superuser")
+    if rolcreatedb:
+        problems.append("it can create databases")
+    if rolcreaterole:
+        problems.append("it can create roles")
+    if rolreplication:
+        problems.append("it can replicate")
+    if not rolcanlogin:
+        problems.append("it cannot log in, so the application could not use it")
+    return tuple(problems)
+
+
+def raise_if_widened(role_name: str, problems: tuple[str, ...]) -> None:
+    """Refuse a role we cannot vouch for, naming everything that is wrong with it."""
+    if not problems:
+        return
+    raise RuntimeError(
+        f"The runtime role {role_name!r} is not what it must be: {'; '.join(problems)}. "
+        "Some attributes cannot be taken away by a role that is not a real superuser (on RDS "
+        "the master user is rds_superuser), so this has to be put right by hand."
     )
 
 
@@ -167,6 +222,20 @@ async def provision(*, migration_url: str, runtime_url: str) -> None:
             )
             for statement in statements:
                 await connection.execute(text(statement))
+
+            attributes = (
+                await connection.execute(text(ROLE_ATTRIBUTES), {"name": role.name})
+            ).one()
+            problems = privilege_problems(
+                rolsuper=attributes.rolsuper,
+                rolcreatedb=attributes.rolcreatedb,
+                rolcreaterole=attributes.rolcreaterole,
+                rolreplication=attributes.rolreplication,
+                rolcanlogin=attributes.rolcanlogin,
+            )
+            # Inside the transaction, so the password change rolls back with it: a role we
+            # cannot vouch for does not quietly become the one the application uses.
+            raise_if_widened(role.name, problems)
     finally:
         await engine.dispose()
 

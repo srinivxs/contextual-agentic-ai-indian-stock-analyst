@@ -21,7 +21,14 @@ WHY BOTH ``ON ALL TABLES`` AND ``ALTER DEFAULT PRIVILEGES``
 
 import pytest
 
-from app.db.provision import RuntimeRole, main, plan, runtime_role_from_url
+from app.db.provision import (
+    RuntimeRole,
+    main,
+    plan,
+    privilege_problems,
+    raise_if_widened,
+    runtime_role_from_url,
+)
 
 # 32 alphanumerics, the shape `random_password` with `special = false` produces.
 CREDENTIAL = "K7mQx2vB9nR4tL6wZ1cY8jH3sD5fG0pA"
@@ -106,10 +113,80 @@ def test_an_existing_role_is_altered_instead_so_a_rotated_password_takes_effect(
     """Raising db_password_version writes a new password into SSM. Re-running must apply it."""
     statements = plan(migration_url=MIGRATION_URL, runtime_url=RUNTIME_URL, role_exists=True)
 
-    assert statements[0] == (
-        'ALTER ROLE "stock_app" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION '
-        f"PASSWORD '{CREDENTIAL}'"
+    assert statements[0] == f"ALTER ROLE \"stock_app\" WITH LOGIN PASSWORD '{CREDENTIAL}'"
+
+
+def test_the_alter_path_never_restates_an_attribute_rds_will_not_let_us_change() -> None:
+    """Found by the first real drill, not by any local test.
+
+    On RDS the migration role is `rds_superuser`, which is NOT a superuser, and PostgreSQL refuses
+    `ALTER ROLE ... NOSUPERUSER` from anyone who is not one: "Only roles with the SUPERUSER
+    attribute may change the SUPERUSER attribute". NOREPLICATION is restricted the same way. The
+    CREATE path may state them, because creating a role without an attribute is not *changing* that
+    attribute -- which is why the first run succeeded and the second failed.
+
+    So the ALTER path sets only what it is actually there to set: the password. The attributes are
+    verified afterwards instead (see privilege_problems).
+    """
+    statements = plan(migration_url=MIGRATION_URL, runtime_url=RUNTIME_URL, role_exists=True)
+
+    for attribute in ("SUPERUSER", "REPLICATION", "CREATEDB", "CREATEROLE"):
+        assert attribute not in statements[0], statements[0]
+
+
+# --- checking the attributes we cannot always set -------------------------------------------------
+
+
+def test_a_correct_role_has_no_problems() -> None:
+    assert (
+        privilege_problems(
+            rolsuper=False,
+            rolcreatedb=False,
+            rolcreaterole=False,
+            rolreplication=False,
+            rolcanlogin=True,
+        )
+        == ()
     )
+
+
+@pytest.mark.parametrize(
+    ("attribute", "phrase"),
+    [
+        ("rolsuper", "superuser"),
+        ("rolcreatedb", "create databases"),
+        ("rolcreaterole", "create roles"),
+        ("rolreplication", "replicate"),
+    ],
+)
+def test_every_widened_attribute_is_reported(attribute: str, phrase: str) -> None:
+    """We cannot always take these away, but we can refuse to pretend the boundary exists."""
+    flags = {
+        "rolsuper": False,
+        "rolcreatedb": False,
+        "rolcreaterole": False,
+        "rolreplication": False,
+        "rolcanlogin": True,
+    }
+    flags[attribute] = True
+
+    problems = privilege_problems(**flags)
+
+    assert len(problems) == 1
+    assert phrase in problems[0]
+
+
+def test_a_role_that_cannot_log_in_is_reported() -> None:
+    problems = privilege_problems(
+        rolsuper=False,
+        rolcreatedb=False,
+        rolcreaterole=False,
+        rolreplication=False,
+        rolcanlogin=False,
+    )
+
+    assert len(problems) == 1
+    assert "log in" in problems[0]
 
 
 def test_the_password_appears_in_no_other_statement() -> None:
@@ -214,3 +291,19 @@ def test_main_hands_both_urls_to_provision(monkeypatch: pytest.MonkeyPatch) -> N
     main()
 
     assert seen == {"migration": MIGRATION_URL, "runtime": RUNTIME_URL}
+
+
+def test_a_role_with_no_problems_is_accepted_silently() -> None:
+    raise_if_widened("stock_app", ())  # must not raise
+
+
+def test_a_widened_role_is_refused_with_every_problem_named() -> None:
+    """It names all of them, because a hand fix should only have to be made once."""
+    with pytest.raises(RuntimeError) as caught:
+        raise_if_widened("stock_app", ("it is a superuser", "it can create roles"))
+
+    message = str(caught.value)
+    assert "stock_app" in message
+    assert "it is a superuser" in message
+    assert "it can create roles" in message
+    assert "rds_superuser" in message, "the message should say why we could not fix it ourselves"
