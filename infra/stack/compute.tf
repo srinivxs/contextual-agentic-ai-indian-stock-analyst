@@ -158,8 +158,11 @@ resource "aws_ecs_task_definition" "migrate" {
       image     = local.container_image
       essential = true
 
-      # The command the backend image already understands (ADR 014): alembic upgrade head.
-      command = ["migrate"]
+      # The image has no ENTRYPOINT on purpose (backend/Dockerfile), so `command` replaces the
+      # default uvicorn invocation outright. It must therefore be the real argv, not a shorthand:
+      # ADR 014's "migrate" names the Compose SERVICE, and that service runs exactly this
+      # (docker-compose.yml). alembic and alembic.ini are both in the image at /app.
+      command = ["alembic", "upgrade", "head"]
 
       secrets = [
         { name = "MIGRATION_DATABASE_URL", valueFrom = local.migration_parameter_arn },

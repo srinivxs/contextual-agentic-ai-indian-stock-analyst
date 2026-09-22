@@ -363,10 +363,16 @@ run "the_migration_task_is_a_one_off_that_uses_the_admin_url" {
     error_message = "The migration container needs the admin URL, which is the whole point of it."
   }
 
-  # `migrate` is the entrypoint command the backend image already understands (ADR 014).
+  # The backend image has NO ENTRYPOINT (backend/Dockerfile) — that is deliberate, so `command:`
+  # can run a different program from the same image. There is therefore no `migrate` executable in
+  # it: ADR 014's "migrate" is the name of the Compose SERVICE, and that service runs
+  # `alembic upgrade head` (docker-compose.yml). Asserting the exact argv, not just that some word
+  # appears in it, because an unrecognised command fails only at task start, minutes into an apply.
   assert {
-    condition     = contains(jsondecode(aws_ecs_task_definition.migrate.container_definitions)[0].command, "migrate")
-    error_message = "The migration container runs the image's migrate command."
+    condition = jsondecode(aws_ecs_task_definition.migrate.container_definitions)[0].command == [
+      "alembic", "upgrade", "head",
+    ]
+    error_message = "The migration container must run alembic upgrade head, the same argv Compose uses."
   }
 
   assert {
