@@ -54,7 +54,7 @@ resource "aws_ecs_cluster" "main" {
 }
 
 locals {
-  container_image = "${aws_ecr_repository.backend.repository_url}:${var.image_tag}"
+  container_image = "${local.ecr_repository_url}:${var.image_tag}"
 
   # local.public_base_url is defined in edge.tf: it is the URL infra/edge published, not anything
   # this root can work out for itself.

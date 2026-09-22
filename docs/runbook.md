@@ -1,12 +1,14 @@
 # Runbook — switching the demo on and off
 
-The AWS deployment is split by lifetime ([ADR 015](decisions/015-persistent-edge.md)):
+The AWS deployment is split by lifetime ([ADR 015](decisions/015-persistent-edge.md),
+[ADR 016](decisions/016-cicd-registry-and-github-identity.md)):
 
 | | Lifetime | Cost |
 |---|---|---|
 | `infra/bootstrap` — Terraform state bucket | forever | under a cent a month |
 | `infra/edge` — CloudFront, the static site, the origin secret | **forever** | **nothing per hour** |
-| `infra/stack` — VPC, ALB, ECS, RDS, ECR, IAM | **destroyed after every session** | **$1.41/day idle, $1.84/day running** |
+| `infra/cicd` — the image registry (ECR), GitHub's OIDC identity | forever | a few cents a month |
+| `infra/stack` — VPC, ALB, ECS, RDS, IAM | **destroyed after every session** | **$1.41/day idle, $1.84/day running** |
 
 So "switching the demo on" means applying `infra/stack` and pointing the existing distribution at the
 new load balancer. **The public URL never changes**, and the Google OAuth client is configured once,
@@ -41,6 +43,41 @@ Get-Content "C:\Contextual Agentic AI Indian Stock Analyst\.env" | ForEach-Objec
 
 ---
 
+## Once: the build machinery (`infra/cicd`)
+
+Applied once, like the edge, and never destroyed. It must exist before `infra/stack` can be planned,
+because the stack reads the registry URL from the parameter it publishes.
+
+First check the account has no GitHub identity provider already. AWS allows one per issuer, and an
+existing one would have to be imported rather than created:
+
+```powershell
+aws iam list-open-id-connect-providers
+```
+
+If the list contains `token.actions.githubusercontent.com`, stop and import it before applying.
+Otherwise:
+
+```powershell
+cd "C:\Contextual Agentic AI Indian Stock Analyst\infraootstrap"
+terraform output -raw backend_config_hcl > ..\cicdackend.hcl
+```
+
+Edit `infra\cicdackend.hcl` so the `key` line reads `cicd/terraform.tfstate`. **Never share a key
+with another root.** Then:
+
+```powershell
+cd ..\cicd
+terraform init "-backend-config=backend.hcl"
+terraform plan "-out=tfplan"
+terraform apply tfplan
+```
+
+6 resources: the repository, its lifecycle policy, the SSM parameter, the OIDC provider, the CI role
+and its policy. Note `ci_role_arn`; the P8b workflow needs it.
+
+---
+
 ## Switching it on
 
 Measured timings are from the 2026-09-22 drill.
@@ -53,15 +90,18 @@ terraform plan "-out=tfplan"
 terraform apply tfplan
 ```
 
-51 resources. RDS takes about 6 minutes of it; the load balancer about 2, in parallel.
+49 resources (51 before P8a moved the registry to `infra/cicd`). RDS takes about 6 minutes of it; the load balancer about 2, in parallel.
 
 **Delete `tfplan` afterwards — a plan file contains the Google client secret in plaintext.**
 
 Note the `alb_dns_name` output. You need it in step 5.
 
-### 2. Push the backend image — about 1 minute
+### 2. Push the backend image — about 1 minute, only if it changed
 
-The ECR repository is recreated empty by every apply, so this is never optional.
+The repository lives in `infra/cicd` and survives teardown, so the last image pushed is still there.
+Push only after changing the backend (until P8b, when CI pushes on every commit to `main`). The
+registry address is `terraform output ecr_repository_url` in `infra/cicd`, without the repository
+name.
 
 ```powershell
 cd "C:\Contextual Agentic AI Indian Stock Analyst"
@@ -142,8 +182,8 @@ terraform destroy
 ```
 
 **Only in `infra\stack`.** Destroying `infra\edge` throws away the permanent domain and the Google
-registration with it. The plan should say **51 to destroy**; if it says 11, you are in the wrong
-directory — stop.
+registration with it. The plan should say **49 to destroy**; if it says 11 (the edge) or 6 (the build
+machinery), you are in the wrong directory — stop.
 
 About 5 minutes. Then confirm nothing expensive survived:
 
@@ -174,14 +214,15 @@ Tagging API, which lags. Trust the six commands above instead.
 | `/api/readyz` returns **503** | The `stock_app` role is missing. Run step 4. |
 | The api task keeps restarting | A setting the backend demands is missing. `aws logs get-log-events` on `/stock-analyst/demo/api` prints the Pydantic validation error naming it. |
 | Sign-in fails with `redirect_uri_mismatch` | Only possible if the distribution was recreated. Compare the Google client's URI with `terraform output public_base_url` in `infra/edge`. |
-| `terraform plan` in `infra/stack` fails on a data source | `infra/edge` has not been applied. It is the permanent half and must exist. |
+| `terraform plan` in `infra/stack` fails on a data source | `infra/edge` or `infra/cicd` has not been applied. Both are permanent and must exist. |
+| The api task fails with `CannotPullContainerError` | The registry is empty: push the image (step 2). |
 
 ## What it costs
 
 | State | Per day |
 |---|---|
-| Off — edge only | **~$0.00** |
+| Off — edge and registry only | **~$0.00** (a few cents a month for stored images) |
 | Stack applied, `desired_count = 0` | $1.41 |
 | Running | $1.84 |
 
-A typical drill of an hour or so is about **$0.10**. Nothing in the persistent tier has an hourly rate.
+A typical drill of an hour or so is about **$0.10**. Nothing in the persistent tiers has an hourly rate.

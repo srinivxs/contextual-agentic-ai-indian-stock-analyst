@@ -75,11 +75,14 @@ mock_provider "aws" {
       endpoint = "mock-db.ap-south-1.rds.amazonaws.com:5432"
     }
   }
+}
 
-  mock_resource "aws_ecr_repository" {
-    defaults = {
-      repository_url = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/stock-analyst-demo-backend"
-    }
+# The registry URL infra/cicd publishes. mock_data above gives EVERY ssm parameter the same value,
+# so this one is overridden by name, or the image would be built from the public URL.
+override_data {
+  target = data.aws_ssm_parameter.ecr_repository_url
+  values = {
+    value = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/stock-analyst-demo-backend"
   }
 }
 
@@ -364,7 +367,7 @@ run "the_api_container_serves_on_8000_and_logs_to_its_own_group" {
   }
 
   assert {
-    condition     = startswith(jsondecode(aws_ecs_task_definition.api.container_definitions)[0].image, aws_ecr_repository.backend.repository_url)
+    condition     = startswith(jsondecode(aws_ecs_task_definition.api.container_definitions)[0].image, "123456789012.dkr.ecr.ap-south-1.amazonaws.com/stock-analyst-demo-backend")
     error_message = "The image must come from this project's registry."
   }
 }
@@ -445,7 +448,7 @@ run "the_provision_task_runs_the_module_the_image_actually_contains" {
   }
 
   assert {
-    condition     = startswith(jsondecode(aws_ecs_task_definition.provision.container_definitions)[0].image, aws_ecr_repository.backend.repository_url)
+    condition     = startswith(jsondecode(aws_ecs_task_definition.provision.container_definitions)[0].image, "123456789012.dkr.ecr.ap-south-1.amazonaws.com/stock-analyst-demo-backend")
     error_message = "The same image as the api and the migration: one build, three commands."
   }
 

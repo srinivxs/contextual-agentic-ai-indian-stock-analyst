@@ -49,11 +49,14 @@ mock_provider "aws" {
       endpoint = "mock-db.ap-south-1.rds.amazonaws.com:5432"
     }
   }
+}
 
-  mock_resource "aws_ecr_repository" {
-    defaults = {
-      repository_url = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/stock-analyst-demo-backend"
-    }
+# The registry URL infra/cicd publishes. mock_data above gives EVERY ssm parameter the same value,
+# so this one is overridden by name, or the image would be built from the public URL.
+override_data {
+  target = data.aws_ssm_parameter.ecr_repository_url
+  values = {
+    value = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/stock-analyst-demo-backend"
   }
 }
 

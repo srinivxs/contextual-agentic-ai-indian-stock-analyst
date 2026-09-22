@@ -15,7 +15,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 INFRA = REPO / "infra"
-ROOTS = ("preflight", "bootstrap", "stack", "edge")
+ROOTS = ("preflight", "bootstrap", "stack", "edge", "cicd")
 # Local caches and the provider download folders: never scanned, never committed.
 SKIPPED_DIRS = {".terraform", ".terraform-plugin-cache"}
 TEXT_SUFFIXES = (".tf", ".tftest.hcl", ".hcl", ".example", ".md", ".json")
@@ -63,6 +63,18 @@ EXPECTED_FILES = {
         "outputs.tf",
         "functions/rewrite-index.js",
         "tests/edge.tftest.hcl",
+    ],
+    # The build machinery (ADR 016): also applied once and never destroyed.
+    "cicd": [
+        "versions.tf",
+        "main.tf",
+        "backend.tf",
+        "backend.hcl.example",
+        "variables.tf",
+        "registry.tf",
+        "github.tf",
+        "outputs.tf",
+        "tests/cicd.tftest.hcl",
     ],
 }
 
@@ -801,3 +813,79 @@ def test_the_task_definition_supplies_every_setting_the_backend_demands() -> Non
     assert '"COOKIE_SECURE"' in body, (
         "production requires COOKIE_SECURE; derive it from app_env so it cannot be forgotten"
     )
+
+
+# --- the build machinery (P8a) ------------------------------------------------------------------
+
+
+def cicd_file(name: str) -> str:
+    """The text of a file in infra/cicd, failing clearly when it has not been written yet."""
+    path = INFRA / "cicd" / name
+    assert path.is_file(), f"infra/cicd/{name} does not exist yet"
+    return path.read_text(encoding="utf-8")
+
+
+def test_the_registry_left_the_destroyable_stack() -> None:
+    """CI pushes an image on every commit, and the application stack is absent most of the day.
+
+    If the registry were still part of infra/stack there would be nowhere to push to.
+    """
+    assert 'resource "aws_ecr_repository"' in cicd_file("registry.tf"), (
+        "the registry belongs to infra/cicd now"
+    )
+
+    stack = stack_file("registry.tf")
+    assert 'resource "aws_ecr_repository"' not in stack, (
+        "infra/stack must read the registry URL, not create the repository"
+    )
+    assert "data.aws_ssm_parameter.ecr_repository_url" in stack, (
+        "infra/stack reads the URL from the parameter infra/cicd publishes"
+    )
+
+
+def test_github_is_trusted_by_repository_and_ref_not_merely_by_issuer() -> None:
+    """The mistake that makes an OIDC role useless.
+
+    Checking only that a token came from GitHub trusts every repository on GitHub, including a fork
+    of this one. The subject condition must name the repository and the ref.
+    """
+    # Comments are stripped first: the file's own explanation quotes the subject format, and a
+    # search of the raw text passed while the real condition said refs/heads/* (P8a breakage).
+    text = re.sub(r"#.*", "", cicd_file("github.tf"))
+
+    assert "token.actions.githubusercontent.com:sub" in text, (
+        "the trust policy must check the subject claim, not only the issuer"
+    )
+    assert '"repo:${var.github_repository}:ref:refs/heads/main"' in text, (
+        "the subject must be exactly this repository on main"
+    )
+    assert "refs/heads/*" not in text, "a wildcard ref would let any branch assume the role"
+    assert not re.search(r'"repo:\*', text), "a wildcard repository would trust all of GitHub"
+
+
+def test_no_long_lived_aws_credential_is_anywhere_in_the_infrastructure() -> None:
+    """OIDC exists so nothing has to be stored. An access key would undo the whole point."""
+    for path in infra_files(".tf"):
+        text = path.read_text(encoding="utf-8")
+        assert 'resource "aws_iam_access_key"' not in text, (
+            f"{path.name} creates a long-lived access key; GitHub uses OIDC instead"
+        )
+        assert 'resource "aws_iam_user"' not in text, (
+            f"{path.name} creates an IAM user; the human account already exists and CI uses a role"
+        )
+
+
+def test_the_push_role_grants_only_registry_actions() -> None:
+    """It is assumed on every push to main, so it gets the smaller of the two powers.
+
+    Deploying is a separate role, added in P8c, because changing a running system is not the same
+    as storing an artefact.
+    """
+    text = cicd_file("github.tf")
+    body = block_body(text, r'resource\s+"aws_iam_role_policy"\s+"ci_push_images"')
+    assert body is not None, "no ci_push_images policy in github.tf"
+
+    for service in ("ecs:", "s3:", "cloudfront:", "rds:", "ssm:"):
+        assert service not in body, (
+            f"the push role must not grant {service} actions; that is the deploy role's job"
+        )

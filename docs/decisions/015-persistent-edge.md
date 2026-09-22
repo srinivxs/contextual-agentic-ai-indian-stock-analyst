@@ -4,7 +4,7 @@
   stack is destroyed and recreated at will; see Amendments there. Builds on
   [ADR 004](004-ecs-fargate.md), [ADR 006](006-nextjs-static-export.md),
   [ADR 011](011-database-access-and-migrations.md) and [ADR 012](012-authentication-and-sessions.md))
-- **Date:** 2026-09-22
+- **Date:** 2026-09-22 (amended by [ADR 016](016-cicd-registry-and-github-identity.md), see Amendments)
 
 ## Context
 
@@ -202,3 +202,12 @@ for one real apply.** All three bugs passed every offline gate.
   effect, so a swap of the two managed cache policies is invisible. The enforcement lives in text
   assertions in `infra/tests/test_infra_hygiene.py`; a real plan also shows the true distinct UUIDs.
 - The frontend is uploaded by hand with `aws s3 sync`. P8 automates it, with a cache invalidation.
+
+## Amendments
+
+### 2026-09-23: the registry left the ephemeral stack ([ADR 016](016-cicd-registry-and-github-identity.md))
+
+The table in Decision 1 puts ECR in `infra/stack`. P8a moved it to a new permanent root, `infra/cicd`,
+because CI pushes on every commit and the stack is absent most of the day. The stack now reads the
+repository URL from the SSM parameter `/stock-analyst/demo/ecr_repository_url`, the same persistent →
+ephemeral direction as this ADR's two values. `infra/stack` drops from 51 to 49 resources.

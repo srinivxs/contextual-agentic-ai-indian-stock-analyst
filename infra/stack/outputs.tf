@@ -55,8 +55,8 @@ output "db_instance_endpoint" {
 }
 
 output "ecr_repository_url" {
-  description = "Where to push the backend image."
-  value       = aws_ecr_repository.backend.repository_url
+  description = "Where the image is pulled from. Owned by infra/cicd; repeated here for convenience."
+  value       = local.ecr_repository_url
 }
 
 output "ssm_runtime_parameter_name" {

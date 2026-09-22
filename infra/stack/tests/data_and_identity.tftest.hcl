@@ -1,4 +1,5 @@
-# Offline tests for P7c: the database, the two secrets, the image registry and the IAM roles.
+# Offline tests for P7c: the database, the two secrets and the IAM roles.
+# (The image registry moved to infra/cicd in P8a; this root only reads its URL.)
 #
 # HOW TO READ THIS FILE
 #   Same shape as tests/network.tftest.hcl. `mock_provider "aws"` swaps in a fake AWS with the same
@@ -21,8 +22,7 @@
 #               aws_db_instance.main
 #               aws_ssm_parameter.database_url            (runtime, read by the api)
 #               aws_ssm_parameter.migration_database_url  (admin, never read by the api)
-#               aws_ecr_repository.backend
-#               aws_ecr_lifecycle_policy.backend
+#               (the image registry moved to infra/cicd in P8a; this root only reads its URL)
 #               aws_iam_role.api_execution / .migrate_execution / .task
 #               aws_iam_role_policy_attachment.api_execution_managed
 #               aws_iam_role_policy_attachment.migrate_execution_managed
@@ -115,6 +115,15 @@ mock_provider "aws" {
     defaults = {
       arn = "arn:aws:ecs:ap-south-1:123456789012:cluster/stock-analyst-demo"
     }
+  }
+}
+
+# The registry URL infra/cicd publishes. mock_data above gives EVERY ssm parameter the same value,
+# so this one is overridden by name, or the image would be built from the public URL.
+override_data {
+  target = data.aws_ssm_parameter.ecr_repository_url
+  values = {
+    value = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/stock-analyst-demo-backend"
   }
 }
 
@@ -429,26 +438,16 @@ run "the_execution_roles_can_pull_images_and_write_logs" {
 
 # --- the registry --------------------------------------------------------------------------------
 
-run "the_registry_is_disposable_and_prunes_old_images" {
+run "the_image_comes_from_the_registry_infra_cicd_publishes" {
+  # Since P8a the repository is permanent and lives in infra/cicd; this root only reads its URL.
   assert {
-    condition     = aws_ecr_repository.backend.name == "stock-analyst-demo-backend"
-    error_message = "The repository name is fixed; the push commands depend on it."
-  }
-
-  # Without this, `terraform destroy` fails: ECR refuses to delete a repository containing images.
-  assert {
-    condition     = aws_ecr_repository.backend.force_delete == true
-    error_message = "force_delete must be true or the end-of-session destroy fails."
+    condition     = data.aws_ssm_parameter.ecr_repository_url.name == "/stock-analyst/demo/ecr_repository_url"
+    error_message = "infra/cicd publishes the registry URL under exactly this name."
   }
 
   assert {
-    condition     = aws_ecr_lifecycle_policy.backend.repository == aws_ecr_repository.backend.name
-    error_message = "The lifecycle policy must be attached to this repository."
-  }
-
-  assert {
-    condition     = length(jsondecode(aws_ecr_lifecycle_policy.backend.policy).rules) > 0
-    error_message = "The lifecycle policy must contain at least one rule, or storage grows forever."
+    condition     = output.ecr_repository_url == "123456789012.dkr.ecr.ap-south-1.amazonaws.com/stock-analyst-demo-backend"
+    error_message = "The output must repeat the URL read from the parameter."
   }
 }
 
