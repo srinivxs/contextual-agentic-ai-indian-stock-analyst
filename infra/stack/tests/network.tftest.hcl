@@ -18,7 +18,7 @@
 #   data        aws_availability_zones.available
 #               aws_ec2_managed_prefix_list.cloudfront_origin_facing
 #   resources   aws_vpc.main                              aws_internet_gateway.main
-#               aws_subnet.public      (two, count)       aws_subnet.isolated    (two, count)
+#               aws_subnet.public      (two, count)       aws_subnet.isolated    (one per zone, count)
 #               aws_route_table.public                    aws_route_table.isolated
 #               aws_route.public_internet
 #               aws_route_table_association.public   (two)
@@ -128,7 +128,7 @@ run "the_vpc_uses_the_configured_address_range_and_resolves_dns" {
   }
 }
 
-# --- the four subnets ----------------------------------------------------------------------------
+# --- the subnets ----------------------------------------------------------------------------
 
 run "the_subnets_carve_the_vpc_into_four_predictable_blocks" {
   assert {
@@ -151,6 +151,44 @@ run "the_subnets_carve_the_vpc_into_four_predictable_blocks" {
   assert {
     condition     = aws_subnet.isolated[1].cidr_block == "10.0.11.0/24"
     error_message = "The second isolated subnet must be 10.0.11.0/24."
+  }
+
+  assert {
+    condition     = aws_subnet.isolated[2].cidr_block == "10.0.12.0/24"
+    error_message = "The third isolated subnet must be 10.0.12.0/24."
+  }
+}
+
+# ADDED IN P8 (the Gate A session). RDS refused db.t4g.micro twice: first "no Availability Zones with
+# sufficient capacity", then "choose from these Availability Zones: ap-south-1c" -- while the subnet
+# group covered only the first two zones. A database subnet in EVERY zone lets RDS place the
+# instance wherever AWS has capacity. Subnets cost nothing. The first two keep their zones and
+# ranges, so adding the third replaces nothing that already exists.
+run "the_database_can_be_placed_in_every_availability_zone" {
+  assert {
+    condition     = length(aws_subnet.isolated) == 3
+    error_message = "One isolated subnet per zone: Mumbai has three."
+  }
+
+  assert {
+    condition = (
+      toset(aws_subnet.isolated[*].availability_zone) ==
+      toset(["ap-south-1a", "ap-south-1b", "ap-south-1c"])
+    )
+    error_message = "The isolated subnets must cover every available zone."
+  }
+
+  assert {
+    condition = (
+      aws_subnet.isolated[0].availability_zone == aws_subnet.public[0].availability_zone &&
+      aws_subnet.isolated[1].availability_zone == aws_subnet.public[1].availability_zone
+    )
+    error_message = "The first two keep their zones, paired with the public subnets, so nothing is replaced."
+  }
+
+  assert {
+    condition     = length(aws_subnet.public) == 2
+    error_message = "The public side stays at two zones: the load balancer needs two, and more buys nothing."
   }
 }
 
@@ -240,12 +278,12 @@ run "each_subnet_is_attached_to_the_route_table_it_belongs_to" {
   }
 
   assert {
-    condition = alltrue([
-      for index in [0, 1] :
+    condition = length(aws_route_table_association.isolated) == length(aws_subnet.isolated) && alltrue([
+      for index in range(length(aws_subnet.isolated)) :
       aws_route_table_association.isolated[index].route_table_id == aws_route_table.isolated.id &&
       aws_route_table_association.isolated[index].subnet_id == aws_subnet.isolated[index].id
     ])
-    error_message = "Both isolated subnets must be associated with the isolated route table."
+    error_message = "Every isolated subnet must be associated with the isolated route table."
   }
 }
 
@@ -348,8 +386,8 @@ run "the_network_publishes_what_the_later_milestones_need" {
   }
 
   assert {
-    condition     = length(output.public_subnet_ids) == 2 && length(output.isolated_subnet_ids) == 2
-    error_message = "Both subnet outputs must list exactly two subnets."
+    condition     = length(output.public_subnet_ids) == 2 && length(output.isolated_subnet_ids) == 3
+    error_message = "Two public subnets, and one isolated subnet per zone."
   }
 
   assert {

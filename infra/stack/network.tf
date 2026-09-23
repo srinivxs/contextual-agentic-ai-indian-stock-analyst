@@ -25,9 +25,15 @@ locals {
   # Cutting the /16 into /24s by adding 8 bits: block 0 and block 1 are public.
   public_subnet_cidrs = [for index in [0, 1] : cidrsubnet(var.vpc_cidr, 8, index)]
 
-  # Blocks 10 and 11 are isolated. The gap after 1 is deliberate: room to add more public subnets
-  # later without renumbering anything that already exists.
-  isolated_subnet_cidrs = [for index in [10, 11] : cidrsubnet(var.vpc_cidr, 8, index)]
+  # The database side covers EVERY zone, not just two (changed in P8). RDS refused db.t4g.micro
+  # twice in one afternoon for lack of capacity in the first two zones and named ap-south-1c as the
+  # only one with room. A subnet group spanning all zones lets RDS place the instance wherever AWS has
+  # capacity; subnets cost nothing. The first two keep the zones above, so adding more replaces nothing.
+  db_azs = data.aws_availability_zones.available.names
+
+  # Blocks 10, 11, 12... are isolated, one per zone. The gap after 1 is deliberate: room to add more
+  # public subnets later without renumbering anything that already exists.
+  isolated_subnet_cidrs = [for index in range(length(local.db_azs)) : cidrsubnet(var.vpc_cidr, 8, 10 + index)]
 }
 
 # --- the VPC ----------------------------------------------------------------------------------------
@@ -84,13 +90,13 @@ resource "aws_subnet" "public" {
 }
 
 resource "aws_subnet" "isolated" {
-  count             = 2
+  count             = length(local.db_azs)
   vpc_id            = aws_vpc.main.id
   cidr_block        = local.isolated_subnet_cidrs[count.index]
-  availability_zone = local.azs[count.index]
+  availability_zone = local.db_azs[count.index]
 
   tags = {
-    Name = "${local.name_prefix}-isolated-${local.azs[count.index]}"
+    Name = "${local.name_prefix}-isolated-${local.db_azs[count.index]}"
     Tier = "isolated"
   }
 }
@@ -137,7 +143,7 @@ resource "aws_route_table_association" "public" {
 }
 
 resource "aws_route_table_association" "isolated" {
-  count          = 2
+  count          = length(aws_subnet.isolated)
   subnet_id      = aws_subnet.isolated[count.index].id
   route_table_id = aws_route_table.isolated.id
 }

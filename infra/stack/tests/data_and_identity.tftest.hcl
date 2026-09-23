@@ -204,8 +204,8 @@ run "the_database_is_private_single_az_and_genuinely_disposable" {
 
 run "the_database_sits_only_in_the_isolated_subnets" {
   assert {
-    condition     = length(aws_db_subnet_group.main.subnet_ids) == 2
-    error_message = "The subnet group must contain exactly two subnets."
+    condition     = length(aws_db_subnet_group.main.subnet_ids) == 3
+    error_message = "The subnet group must contain exactly one isolated subnet per zone (three in Mumbai)."
   }
 
   assert {
@@ -213,7 +213,7 @@ run "the_database_sits_only_in_the_isolated_subnets" {
       for id in aws_subnet.isolated[*].id :
       contains(tolist(aws_db_subnet_group.main.subnet_ids), id)
     ])
-    error_message = "The subnet group must contain both isolated subnets."
+    error_message = "The subnet group must contain every isolated subnet."
   }
 
   # The decisive half: no subnet with a route to the internet gateway may appear here.
