@@ -1,6 +1,7 @@
 # 017 — The deploy pipeline: migrate first, roll out, check, and fail loudly
 
-- **Status:** Proposed (P8c; becomes Accepted after the first deploy to a running stack. Builds on
+- **Status:** Accepted (P8c; the commit that marked it Accepted was the first deploy to a running
+  stack, 2026-09-23. Builds on
   [ADR 016](016-cicd-registry-and-github-identity.md), [ADR 015](015-persistent-edge.md) and
   [ADR 005/008](008-minimal-aws-architecture.md))
 - **Date:** 2026-09-23
@@ -51,5 +52,6 @@ distribution id reach `infra/cicd` and the job through two new String parameters
   transaction and PostgreSQL DDL is transactional, so the schema stays at the previous revision.
   (A future migration that cannot run in a transaction, such as `CREATE INDEX CONCURRENTLY`, would
   lose that and needs its own note.)
-- Verified offline (20 script tests, 9 cicd policy tests, workflow tests, 13 breakages) and not yet
-  against a running stack: the first deploy to one is the proof.
+- Verified offline (20 script tests, 9 cicd policy tests, workflow tests, 13 breakages), then live.
+- Do not push while `scripts/demo-up.ps1` is running: its migrate task and a deploy's could run at
+  the same moment. Transactional DDL means one would fail cleanly, not corrupt anything, but it is noise.

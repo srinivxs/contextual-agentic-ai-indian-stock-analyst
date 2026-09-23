@@ -31,7 +31,7 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | P5 | Follow API and frontend shell | ✅ done (ADR 013); manual local flow verified by the owner |
 | P6 | Docker | ✅ done (ADR 014): P6a backend image and `migrate`; P6b frontend image and the Compose `app` profile; P6c docs and the manual check |
 | P7 | Terraform (cost table first) | ✅ done (ADR 015): P7a bootstrap + state bucket; P7b network; P7c database, secrets, registry, IAM; P7d load balancer and ECS; P7e1 the persistent edge; P7e2 production mode and the live drill |
-| P8 | CI/CD → **Gate A: login and follow live on AWS** | |
+| P8 | CI/CD → **Gate A: login and follow live on AWS** | ✅ done (ADRs 016, 017): P8a registry + GitHub OIDC; P8b checks + image; P8c deploy job; demo scripts; **Gate A passed 2026-09-23** |
 | P9 | Document ingestion core | |
 | P10 | Embeddings and retrieval | |
 | P11 | Fact and event extraction, derived values | |

@@ -88,7 +88,10 @@ for your `yes`, and finishes when `/api/readyz` is ready. It writes no plan file
 & "C:\Contextual Agentic AI Indian Stock Analyst\scripts\demo-up.ps1"
 ```
 
-Run `aws login --profile stock-analyst-admin` first if the session has expired. The steps below are
+Run `aws login --profile stock-analyst-admin` first if the session has expired. **Do not push to
+`main` while it runs:** a deploy would start a second migration alongside the script's. If RDS
+reports no capacity for `db.t4g.micro`, run the script again: Terraform keeps what it built, and since
+P8 the database may use any of the three zones. The steps below are
 what it does, for when one of them needs doing by hand. Measured timings are from the 2026-09-22
 drill.
 
