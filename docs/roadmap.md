@@ -32,13 +32,14 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | P6 | Docker | ✅ done (ADR 014): P6a backend image and `migrate`; P6b frontend image and the Compose `app` profile; P6c docs and the manual check |
 | P7 | Terraform (cost table first) | ✅ done (ADR 015): P7a bootstrap + state bucket; P7b network; P7c database, secrets, registry, IAM; P7d load balancer and ECS; P7e1 the persistent edge; P7e2 production mode and the live drill |
 | P8 | CI/CD → **Gate A: login and follow live on AWS** | ✅ done (ADRs 016, 017): P8a registry + GitHub OIDC; P8b checks + image; P8c deploy job; demo scripts; **Gate A passed 2026-09-23** |
-| P9 | Document ingestion core | |
+| P9 | Document ingestion core | ✅ done locally (ADR 018): P9a store + dedupe; P9b worker, PDF text, chunks; P9c automatic BSE filings; P9d Documents page, three years, follow/check trigger, uploads removed. AWS part moved to GL |
 | P10 | Embeddings and retrieval | |
 | P11 | Fact and event extraction, derived values | |
-| P12 | Grounded chat (LangGraph) → **Gate B: cited RAG chat live** | |
+| P12 | Grounded chat (LangGraph) → **Gate B: cited RAG chat working** (locally; live at GL) | |
 | P13 | Investor memory | |
 | P14 | Deterministic matching → **Gate C: full MVP working** | |
 | P15 | Scheduled RBI feed | |
+| GL | Go-live on AWS: everything AWS deferred from P9 onward, one cost approval, one live test | |
 | P16 | Hardening, docs, demo rehearsal | |
 
 The gates matter: at each one there is something complete and demonstrable, so stopping early still
@@ -184,6 +185,10 @@ leaves a real product.
   of chunks; a failing job retries then fails cleanly; a scanned PDF is rejected with a clear status.
 - **You should be able to answer:** name three races and how each is closed. Why not FastAPI
   `BackgroundTasks`?
+- **Done (locally, 2026-09-23):** 77 of 81 reachable BSE filings for the three stocks ingested
+  (5,376 pages, 16,232 chunks); four were refused by BSE's CDN and are deliberately not worked
+  around. The AWS part (S3 documents bucket, the worker in the ECS task, a larger task) moved to GL
+  at the owner's request: no AWS spend until one go-live.
 
 ## P10 — Embeddings and retrieval
 
@@ -249,6 +254,21 @@ leaves a real product.
 - **Done when:** repeated polls create no duplicates; fixture mode works offline.
 - **You should be able to answer:** why is a timer inside the worker safe with several workers?
 
+## GL — Go-live on AWS
+
+- **Why a phase of its own:** the owner chose (2026-09-23) to keep AWS off until the product works
+  locally, then go live once: one itemised cost approval, one set of applies, one live test.
+  Terraform for each piece may be written and tested offline in its own phase, but nothing is
+  applied until GL.
+- **Build (from P9):** the S3 `BlobStore` and a private documents bucket; the `worker` container in
+  the ECS task (ADR 008) with the runtime database role, no Google or session secrets, and access to
+  that bucket only; a larger task (planned 0.5 vCPU / 1 GB, cost approved at GL); `FILINGS_DISCOVERY`
+  on for **both** the api and the worker; a decision on re-fetching the ~85 filings after each
+  `demo-up` (the database is destroyed nightly). **Later phases add their items here** (Bedrock
+  permissions for embeddings and chat, for example).
+- **Done when:** on the live URL a user signs in, follows a stock, sees its filings arrive, and gets
+  a cited answer; then `demo-down` leaves only the permanent roots.
+
 ## P16 — Hardening, docs, demo rehearsal
 
 - **Goal:** a defensible, demonstrable project.
@@ -264,6 +284,7 @@ leaves a real product.
 
 - **Before P2:** an AWS profile configured locally (no resources created). ✅ done (least-privilege CLI
   user with `aws login`; see ADR 010).
-- **Before P9's demo data:** download the company documents (see the manifest, added in P9).
+- ~~Before P9's demo data: download the company documents.~~ Not needed: filings are fetched
+  automatically from BSE (ADR 018).
 - **Before P8:** a Google Cloud OAuth client (testing mode) with your own account and any interviewer
   accounts you choose to add as test users. The company's two challenge test users are no longer needed.
