@@ -73,11 +73,13 @@ class DocumentView:
     created_at: datetime
     source: str  # "upload" or "bse" (ADR 018)
     source_url: str | None  # the official public address of a fetched filing
+    kind: str | None  # transcript, presentation, annual_report, announcement; None for an upload
+    period: str | None  # "Jul 2026", "Annual Report 2025", an announcement's subject
 
 
 _COLUMNS = (
     "d.id, s.symbol, d.title, d.status, d.size_bytes, d.page_count, d.failure_reason, "
-    "d.created_at, d.source, d.source_url"
+    "d.created_at, d.source, d.source_url, d.kind, d.period"
 )
 
 _STOCK_ID = text("SELECT id FROM stocks WHERE symbol = :symbol")
@@ -86,9 +88,10 @@ _STOCK_ID = text("SELECT id FROM stocks WHERE symbol = :symbol")
 # no source_url, and a fetch skips an address already recorded and is the only live job for it.
 _INSERT_DOCUMENT = text(
     "INSERT INTO documents "
-    "(stock_id, uploaded_by, title, sha256, size_bytes, blob_key, source, source_url) "
+    "(stock_id, uploaded_by, title, sha256, size_bytes, blob_key, source, source_url, "
+    "kind, period) "
     "VALUES (:stock_id, :uploaded_by, :title, :sha256, :size_bytes, :blob_key, "
-    ":source, :source_url) "
+    ":source, :source_url, :kind, :period) "
     "ON CONFLICT (sha256) DO NOTHING RETURNING id"
 )
 
@@ -138,6 +141,8 @@ async def record_upload(
     blob_key: str,
     source: str = "upload",
     source_url: str | None = None,
+    kind: str | None = None,
+    period: str | None = None,
 ) -> tuple[DocumentView, bool]:
     """Insert the document and its ingestion job, or find the existing document for this file.
 
@@ -156,6 +161,8 @@ async def record_upload(
                 "blob_key": blob_key,
                 "source": source,
                 "source_url": source_url,
+                "kind": kind,
+                "period": period,
             },
         )
     ).scalar_one_or_none()

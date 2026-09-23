@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.integration.conftest import DbConfig, Migrator, make_alembic_config
 
-HEAD = "0004"
+HEAD = "0005"
 
 STATE_QUERIES = {
     "extension": "SELECT extversion FROM pg_extension WHERE extname = 'vector'",
@@ -117,6 +117,9 @@ async def test_each_downgrade_step_removes_only_what_its_revision_created(
     """0004 owns the ingestion tables, 0003 user_follows, 0002 users and sessions, 0001 stocks."""
     await migrator.upgrade("head")
     at_head = await snapshot(admin_engine)
+
+    await migrator.downgrade("-1")  # 0005 only adds two columns to documents
+    assert (await snapshot(admin_engine)).revision == "0004"
 
     await migrator.downgrade("-1")
     no_ingestion = await snapshot(admin_engine)

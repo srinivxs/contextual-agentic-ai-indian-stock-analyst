@@ -1,4 +1,5 @@
 import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DocumentsView, REFRESH_MS } from '@/components/DocumentsView';
@@ -19,8 +20,12 @@ afterEach(() => {
   nav.replace.mockReset();
 });
 
-const section = (name: string): HTMLElement =>
-  screen.getByRole('region', { name: new RegExp(name) });
+const ALPHA_FILINGS = [
+  demoDocument({ id: 1, kind: 'transcript', period: 'Oct 2025', page_count: 22 }),
+  demoDocument({ id: 2, kind: 'transcript', period: 'Jul 2026', page_count: 25 }),
+  demoDocument({ id: 3, kind: 'annual_report', period: 'Annual Report 2025', page_count: 1 }),
+  demoDocument({ id: 4, kind: 'announcement', period: 'Board meeting on results' }),
+];
 
 describe('the documents page', () => {
   it('can be reached from, and leads back to, the stocks page', async () => {
@@ -35,56 +40,99 @@ describe('the documents page', () => {
     );
   });
 
-  it('has one section per stock, in the server’s order', async () => {
-    installFakeApi();
+  it('has one tab per stock, with how many documents it has, the first one open', async () => {
+    installFakeApi({ documents: ALPHA_FILINGS });
     render(<DocumentsView />);
 
-    const headings = await screen.findAllByRole('heading', { level: 2 });
-    expect(headings.map((h) => h.textContent)).toEqual(STOCKS.map((s) => s.name));
+    const tabs = await screen.findAllByRole('tab');
+    expect(tabs.map((t) => t.textContent)).toEqual([
+      `${STOCKS[0]?.name}4`,
+      `${STOCKS[1]?.name}0`,
+      `${STOCKS[2]?.name}0`,
+    ]);
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel')).toHaveAccessibleName(STOCKS[0]?.name ?? '');
   });
 
-  it('lists each document with its status and a link to the official filing', async () => {
-    const filing = demoDocument({ title: 'DEMOA earnings call transcript, Jul 2026' });
-    installFakeApi({ documents: [filing] });
+  it('groups a stock’s documents by kind, newest first, with a summary', async () => {
+    installFakeApi({ documents: ALPHA_FILINGS });
     render(<DocumentsView />);
 
-    await screen.findByText('DEMOA earnings call transcript, Jul 2026');
-    const alpha = section('DemoCo Alpha');
-    expect(within(alpha).getByText('Ready')).toBeInTheDocument();
-    const link = within(alpha).getByRole('link', { name: /official filing/i });
-    expect(link).toHaveAttribute('href', filing.source_url);
+    const calls = await screen.findByRole('region', { name: /Earnings calls/ });
+    const periods = within(calls)
+      .getAllByRole('link')
+      .map((link) => link.textContent);
+    expect(periods).toEqual(['Jul 2026', 'Oct 2025']);
+    expect(screen.getByRole('region', { name: /Annual reports/ })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /Announcements/ })).toBeInTheDocument();
+    expect(screen.getByText('4 documents · 60 pages')).toBeInTheDocument();
+  });
+
+  it('opens the official filing in a new tab, safely', async () => {
+    installFakeApi({ documents: ALPHA_FILINGS });
+    render(<DocumentsView />);
+
+    const link = await screen.findByRole('link', { name: 'Jul 2026' });
+    expect(link).toHaveAttribute('href', ALPHA_FILINGS[1]?.source_url);
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('says 1 page, not 1 pages', async () => {
+    installFakeApi({ documents: ALPHA_FILINGS });
+    render(<DocumentsView />);
+    expect(await screen.findByText('1 page')).toBeInTheDocument();
+  });
+
+  it('switches to another stock', async () => {
+    const beta = demoDocument({ id: 9, symbol: 'DEMOB', period: 'Jan 2026' });
+    installFakeApi({ documents: [...ALPHA_FILINGS, beta] });
+    render(<DocumentsView />);
+
+    await userEvent.click(await screen.findByRole('tab', { name: new RegExp(STOCKS[1]?.name ?? '') }));
+
+    expect(screen.getByRole('tabpanel')).toHaveAccessibleName(STOCKS[1]?.name ?? '');
+    expect(screen.getByRole('link', { name: 'Jan 2026' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Jul 2026' })).toBeNull();
   });
 
   it('says so when a stock has no documents yet', async () => {
     installFakeApi();
     render(<DocumentsView />);
-    expect(await screen.findAllByText(/no documents yet/i)).toHaveLength(STOCKS.length);
+    expect(await screen.findByText(/no documents yet/i)).toBeInTheDocument();
   });
 
-  it('shows why a document failed', async () => {
+  it('shows a document that is still being processed, and why one failed', async () => {
     installFakeApi({
-      documents: [demoDocument({ status: 'failed', failure_reason: 'No text found in this PDF.' })],
+      documents: [
+        demoDocument({ id: 1, status: 'processing', period: 'Jul 2026' }),
+        demoDocument({ id: 2, status: 'failed', period: 'Apr 2026', failure_reason: 'No text found.' }),
+      ],
     });
     render(<DocumentsView />);
 
-    expect(await screen.findByText('Failed')).toBeInTheDocument();
-    expect(screen.getByText('No text found in this PDF.')).toBeInTheDocument();
+    expect(await screen.findByText('Processing')).toBeInTheDocument();
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+    expect(screen.getByText('No text found.')).toBeInTheDocument();
   });
 
-  it('has no link for an upload, which has no public address', async () => {
+  it('shows an upload, which has no public address, as plain text', async () => {
     installFakeApi({
-      documents: [demoDocument({ title: 'Uploaded', source: 'upload', source_url: null })],
+      documents: [
+        demoDocument({ title: 'My notes.pdf', kind: null, period: null, source: 'upload', source_url: null }),
+      ],
     });
     render(<DocumentsView />);
 
-    await screen.findByText('Uploaded');
-    expect(screen.queryByRole('link', { name: /official filing/i })).toBeNull();
+    expect(await screen.findByText('My notes.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /Uploaded/ })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'My notes.pdf' })).toBeNull();
   });
 
-  it('renders titles as text, never as HTML', async () => {
-    installFakeApi({ documents: [demoDocument({ title: '<img src=x onerror=alert(1)>' })] });
+  it('renders text as text, never as HTML', async () => {
+    installFakeApi({
+      documents: [demoDocument({ kind: 'announcement', period: '<img src=x onerror=alert(1)>' })],
+    });
     const { container } = render(<DocumentsView />);
 
     await screen.findByText('<img src=x onerror=alert(1)>');
@@ -101,7 +149,7 @@ describe('the documents page', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(REFRESH_MS);
     });
-    expect(await screen.findByText('Ready')).toBeInTheDocument();
+    await vi.waitFor(() => expect(screen.queryByText('Processing')).toBeNull());
 
     const settled = api.requests.length;
     await act(async () => {

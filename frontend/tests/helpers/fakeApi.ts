@@ -34,6 +34,8 @@ export type FakeDocument = {
   created_at: string;
   source: 'upload' | 'bse';
   source_url: string | null;
+  kind: 'transcript' | 'presentation' | 'annual_report' | 'announcement' | null;
+  period: string | null;
 };
 
 /** A fictional DemoCo filing; override any field. */
@@ -48,6 +50,8 @@ export const demoDocument = (overrides: Partial<FakeDocument> = {}): FakeDocumen
   created_at: '2026-09-23T10:00:00+00:00',
   source: 'bse',
   source_url: 'https://www.bseindia.com/stockinfo/AnnPdfOpen.aspx?Pname=0000.pdf',
+  kind: 'transcript',
+  period: 'Jul 2026',
   ...overrides,
 });
 
@@ -57,6 +61,8 @@ export type Options = {
   followed?: string[];
   stocks?: FakeStock[];
   documents?: FakeDocument[];
+  /** How many documents one page of the list holds (the real API allows up to 100). */
+  pageSize?: number;
 };
 
 export type FakeApi = {
@@ -103,11 +109,20 @@ export function installFakeApi(options: Options = {}): FakeApi {
     if (key === 'GET /api/v1/stocks') {
       return json(200, { items: stocks.map((s) => ({ ...s, followed: follows.has(s.symbol) })) });
     }
-    const listing = /^GET \/api\/v1\/stocks\/([^/]+)\/documents$/.exec(key);
+    const listing = /^GET \/api\/v1\/stocks\/([^/?]+)\/documents(?:\?(.*))?$/.exec(key);
     if (listing) {
       const symbol = decodeURIComponent(listing[1] ?? '');
       if (!stocks.some((s) => s.symbol === symbol)) return envelope(404, 'not_found');
-      return json(200, { items: documents.filter((d) => d.symbol === symbol), next_cursor: null });
+      // Newest first by id, one page at a time, like the real endpoint.
+      const query = new URLSearchParams(listing[2] ?? '');
+      const cursor = Number(query.get('cursor') ?? Infinity);
+      const limit = Math.min(Number(query.get('limit') ?? 20), options.pageSize ?? 100);
+      const all = documents
+        .filter((d) => d.symbol === symbol && d.id < cursor)
+        .sort((a, b) => b.id - a.id);
+      const items = all.slice(0, limit);
+      const more = all.length > limit;
+      return json(200, { items, next_cursor: more ? (items.at(-1)?.id ?? null) : null });
     }
     const match = /^(PUT|DELETE) \/api\/v1\/stocks\/([^/]+)\/follow$/.exec(key);
     if (match) {

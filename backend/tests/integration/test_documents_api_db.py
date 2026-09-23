@@ -82,7 +82,7 @@ async def test_an_upload_stores_the_file_records_the_document_and_queues_one_job
     body = response.json()
     assert set(body) == {
         "id", "symbol", "title", "status", "size_bytes", "page_count", "failure_reason",
-        "created_at", "source", "source_url",
+        "created_at", "source", "source_url", "kind", "period",
     }  # fmt: skip
     assert body["symbol"] == "TCS"
     assert body["title"] == "Q2 results"
@@ -92,6 +92,8 @@ async def test_an_upload_stores_the_file_records_the_document_and_queues_one_job
     assert body["failure_reason"] is None
     assert body["source"] == "upload"
     assert body["source_url"] is None  # an upload has no public address to link to
+    assert body["kind"] is None  # nor a kind or period of its own
+    assert body["period"] is None
 
     # The file, under its own hash: nothing about the client's filename reaches the disk.
     assert stored_files(tmp_path) == [tmp_path / "blobs" / "documents" / f"{PDF_SHA}.pdf"]

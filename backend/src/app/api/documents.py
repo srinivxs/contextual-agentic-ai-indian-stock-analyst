@@ -60,6 +60,10 @@ class DocumentOut(BaseModel):
     # the official address the UI links to; the stored file itself is never served.
     source: str
     source_url: str | None
+    # What a fetched filing is (transcript, presentation, annual_report, announcement) and the
+    # period it covers; both None for an upload. The Documents page groups and orders by them.
+    kind: str | None
+    period: str | None
 
 
 class DocumentsResponse(BaseModel):

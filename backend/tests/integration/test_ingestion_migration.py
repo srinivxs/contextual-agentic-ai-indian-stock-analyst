@@ -67,7 +67,7 @@ async def test_the_tables_have_the_agreed_columns(admin_engine: AsyncEngine) -> 
     assert await columns(admin_engine, "documents") == [
         "id", "stock_id", "uploaded_by", "title", "sha256", "size_bytes", "blob_key",
         "source", "source_url", "status", "failure_reason", "page_count", "created_at",
-        "updated_at",
+        "updated_at", "kind", "period",
     ]  # fmt: skip
     assert await columns(admin_engine, "document_pages") == ["document_id", "page_number", "text"]
     assert await columns(admin_engine, "chunks") == [

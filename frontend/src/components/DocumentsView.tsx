@@ -6,9 +6,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { ApiError } from '@/lib/api';
 import {
+  documentLabel,
+  groupDocuments,
   isStillWorking,
-  listDocuments,
+  listAllDocuments,
   officialLink,
+  pagesLabel,
+  summaryLabel,
   type DocumentStatus,
   type StockDocument,
 } from '@/lib/documents';
@@ -20,10 +24,10 @@ export const REFRESH_MS = 5000;
 
 const LOAD_FAILED = "We couldn't load the documents. Reload the page to try again.";
 
-const STATUS_LABELS: Record<DocumentStatus, string> = {
+// A finished document needs no badge: the absence of one reads as "ready".
+const STATUS_BADGES: Partial<Record<DocumentStatus, string>> = {
   pending: 'Waiting',
   processing: 'Processing',
-  completed: 'Ready',
   failed: 'Failed',
 };
 
@@ -34,21 +38,86 @@ type Loaded = { ok: true; shelves: Shelf[] } | { ok: false; unauthorized: boolea
 async function readShelves(): Promise<Loaded> {
   try {
     const stocks = await listStocks();
-    const lists = await Promise.all(stocks.map((stock) => listDocuments(stock.symbol)));
+    const lists = await Promise.all(stocks.map((stock) => listAllDocuments(stock.symbol)));
     return { ok: true, shelves: stocks.map((stock, i) => ({ stock, documents: lists[i] ?? [] })) };
   } catch (error) {
     return { ok: false, unauthorized: error instanceof ApiError && error.status === 401 };
   }
 }
 
+function DocumentRow({ document }: { document: StockDocument }) {
+  const link = officialLink(document);
+  const label = documentLabel(document);
+  const badge = STATUS_BADGES[document.status];
+  return (
+    <li className="doc-row">
+      <span className="doc-label">
+        {link ? (
+          <a href={link} target="_blank" rel="noopener noreferrer" className="doc-link">
+            {label}
+          </a>
+        ) : (
+          <span>{label}</span>
+        )}
+        {document.status === 'failed' && document.failure_reason && (
+          <span className="doc-reason">{document.failure_reason}</span>
+        )}
+      </span>
+      <span className="doc-pages">{pagesLabel(document.page_count)}</span>
+      <span className="doc-status">
+        {badge && <span className={`pill ${document.status}`}>{badge}</span>}
+      </span>
+    </li>
+  );
+}
+
+function StockPanel({ shelf }: { shelf: Shelf }) {
+  const groups = groupDocuments(shelf.documents);
+  return (
+    <div
+      role="tabpanel"
+      id={`panel-${shelf.stock.symbol}`}
+      aria-label={shelf.stock.name}
+      className="doc-panel"
+    >
+      {groups.length === 0 ? (
+        <p className="muted empty">No documents yet. New filings appear here within a day.</p>
+      ) : (
+        <>
+          <p className="muted doc-summary">{summaryLabel(shelf.documents)}</p>
+          {groups.map((group) => (
+            <section
+              key={group.key}
+              aria-labelledby={`group-${shelf.stock.symbol}-${group.key}`}
+              className="doc-group"
+            >
+              <h3 id={`group-${shelf.stock.symbol}-${group.key}`}>
+                {group.title}
+                <span className="count">{group.documents.length}</span>
+              </h3>
+              <ul className="doc-list">
+                {group.documents.map((document) => (
+                  <DocumentRow key={document.id} document={document} />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 /**
- * Every stock's documents: the official filings the worker fetched from BSE (ADR 018) and anything
- * uploaded. While any document is still waiting or processing, the page refreshes itself.
+ * Every stock's documents, one tab per stock: the official filings the worker fetched from BSE
+ * (ADR 018) and anything uploaded, grouped by kind and newest first. While any document is still
+ * waiting or processing, the page refreshes itself.
  */
 export function DocumentsView() {
   const me = useMe();
   const router = useRouter();
   const [shelves, setShelves] = useState<Shelf[] | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const signedIn = me.status === 'signed-in';
 
@@ -117,6 +186,8 @@ export function DocumentsView() {
     );
   }
 
+  const current = shelves?.find((s) => s.stock.symbol === selected) ?? shelves?.[0] ?? null;
+
   return (
     <AppShell
       email={me.user.email}
@@ -124,50 +195,45 @@ export function DocumentsView() {
     >
       <h1>Documents</h1>
       <p className="muted">
-        Official filings are fetched from BSE automatically: the latest earnings-call transcripts
-        and annual report for each stock.
+        Official BSE filings from the last three years (earnings calls, presentations, annual
+        reports and announcements), fetched automatically every day. Open any one to read the
+        original.
       </p>
       {problem && (
         <p role="alert" className="alert">
           {problem}
         </p>
       )}
-      {shelves?.map(({ stock, documents }) => (
-        <section key={stock.symbol} aria-labelledby={`docs-${stock.symbol}`} className="card">
-          <h2 id={`docs-${stock.symbol}`}>{stock.name}</h2>
-          {documents.length === 0 ? (
-            <p className="muted">No documents yet.</p>
-          ) : (
-            <ul className="documents">
-              {documents.map((document) => {
-                const link = officialLink(document);
-                return (
-                  <li key={document.id}>
-                    <span>{document.title}</span>{' '}
-                    <span className={`status ${document.status}`}>
-                      {STATUS_LABELS[document.status]}
-                    </span>
-                    {document.page_count !== null && (
-                      <span className="muted"> · {document.page_count} pages</span>
-                    )}
-                    {link && (
-                      <>
-                        {' '}
-                        <a href={link} target="_blank" rel="noopener noreferrer">
-                          Official filing (BSE)
-                        </a>
-                      </>
-                    )}
-                    {document.status === 'failed' && document.failure_reason && (
-                      <p className="alert">{document.failure_reason}</p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ))}
+      {shelves === null && !problem && (
+        <p role="status" className="muted">
+          Loading documents…
+        </p>
+      )}
+      {shelves && current && (
+        <div className="doc-card">
+          <div role="tablist" aria-label="Stocks" className="tabs">
+            {shelves.map((shelf) => {
+              const active = shelf.stock.symbol === current.stock.symbol;
+              return (
+                <button
+                  key={shelf.stock.symbol}
+                  type="button"
+                  role="tab"
+                  id={`tab-${shelf.stock.symbol}`}
+                  aria-selected={active}
+                  aria-controls={`panel-${shelf.stock.symbol}`}
+                  className={active ? 'tab active' : 'tab'}
+                  onClick={() => setSelected(shelf.stock.symbol)}
+                >
+                  {shelf.stock.name}
+                  <span className="count">{shelf.documents.length}</span>
+                </button>
+              );
+            })}
+          </div>
+          <StockPanel shelf={current} />
+        </div>
+      )}
     </AppShell>
   );
 }

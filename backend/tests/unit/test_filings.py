@@ -9,6 +9,7 @@ import pytest
 
 from app.filings import (
     FilingLink,
+    clean_label,
     file_candidates,
     is_official_pdf_url,
     parse_documents,
@@ -170,3 +171,13 @@ def test_the_announcements_list_is_read_but_not_the_credit_ratings() -> None:
         "</ul></div></div>"
     )
     assert parse_documents(page) == []
+
+
+def test_doubled_apostrophes_from_the_source_text_are_made_single() -> None:
+    """BSE subjects arrive with '' where one ' was meant ("Investors'' Meeting")."""
+    link = FilingLink("announcement", "Update On Institutional Investors'' Meeting", "x")
+    assert (
+        title_for("RELIANCE", link)
+        == "RELIANCE announcement, Update On Institutional Investors' Meeting"
+    )
+    assert clean_label(link.label) == "Update On Institutional Investors' Meeting"

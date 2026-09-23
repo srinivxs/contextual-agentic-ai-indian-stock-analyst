@@ -248,9 +248,13 @@ def select_filings(links: list[FilingLink], *, today: date, years: int) -> list[
     return chosen
 
 
+def clean_label(label: str) -> str:
+    """One line, single spaces, and '' made ' (BSE subjects arrive as "Investors'' Meeting")."""
+    return " ".join(label.replace("''", "'").split())[:200]
+
+
 def title_for(symbol: str, link: FilingLink) -> str:
-    label = " ".join(link.label.split())
-    return f"{symbol} {KIND_WORDS[link.kind]}, {label}"[:200]
+    return f"{symbol} {KIND_WORDS[link.kind]}, {clean_label(link.label)}"[:200]
 
 
 def fetch_key(url: str) -> str:
@@ -386,6 +390,8 @@ async def fetch(
                 blob_key=key,
                 source="bse",
                 source_url=url,
+                kind=kind,
+                period=clean_label(label),
             )
         await complete(db, job)
         await db.commit()

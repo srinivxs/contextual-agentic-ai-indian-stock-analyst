@@ -139,6 +139,9 @@ async def test_the_chain_ends_in_ingested_official_documents(
     assert {d[3] for d in documents} == {None}  # nobody uploaded these
     assert {d[4] for d in documents} == {"completed"}
     assert ("TCS earnings call transcript, Jul 2026",) in [(d[0],) for d in documents]
+    assert sorted(
+        await rows(admin_engine, "SELECT kind, period FROM documents ORDER BY kind, period")
+    ) == sorted((kind, label) for kind, label, _ in EXPECTED)
     assert await rows(admin_engine, "SELECT DISTINCT status FROM jobs") == [("completed",)]
     # Every document was fetched from BSE exactly once.
     assert sorted(internet.requests[1:]) == sorted(url for _, _, url in EXPECTED)
