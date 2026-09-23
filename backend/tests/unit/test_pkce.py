@@ -10,6 +10,7 @@ import hashlib
 import re
 
 import pytest
+
 from app.auth.pkce import CODE_VERIFIER_BYTES, code_challenge, generate_code_verifier
 
 # RFC 7636 Appendix B, the canonical worked example. If our implementation disagrees with this,

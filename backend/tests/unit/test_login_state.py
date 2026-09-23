@@ -9,6 +9,7 @@ import base64
 import time
 
 import pytest
+
 from app.auth.login_state import (
     InvalidLoginState,
     LoginAttempt,
@@ -16,7 +17,6 @@ from app.auth.login_state import (
     read_login_attempt,
     sign_login_attempt,
 )
-
 from tests.helpers import (
     TEST_GOOGLE_CLIENT_SECRET,
     TEST_SESSION_SECRET,

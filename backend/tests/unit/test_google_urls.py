@@ -7,6 +7,7 @@ parameter has to be exactly right: Google matches `redirect_uri` character for c
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+
 from app.auth.google import (
     GOOGLE_AUTHORIZATION_ENDPOINT,
     GOOGLE_SCOPES,
@@ -15,7 +16,6 @@ from app.auth.google import (
 )
 from app.auth.login_state import LoginAttempt, new_login_attempt
 from app.auth.pkce import code_challenge
-
 from tests.helpers import (
     TEST_GOOGLE_CLIENT_ID,
     TEST_GOOGLE_CLIENT_SECRET,
