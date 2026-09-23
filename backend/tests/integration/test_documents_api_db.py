@@ -1,15 +1,14 @@
-"""Uploading and listing documents over HTTP, against the real database and a temporary folder.
+"""Recording documents and reading them over HTTP, against the real database.
 
-The P9 acceptance rule is the heart of this file: the same file uploaded twice, or eight times at
-once, gives ONE document and ONE ingestion job. It holds because the file is stored under its own
-SHA-256 (identical bytes, identical place) and the database has a unique constraint on that hash
-plus a partial unique index on the job's dedupe key. No application-level lock is involved.
+The P9 acceptance rule is the heart of this file: the same file recorded twice, or eight times at
+once, gives ONE document and ONE ingestion job. It holds because the database has a unique
+constraint on the file's SHA-256 plus a partial unique index on the job's dedupe key. No
+application-level lock is involved. Documents are recorded the way the worker records a fetched
+filing (``record_document``); there is no upload endpoint (P9d).
 """
 
 import asyncio
 import hashlib
-from collections.abc import AsyncIterator
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -17,7 +16,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.core.config import Settings
+from app.blobs import blob_key_for
+from app.documents import DocumentView, PdfFile, record_document, stock_id
 from tests.helpers import running_app
 from tests.integration.auth_helpers import open_session
 from tests.integration.conftest import DbConfig, MakeUser
@@ -25,27 +25,48 @@ from tests.integration.conftest import DbConfig, MakeUser
 pytestmark = pytest.mark.usefixtures("clean_document_tables")
 
 Factory = async_sessionmaker[AsyncSession]
-ORIGIN = "http://localhost:8000"
-PDF = b"%PDF-1.7\n" + b"fictional DemoCo quarterly results " * 200
-PDF_SHA = hashlib.sha256(PDF).hexdigest()
+DATA = b"%PDF-1.7\n" + b"fictional DemoCo quarterly results " * 200
 
 
-def upload_url(symbol: str = "TCS", title: str = "Q2 results") -> str:
-    return f"/api/v1/stocks/{symbol}/documents?title={title}"
+def pdf_of(data: bytes = DATA) -> PdfFile:
+    return PdfFile(data=data, sha256=hashlib.sha256(data).hexdigest())
 
 
-def headers(cookie: dict[str, str], content_type: str = "application/pdf") -> dict[str, str]:
-    return {**cookie, "Origin": ORIGIN, "Content-Type": content_type}
+def bse_url(n: int) -> str:
+    return f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{n:08d}-demo.pdf"
+
+
+async def record(
+    factory: Factory,
+    *,
+    symbol: str = "TCS",
+    data: bytes = DATA,
+    url: str = bse_url(1),
+    period: str = "Jul 2026",
+) -> tuple[DocumentView, bool]:
+    """One transaction, exactly as a filing fetch records what it downloaded."""
+    pdf = pdf_of(data)
+    async with factory() as db:
+        stock = await stock_id(db, symbol)
+        assert stock is not None
+        result = await record_document(
+            db,
+            stock=stock,
+            title=f"{symbol} earnings call transcript, {period}",
+            pdf=pdf,
+            blob_key=blob_key_for(pdf.sha256),
+            source_url=url,
+            kind="transcript",
+            period=period,
+        )
+        await db.commit()
+    return result
 
 
 async def sign_in(make_user: MakeUser, session_factory: Factory) -> tuple[UUID, dict[str, str]]:
     user_id = await make_user()
     token = await open_session(session_factory, user_id)
     return user_id, {"Cookie": f"session={token}"}
-
-
-def settings_with(db_config: DbConfig, tmp_path: Path, **overrides: Any) -> Settings:
-    return db_config.settings(blob_root=tmp_path / "blobs", **overrides)
 
 
 async def rows(engine: AsyncEngine, sql: str) -> list[tuple[Any, ...]]:
@@ -59,304 +80,143 @@ async def counts(engine: AsyncEngine) -> tuple[int, int]:
     return documents[0][0], jobs[0][0]
 
 
-def stored_files(tmp_path: Path) -> list[Path]:
-    folder = tmp_path / "blobs"
-    return sorted(p for p in folder.rglob("*") if p.is_file()) if folder.exists() else []
+# --- recording a document -------------------------------------------------------------------------
 
 
-# --- a first upload -------------------------------------------------------------------------------
-
-
-async def test_an_upload_stores_the_file_records_the_document_and_queues_one_job(
-    db_config: DbConfig,
-    make_user: MakeUser,
-    session_factory: Factory,
-    admin_engine: AsyncEngine,
-    tmp_path: Path,
+async def test_recording_a_filing_creates_the_document_and_queues_one_job(
+    session_factory: Factory, admin_engine: AsyncEngine
 ) -> None:
-    user_id, cookie = await sign_in(make_user, session_factory)
-    async with running_app(settings_with(db_config, tmp_path)) as (_, client):
-        response = await client.post(upload_url(), content=PDF, headers=headers(cookie))
+    view, created = await record(session_factory)
 
-    assert response.status_code == 201
-    body = response.json()
-    assert set(body) == {
-        "id", "symbol", "title", "status", "size_bytes", "page_count", "failure_reason",
-        "created_at", "source", "source_url", "kind", "period",
-    }  # fmt: skip
-    assert body["symbol"] == "TCS"
-    assert body["title"] == "Q2 results"
-    assert body["status"] == "pending"
-    assert body["size_bytes"] == len(PDF)
-    assert body["page_count"] is None
-    assert body["failure_reason"] is None
-    assert body["source"] == "upload"
-    assert body["source_url"] is None  # an upload has no public address to link to
-    assert body["kind"] is None  # nor a kind or period of its own
-    assert body["period"] is None
+    assert created
+    assert view.symbol == "TCS"
+    assert view.status == "pending"
+    assert view.size_bytes == len(DATA)
+    assert view.page_count is None
+    assert (view.source, view.source_url) == ("bse", bse_url(1))
+    assert (view.kind, view.period) == ("transcript", "Jul 2026")
 
-    # The file, under its own hash: nothing about the client's filename reaches the disk.
-    assert stored_files(tmp_path) == [tmp_path / "blobs" / "documents" / f"{PDF_SHA}.pdf"]
-    assert stored_files(tmp_path)[0].read_bytes() == PDF
-
+    sha = pdf_of().sha256
     [document] = await rows(
         admin_engine, "SELECT id, sha256, uploaded_by, status, blob_key FROM documents"
     )
-    assert document == (body["id"], PDF_SHA, user_id, "pending", f"documents/{PDF_SHA}.pdf")
+    assert document == (view.id, sha, None, "pending", f"documents/{sha}.pdf")
 
     # Queued in the SAME transaction as the document (ADR 005): there is never a document that no
     # job will ever process.
     [job] = await rows(admin_engine, "SELECT kind, payload, dedupe_key, status FROM jobs")
     assert job == (
         "ingest_document",
-        {"document_id": body["id"]},
-        f"ingest_document:{body['id']}",
+        {"document_id": view.id},
+        f"ingest_document:{view.id}",
         "pending",
     )
 
 
-async def test_the_new_document_can_be_read_back_and_is_listed_under_its_stock(
-    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, tmp_path: Path
+async def test_the_same_file_again_returns_the_existing_document(
+    session_factory: Factory, admin_engine: AsyncEngine
 ) -> None:
+    first, first_created = await record(session_factory, url=bse_url(1))
+    second, second_created = await record(session_factory, url=bse_url(2), period="Other")
+
+    assert (first_created, second_created) == (True, False)
+    assert second == first  # including the ORIGINAL address and period
+    assert await counts(admin_engine) == (1, 1)
+
+
+async def test_eight_concurrent_recordings_of_one_file_give_one_document_and_one_job(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    """The P9 acceptance race: eight transactions insert the same bytes (under eight addresses, as
+    when BSE lists one file several times); the unique constraint and ON CONFLICT decide which one
+    creates the row.
+
+    Every call must SUCCEED, not merely leave the right rows behind. The first version of the
+    table had a second unique constraint (on blob_key); ON CONFLICT (sha256) does not cover it, so
+    under this race some callers failed while the data stayed correct."""
+    results = await asyncio.gather(*(record(session_factory, url=bse_url(n)) for n in range(8)))
+
+    assert sorted(created for _, created in results) == [False] * 7 + [True]
+    assert len({view.id for view, _ in results}) == 1
+    assert await counts(admin_engine) == (1, 1)
+
+
+# --- reading over HTTP ----------------------------------------------------------------------------
+
+
+async def test_a_document_can_be_read_back_and_is_listed_under_its_stock(
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory
+) -> None:
+    view, _ = await record(session_factory)
     _, cookie = await sign_in(make_user, session_factory)
-    async with running_app(settings_with(db_config, tmp_path)) as (_, client):
-        created = (await client.post(upload_url(), content=PDF, headers=headers(cookie))).json()
-        one = await client.get(f"/api/v1/documents/{created['id']}", headers=cookie)
+    async with running_app(db_config.settings()) as (_, client):
+        one = await client.get(f"/api/v1/documents/{view.id}", headers=cookie)
         tcs = await client.get("/api/v1/stocks/TCS/documents", headers=cookie)
         reliance = await client.get("/api/v1/stocks/RELIANCE/documents", headers=cookie)
 
     assert one.status_code == 200
-    assert one.json() == created
+    body = one.json()
+    assert set(body) == {
+        "id", "symbol", "title", "status", "size_bytes", "page_count", "failure_reason",
+        "created_at", "source", "source_url", "kind", "period",
+    }  # fmt: skip
+    assert (body["id"], body["source_url"], body["period"]) == (view.id, bse_url(1), "Jul 2026")
+    assert "blob_key" not in body  # where the copy is stored stays inside
     assert one.headers["cache-control"] == "no-store"
-    assert tcs.json() == {"items": [created], "next_cursor": None}
+    assert tcs.json() == {"items": [body], "next_cursor": None}
     assert reliance.json() == {"items": [], "next_cursor": None}
 
 
-# --- the same file again --------------------------------------------------------------------------
-
-
-async def test_uploading_the_same_file_again_returns_the_existing_document(
-    db_config: DbConfig,
-    make_user: MakeUser,
-    session_factory: Factory,
-    admin_engine: AsyncEngine,
-    tmp_path: Path,
-) -> None:
-    _, cookie = await sign_in(make_user, session_factory)
-    async with running_app(settings_with(db_config, tmp_path)) as (_, client):
-        first = await client.post(upload_url(), content=PDF, headers=headers(cookie))
-        second = await client.post(
-            upload_url(title="A different title"), content=PDF, headers=headers(cookie)
-        )
-
-    assert first.status_code == 201
-    assert second.status_code == 200  # nothing was created
-    assert second.json() == first.json()  # including the ORIGINAL title
-    assert await counts(admin_engine) == (1, 1)
-
-
-async def test_eight_concurrent_uploads_of_one_file_give_one_document_and_one_job(
-    db_config: DbConfig,
-    make_user: MakeUser,
-    session_factory: Factory,
-    admin_engine: AsyncEngine,
-    tmp_path: Path,
-) -> None:
-    """The P9 acceptance race. Each request hashes, stores and inserts on its own; the database's
-    unique constraint and ON CONFLICT decide which one creates the row.
-
-    Every request must SUCCEED, not merely leave the right rows behind. The first version of the
-    table had a second unique constraint (on blob_key); ON CONFLICT (sha256) does not cover it, so
-    under this race some requests failed with a 500 while the data stayed correct."""
-    _, cookie = await sign_in(make_user, session_factory)
-    async with running_app(settings_with(db_config, tmp_path)) as (_, client):
-        responses = await asyncio.gather(
-            *(client.post(upload_url(), content=PDF, headers=headers(cookie)) for _ in range(8))
-        )
-
-    assert sorted(r.status_code for r in responses) == [200] * 7 + [201]
-    assert len({r.json()["id"] for r in responses}) == 1
-    assert await counts(admin_engine) == (1, 1)
-    assert len(stored_files(tmp_path)) == 1
-
-
-async def test_the_same_file_under_another_stock_is_a_conflict(
-    db_config: DbConfig,
-    make_user: MakeUser,
-    session_factory: Factory,
-    admin_engine: AsyncEngine,
-    tmp_path: Path,
-) -> None:
-    """One file is one document, which belongs to one stock. A TCS report is not a RELIANCE one."""
-    _, cookie = await sign_in(make_user, session_factory)
-    async with running_app(settings_with(db_config, tmp_path)) as (_, client):
-        await client.post(upload_url("TCS"), content=PDF, headers=headers(cookie))
-        response = await client.post(upload_url("RELIANCE"), content=PDF, headers=headers(cookie))
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "conflict"
-    assert "TCS" in response.json()["error"]["message"]
-    assert await counts(admin_engine) == (1, 1)
-
-
-# --- what is refused, and that nothing is kept when it is -----------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("content", "content_type", "status", "code"),
-    [
-        (b"PK\x03\x04 a zip file", "application/pdf", 415, "unsupported_media_type"),
-        (PDF, "text/plain", 415, "unsupported_media_type"),
-        (b"", "application/pdf", 415, "unsupported_media_type"),
-    ],
-    ids=["not-a-pdf", "wrong-content-type", "empty"],
-)
-async def test_something_that_is_not_a_pdf_is_refused_and_nothing_is_stored(
-    db_config: DbConfig,
-    make_user: MakeUser,
-    session_factory: Factory,
-    admin_engine: AsyncEngine,
-    tmp_path: Path,
-    content: bytes,
-    content_type: str,
-    status: int,
-    code: str,
-) -> None:
-    _, cookie = await sign_in(make_user, session_factory)
-    async with running_app(settings_with(db_config, tmp_path)) as (_, client):
-        response = await client.post(
-            upload_url(), content=content, headers=headers(cookie, content_type)
-        )
-
-    assert response.status_code == status
-    assert response.json()["error"]["code"] == code
-    assert await counts(admin_engine) == (0, 0)
-    assert stored_files(tmp_path) == []
-
-
-async def test_a_file_over_the_limit_is_refused_and_nothing_is_stored(
-    db_config: DbConfig,
-    make_user: MakeUser,
-    session_factory: Factory,
-    admin_engine: AsyncEngine,
-    tmp_path: Path,
-) -> None:
-    _, cookie = await sign_in(make_user, session_factory)
-    settings = settings_with(db_config, tmp_path, upload_max_bytes=len(PDF) - 1)
-    async with running_app(settings) as (_, client):
-        response = await client.post(upload_url(), content=PDF, headers=headers(cookie))
-
-    assert response.status_code == 413
-    assert response.json()["error"]["code"] == "payload_too_large"
-    assert await counts(admin_engine) == (0, 0)
-    assert stored_files(tmp_path) == []
-
-
-async def test_a_client_that_hides_the_size_is_still_cut_off_at_the_limit(
-    db_config: DbConfig,
-    make_user: MakeUser,
-    session_factory: Factory,
-    admin_engine: AsyncEngine,
-    tmp_path: Path,
-) -> None:
-    """No Content-Length (a chunked upload): the early check has nothing to read, so the limit must
-    be enforced while streaming. Otherwise a client could send gigabytes by simply not saying so."""
-    _, cookie = await sign_in(make_user, session_factory)
-
-    async def chunked() -> AsyncIterator[bytes]:
-        for start in range(0, len(PDF), 1000):
-            yield PDF[start : start + 1000]
-
-    settings = settings_with(db_config, tmp_path, upload_max_bytes=len(PDF) - 1)
-    async with running_app(settings) as (_, client):
-        response = await client.post(upload_url(), content=chunked(), headers=headers(cookie))
-
-    assert response.request.headers.get("content-length") is None  # the premise of this test
-    assert response.status_code == 413
-    assert await counts(admin_engine) == (0, 0)
-    assert stored_files(tmp_path) == []
-
-
-async def test_an_unknown_stock_is_404_and_the_body_is_never_stored(
-    db_config: DbConfig,
-    make_user: MakeUser,
-    session_factory: Factory,
-    admin_engine: AsyncEngine,
-    tmp_path: Path,
-) -> None:
-    _, cookie = await sign_in(make_user, session_factory)
-    async with running_app(settings_with(db_config, tmp_path)) as (_, client):
-        response = await client.post(upload_url("INFY"), content=PDF, headers=headers(cookie))
-
-    assert response.status_code == 404
-    assert "INFY" not in response.text  # the error never repeats what the caller sent
-    assert await counts(admin_engine) == (0, 0)
-    assert stored_files(tmp_path) == []
-
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        "/api/v1/stocks/TCS/documents",
-        "/api/v1/stocks/TCS/documents?title=",
-        "/api/v1/stocks/TCS/documents?title=%20%20",
-        "/api/v1/stocks/TCS/documents?title=" + "x" * 201,
-        "/api/v1/stocks/tcs/documents?title=ok",
-    ],
-    ids=["no-title", "empty-title", "blank-title", "long-title", "lower-case-symbol"],
-)
-async def test_invalid_parameters_are_422_and_nothing_is_stored(
-    db_config: DbConfig,
-    make_user: MakeUser,
-    session_factory: Factory,
-    admin_engine: AsyncEngine,
-    tmp_path: Path,
-    url: str,
-) -> None:
-    _, cookie = await sign_in(make_user, session_factory)
-    async with running_app(settings_with(db_config, tmp_path)) as (_, client):
-        response = await client.post(url, content=PDF, headers=headers(cookie))
-
-    assert response.status_code == 422
-    assert await counts(admin_engine) == (0, 0)
-    assert stored_files(tmp_path) == []
-
-
-# --- reading --------------------------------------------------------------------------------------
-
-
 async def test_listing_an_unknown_stock_is_404(
-    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, tmp_path: Path
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory
 ) -> None:
     _, cookie = await sign_in(make_user, session_factory)
-    async with running_app(settings_with(db_config, tmp_path)) as (_, client):
+    async with running_app(db_config.settings()) as (_, client):
         response = await client.get("/api/v1/stocks/INFY/documents", headers=cookie)
     assert response.status_code == 404
-    assert "INFY" not in response.text
+    assert "INFY" not in response.text  # the error never repeats what the caller sent
 
 
 async def test_an_unknown_document_is_404(
-    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, tmp_path: Path
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory
 ) -> None:
     _, cookie = await sign_in(make_user, session_factory)
-    async with running_app(settings_with(db_config, tmp_path)) as (_, client):
+    async with running_app(db_config.settings()) as (_, client):
         response = await client.get("/api/v1/documents/999999", headers=cookie)
     assert response.status_code == 404
 
 
-async def test_the_list_is_newest_first_and_pages_with_a_cursor(
-    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, tmp_path: Path
+async def test_a_signed_in_user_still_cannot_upload(
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
 ) -> None:
     _, cookie = await sign_in(make_user, session_factory)
-    async with running_app(settings_with(db_config, tmp_path)) as (_, client):
-        ids = []
-        for number in range(5):
-            pdf = PDF + str(number).encode()
-            created = await client.post(
-                upload_url(title=f"Report {number}"), content=pdf, headers=headers(cookie)
-            )
-            ids.append(created.json()["id"])
+    async with running_app(db_config.settings()) as (_, client):
+        response = await client.post(
+            "/api/v1/stocks/TCS/documents?title=Q2",
+            content=DATA,
+            headers={
+                **cookie,
+                "Origin": "http://localhost:8000",
+                "Content-Type": "application/pdf",
+            },
+        )
 
+    assert response.status_code == 405
+    assert await counts(admin_engine) == (0, 0)
+
+
+async def test_the_list_is_newest_first_and_pages_with_a_cursor(
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory
+) -> None:
+    ids = []
+    for number in range(5):
+        view, _ = await record(
+            session_factory, data=DATA + str(number).encode(), url=bse_url(number)
+        )
+        ids.append(view.id)
+    _, cookie = await sign_in(make_user, session_factory)
+
+    async with running_app(db_config.settings()) as (_, client):
         first = (await client.get("/api/v1/stocks/TCS/documents?limit=2", headers=cookie)).json()
         second = (
             await client.get(

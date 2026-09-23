@@ -35,9 +35,7 @@ from app.jobs import ClaimedJob, claim_next, fail, retry_or_fail, still_mine
 
 logger = logging.getLogger("app.worker")
 
-GAVE_UP_REASON = (
-    "This document could not be processed after several attempts; try uploading it again later."
-)
+GAVE_UP_REASON = "This document could not be processed after several attempts."
 
 
 # How often the loop asks "is a filing discovery due?". The answer comes from the jobs table

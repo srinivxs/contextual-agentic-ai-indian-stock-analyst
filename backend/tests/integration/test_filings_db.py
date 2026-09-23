@@ -18,7 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.blobs import FilesystemBlobStore, blob_key_for
-from app.documents import read_pdf, record_upload
+from app.documents import PdfFile, record_document
 from app.filings import SCREENER_URL, enqueue_discovery
 from app.worker import WorkerContext, run_forever, run_once
 from tests.filings_html import DEMOCO_PAGE, EXPECTED, TODAY, file_url, transcript_url
@@ -32,10 +32,6 @@ Factory = async_sessionmaker[AsyncSession]
 def pdf_for(url: str) -> bytes:
     """A distinct synthetic PDF per URL, with enough text to be ingested."""
     return make_pdf([[f"DemoCo Limited (fictional) filing at {url[-45:]}", "Revenue rose. " * 10]])
-
-
-async def one_chunk(data: bytes) -> AsyncIterator[bytes]:
-    yield data
 
 
 class FakeInternet:
@@ -136,7 +132,7 @@ async def test_the_chain_ends_in_ingested_official_documents(
     assert len(documents) == len(EXPECTED)
     assert {d[1] for d in documents} == {"bse"}
     assert {d[2] for d in documents} == {url for _, _, url in EXPECTED}
-    assert {d[3] for d in documents} == {None}  # nobody uploaded these
+    assert {d[3] for d in documents} == {None}  # no user added these
     assert {d[4] for d in documents} == {"completed"}
     assert ("TCS earnings call transcript, Jul 2026",) in [(d[0],) for d in documents]
     assert sorted(
@@ -236,35 +232,35 @@ async def test_a_screener_outage_is_retried_later(
     assert await rows(admin_engine, "SELECT status FROM jobs") == [("pending",)]
 
 
-async def test_a_filing_identical_to_an_uploaded_file_is_not_stored_twice(
+async def test_a_filing_identical_to_one_already_recorded_is_not_stored_twice(
     context: WorkerContext,
     internet: FakeInternet,
     admin_engine: AsyncEngine,
     session_factory: Factory,
 ) -> None:
-    """Same bytes, same document: the sha256 rule from P9a covers both doors."""
-    url = transcript_url(1)
-    upload = await read_pdf(
-        one_chunk(pdf_for(file_url(1))), limit=10_000_000
-    )  # the bytes BSE serves
-    await context.blob_store.put(blob_key_for(upload.sha256), upload.data)  # as the endpoint does
-    async with session_factory() as db:  # someone uploaded this very file by hand earlier
+    """Same bytes, same document, even under another address (BSE lists some files twice)."""
+    data = pdf_for(file_url(1))  # the bytes BSE serves for transcript 1
+    pdf = PdfFile(data=data, sha256=hashlib.sha256(data).hexdigest())
+    await context.blob_store.put(blob_key_for(pdf.sha256), pdf.data)
+    async with session_factory() as db:  # recorded earlier, from a different address
         stock = (await db.execute(text("SELECT id FROM stocks WHERE symbol = 'TCS'"))).scalar_one()
-        await record_upload(
+        await record_document(
             db,
             stock=stock,
-            user_id=None,
-            title="Uploaded by hand",
-            upload=upload,
-            blob_key=blob_key_for(upload.sha256),
+            title="Recorded earlier",
+            pdf=pdf,
+            blob_key=blob_key_for(pdf.sha256),
+            source_url=file_url(15),
+            kind="announcement",
+            period="Recorded earlier",
         )
         await db.commit()
-    await insert_fetch(admin_engine, url)
+    await insert_fetch(admin_engine, transcript_url(1))
 
-    await drain(context)  # the upload's own ingestion, then the fetch
+    await drain(context)  # the earlier document's own ingestion, then the fetch
 
-    assert await rows(admin_engine, "SELECT title, source FROM documents") == [
-        ("Uploaded by hand", "upload")
+    assert await rows(admin_engine, "SELECT title, source_url FROM documents") == [
+        ("Recorded earlier", file_url(15))
     ]
     assert await rows(admin_engine, "SELECT status FROM jobs WHERE kind = 'fetch_filing'") == [
         ("completed",)

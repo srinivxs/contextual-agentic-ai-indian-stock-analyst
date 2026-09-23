@@ -110,7 +110,7 @@ function StockPanel({ shelf }: { shelf: Shelf }) {
 
 /**
  * Every stock's documents, one tab per stock: the official filings the worker fetched from BSE
- * (ADR 018) and anything uploaded, grouped by kind and newest first. While any document is still
+ * (ADR 018), grouped by kind and newest first. While any document is still
  * waiting or processing, the page refreshes itself.
  */
 export function DocumentsView() {

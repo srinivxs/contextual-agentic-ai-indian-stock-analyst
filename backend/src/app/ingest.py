@@ -32,10 +32,7 @@ from app.pdf_text import UnreadablePdf, extract_pages
 # Below this many visible characters in the whole document, there is nothing to cite: a scan.
 MIN_TEXT_CHARS = 50
 
-SCANNED_REASON = (
-    "No text found in this PDF: it looks like a scanned document. "
-    "Upload a PDF whose text can be selected."
-)
+SCANNED_REASON = "No text found in this PDF: it looks like a scanned document."
 UNREADABLE_REASON = "This PDF could not be read: it may be damaged or password-protected."
 
 

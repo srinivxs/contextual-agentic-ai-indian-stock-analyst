@@ -116,17 +116,15 @@ describe('the documents page', () => {
     expect(screen.getByText('No text found.')).toBeInTheDocument();
   });
 
-  it('shows an upload, which has no public address, as plain text', async () => {
+  it('shows a document with no kind or address under its title, as plain text', async () => {
     installFakeApi({
-      documents: [
-        demoDocument({ title: 'My notes.pdf', kind: null, period: null, source: 'upload', source_url: null }),
-      ],
+      documents: [demoDocument({ title: 'DemoCo filing', kind: null, period: null, source_url: null })],
     });
     render(<DocumentsView />);
 
-    expect(await screen.findByText('My notes.pdf')).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: /Uploaded/ })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'My notes.pdf' })).toBeNull();
+    expect(await screen.findByText('DemoCo filing')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /Other documents/ })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'DemoCo filing' })).toBeNull();
   });
 
   it('renders text as text, never as HTML', async () => {

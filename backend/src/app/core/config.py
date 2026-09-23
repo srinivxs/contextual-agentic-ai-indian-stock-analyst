@@ -52,12 +52,9 @@ class CommonSettings(BaseSettings):
     db_ready_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
 
     # --- documents (P9) ---------------------------------------------------------------------
-    # Where uploaded files are kept locally: inside the git-ignored data/local/ folder (the project notes:
+    # Where fetched filings are kept locally: inside the git-ignored data/local/ folder (the project notes:
     # real documents never enter git). In AWS a private S3 bucket takes its place (P9c).
     blob_root: Path = _REPO_ROOT / "data" / "local" / "blobs"
-    # The largest upload accepted. The body is read into memory, so this also bounds memory per
-    # request. 20 MB fits a results announcement or an annual-report extract with room to spare.
-    upload_max_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
 
     # --- the worker (P9) ----------------------------------------------------------------------
     # How long an idle worker waits before looking for work again.
@@ -73,7 +70,7 @@ class CommonSettings(BaseSettings):
     filings_refresh_hours: int = Field(default=24, ge=1, le=168)
     # How far back to fetch: every BSE-hosted filing of the last N years (the owner chose 3).
     filings_years: int = Field(default=3, ge=1, le=5)
-    # A fetched filing may be larger than an upload: annual reports run to tens of megabytes.
+    # The largest filing fetched. It is read into memory; annual reports run to tens of megabytes.
     filings_max_bytes: int = Field(default=60 * 1024 * 1024, ge=1024, le=200 * 1024 * 1024)
 
     @field_validator("database_url")

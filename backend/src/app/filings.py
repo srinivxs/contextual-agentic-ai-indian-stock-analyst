@@ -39,7 +39,7 @@ from sqlalchemy import CursorResult, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.blobs import BlobStore, blob_key_for
-from app.documents import PDF_SIGNATURE, Upload, record_upload, stock_id
+from app.documents import PDF_SIGNATURE, PdfFile, record_document, stock_id
 from app.ingest import JobCannotSucceed
 from app.jobs import ClaimedJob, complete, still_mine
 from app.polite_fetch import FetchRefused, FetchTooLarge, polite_get
@@ -373,22 +373,20 @@ async def fetch(
         data, url = await _download(http, candidates, limit=limit, pause_seconds=pause_seconds)
         if not data.startswith(PDF_SIGNATURE):
             raise JobCannotSucceed("the filing address did not return a PDF (not a PDF)")
-        upload = Upload(data=data, sha256=hashlib.sha256(data).hexdigest())
-        key = blob_key_for(upload.sha256)
-        await store.put(key, upload.data)  # before the transaction: no transaction spans I/O
+        pdf = PdfFile(data=data, sha256=hashlib.sha256(data).hexdigest())
+        key = blob_key_for(pdf.sha256)
+        await store.put(key, pdf.data)  # before the transaction: no transaction spans I/O
 
     async with session_factory() as db:
         if not await still_mine(db, job):
             return
         if not known:
-            await record_upload(
+            await record_document(
                 db,
                 stock=stock,
-                user_id=None,
                 title=title_for(symbol, FilingLink(kind, label, url)),
-                upload=upload,
+                pdf=pdf,
                 blob_key=key,
-                source="bse",
                 source_url=url,
                 kind=kind,
                 period=clean_label(label),

@@ -1,7 +1,8 @@
 # 018 — Official filings found on screener.in and fetched from BSE, automatically
 
 - **Status:** Accepted (P9c, 2026-09-23; the owner's decision). **Amends [ADR 007](007-source-strategy.md)**:
-  company documents no longer depend on the owner downloading them. Uploads remain as a second door.
+  company documents no longer depend on the owner downloading them. Uploads were a second door
+  until the P9d amendment below removed them.
 - **Date:** 2026-09-23
 
 ## Context
@@ -55,7 +56,7 @@ forbidden.
 - **Residual risk, accepted by the owner:** screener.in's terms (as recorded in P0) allow personal
   viewing only. We read one page per stock per day and keep nothing of it but links to public
   exchange filings; the switch turns it off entirely. If screener objects or blocks us, we switch it
-  off and fall back to uploads. BSE's terms page could not be read (JavaScript-only).
+  off (there is no other door since uploads were removed). BSE's terms page could not be read (JavaScript-only).
 - screener's page layout can change; the parser then finds no links, discovery succeeds with nothing
   to do, and nothing breaks. Tests pin the structure with a synthetic page.
 - Presentations are mostly hosted on company websites, which refused automated downloads in P0, so
@@ -81,3 +82,19 @@ forbidden.
   fetches and ingests the whole window again (several minutes for about 85 PDFs). Decided in the
   AWS step of P9d.
 
+## Amendment (P9d, 2026-09-23): uploads removed; this is the only door for company documents
+
+- **Why:** the project brief never asks users to upload anything. It says the app should ingest a
+  followed stock's fundamentals and news itself ("User follows an NSE/BSE ticker; the app fetches
+  ..."). Uploads were our own workaround from P0, when no automatic source looked usable. With
+  automatic filings working, the owner removed them.
+- **What went:** `POST /api/v1/stocks/{symbol}/documents` (now 405), its size limit
+  (`UPLOAD_MAX_BYTES`) and request-body reading; the api's file store and its Compose volume (the api
+  only reads metadata; the worker alone writes and reads PDFs); the "Uploaded" group on the Documents
+  page.
+- **What stayed:** the dedupe guarantee (the same bytes recorded eight times at once give one
+  document and one job), now tested at `record_document`, where it actually lives. The database keeps
+  its `source` and `uploaded_by` columns and the `'upload'` value in `ck_documents_source`:
+  migrations are forward-only, and dropping them would buy nothing.
+- **Cost:** if screener.in blocks us or its layout changes, no new documents arrive until the parser
+  is fixed. Already-ingested documents are unaffected.

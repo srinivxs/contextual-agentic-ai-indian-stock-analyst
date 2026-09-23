@@ -1,22 +1,23 @@
-"""Company documents: reading an upload safely, and recording it with its ingestion job.
+"""Company documents: recording a fetched filing with its ingestion job, and reading them back.
+
+Every document is an official filing the worker fetched from BSE (ADR 018). Users do not upload
+documents: the project brief asks the app to ingest data itself, and the owner removed the upload
+door once automatic filings worked (P9d).
 
 Plain SQL, like the rest of the data access (ADR 013). None of these functions commits; the caller
 owns the transaction.
 
-HOW A DUPLICATE UPLOAD IS STOPPED (the P9 race)
-  Two requests carrying the same file both hash it, both store it under the same key (identical
-  bytes, identical place), and both run ``INSERT ... ON CONFLICT (sha256) DO NOTHING``. The unique
-  constraint lets exactly one insert through; the other gets no row back and reads the existing
-  document instead. The job is inserted in the same transaction as the document it belongs to, so
-  a document with no job, or a job with no document, cannot exist.
+HOW A DUPLICATE IS STOPPED
+  Two fetches of the same bytes (the same filing listed twice, a re-run, two workers racing) both
+  store the file under the same key (identical bytes, identical place) and both run
+  ``INSERT ... ON CONFLICT (sha256) DO NOTHING``. The unique constraint lets exactly one insert
+  through; the other gets no row back and reads the existing document instead. The ingestion job is
+  inserted in the same transaction as its document, so neither can exist without the other.
 """
 
-import hashlib
-from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-from uuid import UUID
 
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,16 +25,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 PDF_SIGNATURE = b"%PDF-"
 
 
-class TooLarge(Exception):
-    """The upload passed the size limit. Reading stopped there."""
-
-
-class NotAPdf(Exception):
-    """The upload does not start with the PDF signature, whatever its Content-Type said."""
-
-
 @dataclass(frozen=True)
-class Upload:
+class PdfFile:
+    """A downloaded PDF and its SHA-256, which names it everywhere (blob key, dedupe)."""
+
     data: bytes
     sha256: str
 
@@ -42,26 +37,9 @@ class Upload:
         return len(self.data)
 
 
-async def read_pdf(chunks: AsyncIterator[bytes], *, limit: int) -> Upload:
-    """Read a request body, hashing as it goes, and stop the moment it passes ``limit`` bytes."""
-    digest = hashlib.sha256()
-    parts: list[bytes] = []
-    size = 0
-    async for chunk in chunks:
-        size += len(chunk)
-        if size > limit:
-            raise TooLarge
-        digest.update(chunk)
-        parts.append(chunk)
-    data = b"".join(parts)
-    if not data.startswith(PDF_SIGNATURE):
-        raise NotAPdf
-    return Upload(data=data, sha256=digest.hexdigest())
-
-
 @dataclass(frozen=True)
 class DocumentView:
-    """A document as any signed-in user sees it. Uploader and storage location stay inside."""
+    """A document as any signed-in user sees it. Where the copy is stored stays inside."""
 
     id: int
     symbol: str
@@ -71,9 +49,9 @@ class DocumentView:
     page_count: int | None
     failure_reason: str | None
     created_at: datetime
-    source: str  # "upload" or "bse" (ADR 018)
-    source_url: str | None  # the official public address of a fetched filing
-    kind: str | None  # transcript, presentation, annual_report, announcement; None for an upload
+    source: str  # "bse" (ADR 018)
+    source_url: str | None  # the official public address the filing was fetched from
+    kind: str | None  # transcript, presentation, annual_report or announcement
     period: str | None  # "Jul 2026", "Annual Report 2025", an announcement's subject
 
 
@@ -84,14 +62,13 @@ _COLUMNS = (
 
 _STOCK_ID = text("SELECT id FROM stocks WHERE symbol = :symbol")
 
-# sha256 is the arbiter. The only other unique rule, on source_url, never fires here: uploads have
-# no source_url, and a fetch skips an address already recorded and is the only live job for it.
+# sha256 is the arbiter. The only other unique rule, on source_url, never fires here: a fetch skips
+# an address already recorded, and it is the only live job for that address.
 _INSERT_DOCUMENT = text(
     "INSERT INTO documents "
-    "(stock_id, uploaded_by, title, sha256, size_bytes, blob_key, source, source_url, "
-    "kind, period) "
-    "VALUES (:stock_id, :uploaded_by, :title, :sha256, :size_bytes, :blob_key, "
-    ":source, :source_url, :kind, :period) "
+    "(stock_id, title, sha256, size_bytes, blob_key, source, source_url, kind, period) "
+    "VALUES (:stock_id, :title, :sha256, :size_bytes, :blob_key, 'bse', :source_url, "
+    ":kind, :period) "
     "ON CONFLICT (sha256) DO NOTHING RETURNING id"
 )
 
@@ -131,35 +108,30 @@ async def stock_id(db: AsyncSession, symbol: str) -> int | None:
     return found
 
 
-async def record_upload(
+async def record_document(
     db: AsyncSession,
     *,
     stock: int,
-    user_id: UUID | None,
     title: str,
-    upload: Upload,
+    pdf: PdfFile,
     blob_key: str,
-    source: str = "upload",
-    source_url: str | None = None,
-    kind: str | None = None,
-    period: str | None = None,
+    source_url: str,
+    kind: str,
+    period: str,
 ) -> tuple[DocumentView, bool]:
-    """Insert the document and its ingestion job, or find the existing document for this file.
+    """Insert a fetched filing and its ingestion job, or find the existing document for these bytes.
 
-    Both doors use it: an upload (a user, no source_url) and a fetched filing (no user, the BSE
-    address). Returns the document and whether this call created it.
+    Returns the document and whether this call created it.
     """
     created_id = (
         await db.execute(
             _INSERT_DOCUMENT,
             {
                 "stock_id": stock,
-                "uploaded_by": user_id,
                 "title": title,
-                "sha256": upload.sha256,
-                "size_bytes": upload.size,
+                "sha256": pdf.sha256,
+                "size_bytes": pdf.size,
                 "blob_key": blob_key,
-                "source": source,
                 "source_url": source_url,
                 "kind": kind,
                 "period": period,
@@ -171,7 +143,7 @@ async def record_upload(
             _INSERT_JOB,
             {"document_id": created_id, "dedupe_key": f"ingest_document:{created_id}"},
         )
-    row = (await db.execute(_BY_SHA256, {"sha256": upload.sha256})).one()
+    row = (await db.execute(_BY_SHA256, {"sha256": pdf.sha256})).one()
     return _view(row), created_id is not None
 
 

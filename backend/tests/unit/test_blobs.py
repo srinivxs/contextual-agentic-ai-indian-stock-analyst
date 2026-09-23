@@ -1,7 +1,7 @@
-"""The filesystem blob store: where uploaded PDFs live on a laptop (S3 takes its place in AWS, P9c).
+"""The filesystem blob store: where fetched PDFs live on a laptop (S3 takes its place in AWS, P9c).
 
 A key is derived from the file's SHA-256, so the same bytes always land at the same key. That is
-what makes a second or concurrent upload of one file harmless: every writer writes identical bytes
+what makes a second or concurrent fetch of one file harmless: every writer writes identical bytes
 to one place.
 """
 
@@ -56,7 +56,7 @@ async def test_no_temporary_file_is_left_behind(tmp_path: Path) -> None:
 def test_concurrent_writers_of_one_key_all_succeed_and_leave_one_whole_file(
     tmp_path: Path,
 ) -> None:
-    """Eight uploads of one file at once: nobody fails, and nobody reads half a file."""
+    """Eight writes of one file at once: nobody fails, and nobody reads half a file."""
     store = FilesystemBlobStore(tmp_path)
     key = blob_key_for(SHA)
     errors: list[BaseException] = []
@@ -99,7 +99,7 @@ def test_a_real_write_failure_is_not_swallowed(
 ) -> None:
     """PermissionError is forgiven only when another writer has already put the file in place.
 
-    If the rename fails and there is still no file, the upload must fail loudly, and the temporary
+    If the rename fails and there is still no file, the write must fail loudly, and the temporary
     file must not be left behind."""
     store = FilesystemBlobStore(tmp_path)
 

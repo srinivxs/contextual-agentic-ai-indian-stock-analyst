@@ -32,7 +32,7 @@ export type FakeDocument = {
   page_count: number | null;
   failure_reason: string | null;
   created_at: string;
-  source: 'upload' | 'bse';
+  source: string;
   source_url: string | null;
   kind: 'transcript' | 'presentation' | 'annual_report' | 'announcement' | null;
   period: string | null;

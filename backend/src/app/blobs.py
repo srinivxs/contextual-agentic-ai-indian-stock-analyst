@@ -1,10 +1,10 @@
-"""Where uploaded files are kept: a folder on a laptop, a private S3 bucket in AWS (P9c).
+"""Where fetched filings are kept: a folder on a laptop, a private S3 bucket in AWS (P9c).
 
 The rest of the code sees only ``BlobStore``: put bytes under a key, get them back. Tests use a
 temporary folder, and the S3 version arrives without anything else changing.
 
 A key is derived from the file's SHA-256 (``documents/<sha256>.pdf``). The same bytes always land
-at the same key, which is what makes duplicate and concurrent uploads harmless: every writer writes
+at the same key, which is what makes duplicate and concurrent fetches harmless: every writer writes
 identical bytes to one place. And because we build every key ourselves, nothing the client sends
 (a filename, say) ever becomes part of a path.
 """

@@ -9,8 +9,8 @@ Reasoning for the source and infrastructure choices is in ADRs 007, 008 and 009.
 
 ## What we are building
 
-A working web application in which a user can log in, follow three stocks, upload company documents,
-ask questions and get **grounded, cited answers in INR**, have their investment preferences
+A working web application in which a user can log in, follow three stocks, see the company filings the app
+ingests for them by itself, ask questions and get **grounded, cited answers in INR**, have their investment preferences
 remembered, and see which of the three stocks match those preferences and why.
 
 ## In scope
@@ -44,7 +44,7 @@ The dataset is intentionally small and **real**.
   BSE-hosted earnings-call transcript and investor presentation of the last three years, the last
   three annual reports and the recent announcements, downloaded from BSE by the worker once a day
   (about 85 documents). Found through each stock's screener.in page, which is used for
-  links only. A user may also upload a PDF; it goes through the same pipeline.
+  links only. There is no upload: the challenge asks the app to ingest data itself (P9d).
 - **RBI press-release RSS**, ingested automatically (about ten current items at a time).
 - **Events are derived by the pipeline** from those documents and that feed. Nobody writes event notes
   by hand to make the dataset look bigger. Events are as plentiful as the real documents make them.
@@ -61,8 +61,8 @@ The dataset is intentionally small and **real**.
 2. They follow RELIANCE, TCS and HDFCBANK and see basic information: name, NSE/BSE identifiers, sector.
 3. Each stock page shows key facts **with citation chips**, a rolling-sentiment badge, and recent
    events derived from the ingested documents and feed.
-4. They upload a PDF. Its status moves pending → processing → completed, and its extracted facts and
-   events then appear.
+4. On the Documents page they see each stock's filings, fetched automatically; a new one's status
+   moves pending → processing → completed, and its extracted facts and events then appear.
 5. They say "I'm conservative, dividend-focused, and I avoid high debt." The profile updates and a
    "what I remember" panel shows it with the supporting quote. They can edit or forget any field.
 6. They ask a factual question and get an answer where **every number and claim has a citation** that
@@ -92,7 +92,7 @@ The dataset is intentionally small and **real**.
 
 1. Log in → follow the three stocks.
 2. Open TCS: see cited facts, sentiment, events.
-3. Upload a document → watch it ingest → see new facts appear.
+3. Open Documents → see three years of official filings, fetched and ingested automatically.
 4. Tell the assistant your preferences → see them appear in the memory panel.
 5. Ask a factual question → answer with citations; open one to see page and excerpt.
 6. Ask for something not in the data → it abstains.

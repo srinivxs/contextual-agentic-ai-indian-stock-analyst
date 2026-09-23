@@ -141,7 +141,6 @@ def test_the_api_gets_the_runtime_role_and_exactly_the_settings_it_needs(
         "APP_ENV",
         "COOKIE_SECURE",
         "LOG_LEVEL",
-        "BLOB_ROOT",
     }
     assert set(env) <= allowed, f"unexpected api environment: {sorted(set(env) - allowed)}"
 
@@ -179,17 +178,18 @@ def test_filing_discovery_is_off_unless_the_developer_switches_it_on(model: dict
     assert service(model, "worker")["environment"]["FILINGS_DISCOVERY"] == "false"
 
 
-def test_the_api_and_the_worker_share_one_folder_for_stored_files(model: dict[str, Any]) -> None:
-    """The api stores an upload; the worker reads it. The same named volume, at the same path."""
-    for name in ("api", "worker"):
-        container = service(model, name)
-        assert container["environment"]["BLOB_ROOT"] == "/data/blobs", name
-        mounts = [
-            (m["type"], m["source"], m["target"], m.get("read_only", False))
-            for m in container.get("volumes", [])
-        ]
-        assert ("volume", "blobs", "/data/blobs", False) in mounts, (name, mounts)
+def test_only_the_worker_has_the_folder_for_stored_files(model: dict[str, Any]) -> None:
+    """The worker fetches filings and reads them back, from a named volume. The api stores nothing
+    (no uploads since P9d), so it gets no volume at all."""
+    worker = service(model, "worker")
+    assert worker["environment"]["BLOB_ROOT"] == "/data/blobs"
+    mounts = [
+        (m["type"], m["source"], m["target"], m.get("read_only", False))
+        for m in worker.get("volumes", [])
+    ]
+    assert ("volume", "blobs", "/data/blobs", False) in mounts, mounts
     assert "blobs" in model["volumes"]
+    assert "volumes" not in service(model, "api")
 
 
 def test_the_worker_has_its_own_health_check_not_the_apis(model: dict[str, Any]) -> None:

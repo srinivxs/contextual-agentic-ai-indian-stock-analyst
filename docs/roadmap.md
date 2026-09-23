@@ -172,14 +172,15 @@ leaves a real product.
 ## P9 — Document ingestion core
 
 - **Goal:** a real, safe ingestion pipeline (no AI yet).
-- **Build:** upload API; `BlobStore` (filesystem locally, S3 in AWS); PDF text extraction with a
+- **Build:** `BlobStore` (filesystem locally, S3 in AWS); PDF text extraction with a
   permissively licensed library; content-hash dedupe; page-aware chunking; the Postgres jobs table and
   worker loop (claim with `SKIP LOCKED`, retries with backoff, leases); automatic official filings
-  from BSE (ADR 018); Documents page in the UI.
+  from BSE (ADR 018); Documents page in the UI. The upload API built first was removed in P9d:
+  the challenge asks the app to ingest data itself, and automatic filings do exactly that.
 - **Explain first:** idempotency via unique constraints and `ON CONFLICT`; `SKIP LOCKED`; why no
   transaction spans network I/O.
-- **Done when:** the same file uploaded twice or eight times at once gives one document and one set of
-  chunks; a failing job retries then fails cleanly; a scanned PDF is rejected with a clear status.
+- **Done when:** the same file recorded twice or eight times at once gives one document and one set
+  of chunks; a failing job retries then fails cleanly; a scanned PDF is rejected with a clear status.
 - **You should be able to answer:** name three races and how each is closed. Why not FastAPI
   `BackgroundTasks`?
 

@@ -98,10 +98,8 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
-      # Uploads are stored here, in the volume the worker reads from (P9d).
-      BLOB_ROOT: /data/blobs
-    volumes:
-      - blobs:/data/blobs
+    # No file storage: the api only reads document metadata from the database. The worker alone
+    # writes and reads the stored PDFs (uploads were removed in P9d).
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -147,5 +145,5 @@ services:
 
 volumes:
   pgdata:
-  # Stored PDFs, shared by the api and the worker (P9d).
+  # Stored PDFs: the worker's alone (P9d).
   blobs:

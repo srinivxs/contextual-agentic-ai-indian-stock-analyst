@@ -68,7 +68,7 @@ describe('grouping for the page', () => {
       demoDocument({ id: 5, kind: 'annual_report', period: 'Annual Report 2026' }),
       demoDocument({ id: 6, kind: 'presentation', period: 'Jan 2026' }),
       demoDocument({ id: 7, kind: 'transcript', period: 'Jan 2026' }),
-      demoDocument({ id: 8, kind: null, period: null, source: 'upload', source_url: null }),
+      demoDocument({ id: 8, kind: null, period: null }),
     ]);
 
     expect(groups.map((g) => [g.title, g.documents.map((d) => d.id)])).toEqual([
@@ -76,7 +76,7 @@ describe('grouping for the page', () => {
       ['Investor presentations', [6]],
       ['Annual reports', [5, 2]],
       ['Announcements', [4]],
-      ['Uploaded', [8]],
+      ['Other documents', [8]],
     ]);
   });
 
@@ -101,8 +101,8 @@ describe('the link to the official filing', () => {
     expect(officialLink(document)).toBe(document.source_url);
   });
 
-  it('does not exist for an upload', () => {
-    expect(officialLink(demoDocument({ source: 'upload', source_url: null }))).toBeNull();
+  it('does not exist without an address', () => {
+    expect(officialLink(demoDocument({ source_url: null }))).toBeNull();
   });
 
   it.each([

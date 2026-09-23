@@ -7,6 +7,7 @@ duplicates anything.
 """
 
 import asyncio
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +16,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.blobs import FilesystemBlobStore, blob_key_for
-from app.documents import Upload, read_pdf, record_upload
+from app.documents import PdfFile, record_document
 from app.jobs import claim_next
-from app.worker import WorkerContext, handle, run_forever, run_once
-from tests.integration.conftest import MakeUser
+from app.worker import GAVE_UP_REASON, WorkerContext, handle, run_forever, run_once
 from tests.pdfs import CORRUPT, DEMOCO_RESULTS, SCANNED
 
 pytestmark = pytest.mark.usefixtures("migrated_db", "clean_document_tables")
@@ -26,22 +26,22 @@ pytestmark = pytest.mark.usefixtures("migrated_db", "clean_document_tables")
 Factory = async_sessionmaker[AsyncSession]
 
 
-async def one_chunk(data: bytes) -> Any:
-    yield data
-
-
-async def seed(
-    data: bytes, factory: Factory, store: FilesystemBlobStore, make_user: MakeUser
-) -> int:
-    """Exactly what the upload endpoint does: store the file, then record it with its job."""
-    upload: Upload = await read_pdf(one_chunk(data), limit=10_000_000)
-    key = blob_key_for(upload.sha256)
-    await store.put(key, upload.data)
-    user_id = await make_user()
+async def seed(data: bytes, factory: Factory, store: FilesystemBlobStore) -> int:
+    """Exactly what a filing fetch does: store the file, then record it with its job."""
+    pdf = PdfFile(data=data, sha256=hashlib.sha256(data).hexdigest())
+    key = blob_key_for(pdf.sha256)
+    await store.put(key, pdf.data)
     async with factory() as db:
         stock = (await db.execute(text("SELECT id FROM stocks WHERE symbol = 'TCS'"))).scalar_one()
-        document, _ = await record_upload(
-            db, stock=stock, user_id=user_id, title="DemoCo results", upload=upload, blob_key=key
+        document, _ = await record_document(
+            db,
+            stock=stock,
+            title="DemoCo results",
+            pdf=pdf,
+            blob_key=key,
+            source_url=f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{pdf.sha256}.pdf",
+            kind="announcement",
+            period="DemoCo results",
         )
         await db.commit()
     return document.id
@@ -80,10 +80,9 @@ async def test_a_text_pdf_becomes_pages_and_page_numbered_chunks(
     context: WorkerContext,
     session_factory: Factory,
     store: FilesystemBlobStore,
-    make_user: MakeUser,
     admin_engine: AsyncEngine,
 ) -> None:
-    document_id = await seed(DEMOCO_RESULTS, session_factory, store, make_user)
+    document_id = await seed(DEMOCO_RESULTS, session_factory, store)
 
     assert await run_once(context) is True
 
@@ -111,11 +110,10 @@ async def test_running_the_same_ingestion_again_changes_nothing(
     context: WorkerContext,
     session_factory: Factory,
     store: FilesystemBlobStore,
-    make_user: MakeUser,
     admin_engine: AsyncEngine,
 ) -> None:
     """Idempotent: a second run replaces the pages and chunks with identical ones."""
-    document_id = await seed(DEMOCO_RESULTS, session_factory, store, make_user)
+    document_id = await seed(DEMOCO_RESULTS, session_factory, store)
     await run_once(context)
     first = await rows(admin_engine, "SELECT ordinal, page_number, content_hash FROM chunks")
 
@@ -143,10 +141,9 @@ async def test_running_the_same_ingestion_again_changes_nothing(
 async def test_two_workers_at_once_process_the_document_exactly_once(
     session_factory: Factory,
     store: FilesystemBlobStore,
-    make_user: MakeUser,
     admin_engine: AsyncEngine,
 ) -> None:
-    await seed(DEMOCO_RESULTS, session_factory, store, make_user)
+    await seed(DEMOCO_RESULTS, session_factory, store)
     workers = [WorkerContext(session_factory, store, lease_seconds=300) for _ in range(2)]
 
     results = await asyncio.gather(*(run_once(w) for w in workers))
@@ -170,13 +167,12 @@ async def test_a_document_that_can_never_work_fails_once_with_a_clear_reason(
     context: WorkerContext,
     session_factory: Factory,
     store: FilesystemBlobStore,
-    make_user: MakeUser,
     admin_engine: AsyncEngine,
     data: bytes,
     reason: str,
 ) -> None:
     """Retrying cannot turn a scan into text, so the job fails at once instead of three times."""
-    document_id = await seed(data, session_factory, store, make_user)
+    document_id = await seed(data, session_factory, store)
 
     await run_once(context)
 
@@ -226,11 +222,10 @@ class FlakyStore(FilesystemBlobStore):
 async def test_a_transient_failure_is_retried_and_the_document_waits(
     session_factory: Factory,
     store: FilesystemBlobStore,
-    make_user: MakeUser,
     admin_engine: AsyncEngine,
     tmp_path: Path,
 ) -> None:
-    document_id = await seed(DEMOCO_RESULTS, session_factory, store, make_user)
+    document_id = await seed(DEMOCO_RESULTS, session_factory, store)
     flaky = WorkerContext(session_factory, FlakyStore(tmp_path / "blobs"), lease_seconds=300)
 
     await run_once(flaky)
@@ -246,11 +241,10 @@ async def test_a_transient_failure_is_retried_and_the_document_waits(
 async def test_after_the_last_attempt_the_document_fails_with_a_plain_reason(
     session_factory: Factory,
     store: FilesystemBlobStore,
-    make_user: MakeUser,
     admin_engine: AsyncEngine,
     tmp_path: Path,
 ) -> None:
-    document_id = await seed(DEMOCO_RESULTS, session_factory, store, make_user)
+    document_id = await seed(DEMOCO_RESULTS, session_factory, store)
     async with admin_engine.begin() as connection:
         await connection.execute(text("UPDATE jobs SET max_attempts = 1"))
     flaky = WorkerContext(session_factory, FlakyStore(tmp_path / "blobs"), lease_seconds=300)
@@ -261,18 +255,17 @@ async def test_after_the_last_attempt_the_document_fails_with_a_plain_reason(
     assert state["status"] == "failed"
     # Users see a plain sentence; the exception text stays in the job row and the log.
     assert "OSError" not in state["failure_reason"]
-    assert "try uploading it again" in state["failure_reason"]
+    assert state["failure_reason"] == GAVE_UP_REASON
 
 
 async def test_a_worker_that_lost_its_lease_does_not_write_results(
     context: WorkerContext,
     session_factory: Factory,
     store: FilesystemBlobStore,
-    make_user: MakeUser,
     admin_engine: AsyncEngine,
 ) -> None:
     """The fencing check runs inside the final transaction, before any row is written."""
-    document_id = await seed(DEMOCO_RESULTS, session_factory, store, make_user)
+    document_id = await seed(DEMOCO_RESULTS, session_factory, store)
     async with session_factory() as db:
         stale = await claim_next(db, lease_seconds=300)
         await db.commit()
@@ -292,10 +285,9 @@ async def test_a_worker_that_lost_its_lease_does_not_write_results(
 async def test_the_loop_works_through_the_queue_and_stops_when_asked(
     session_factory: Factory,
     store: FilesystemBlobStore,
-    make_user: MakeUser,
     admin_engine: AsyncEngine,
 ) -> None:
-    await seed(DEMOCO_RESULTS, session_factory, store, make_user)
+    await seed(DEMOCO_RESULTS, session_factory, store)
     context = WorkerContext(session_factory, store, lease_seconds=300)
     stop = asyncio.Event()
 
@@ -367,12 +359,11 @@ class StealingStore(FilesystemBlobStore):
 async def test_a_worker_that_loses_its_lease_mid_job_writes_nothing(
     session_factory: Factory,
     store: FilesystemBlobStore,
-    make_user: MakeUser,
     admin_engine: AsyncEngine,
     tmp_path: Path,
 ) -> None:
     """The check at the start of the final transaction is what stops a late writer."""
-    document_id = await seed(DEMOCO_RESULTS, session_factory, store, make_user)
+    document_id = await seed(DEMOCO_RESULTS, session_factory, store)
     slow = WorkerContext(session_factory, StealingStore(tmp_path / "blobs", admin_engine), 300)
 
     await run_once(slow)
@@ -386,14 +377,13 @@ async def test_a_worker_that_loses_its_lease_mid_job_writes_nothing(
 async def test_a_stale_worker_records_no_outcome_for_a_job_it_no_longer_holds(
     session_factory: Factory,
     store: FilesystemBlobStore,
-    make_user: MakeUser,
     admin_engine: AsyncEngine,
     tmp_path: Path,
     store_kind: str,
 ) -> None:
     """Neither a rejection nor a retry may be written by a worker whose claim was superseded."""
     data = SCANNED if store_kind == "rejecting" else DEMOCO_RESULTS
-    document_id = await seed(data, session_factory, store, make_user)
+    document_id = await seed(data, session_factory, store)
     blob_store = (
         StealingStore(tmp_path / "blobs", admin_engine)
         if store_kind == "rejecting"
@@ -415,14 +405,13 @@ class FlakyStealingStore(StealingStore):
 async def test_only_document_jobs_touch_a_document(
     session_factory: Factory,
     store: FilesystemBlobStore,
-    make_user: MakeUser,
     admin_engine: AsyncEngine,
 ) -> None:
     """A feed job (P10+) that fails must not rewrite the status of some document."""
     from app.jobs import ClaimedJob
     from app.worker import mark_job_document
 
-    document_id = await seed(DEMOCO_RESULTS, session_factory, store, make_user)
+    document_id = await seed(DEMOCO_RESULTS, session_factory, store)
     feed_job = ClaimedJob(
         id=1, kind="poll_feed", payload={"document_id": document_id}, attempts=1, max_attempts=3
     )

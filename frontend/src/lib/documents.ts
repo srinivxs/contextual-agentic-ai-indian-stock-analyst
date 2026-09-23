@@ -14,11 +14,12 @@ export type StockDocument = {
   page_count: number | null;
   failure_reason: string | null;
   created_at: string;
-  source: 'upload' | 'bse';
+  /** Always 'bse' today: every document is an official filing the worker fetched (ADR 018). */
+  source: string;
   source_url: string | null;
-  /** What a fetched filing is; null for an upload. */
+  /** What the filing is; null only if the server could not tell. */
   kind: DocumentKind | null;
-  /** "Jul 2026", "Annual Report 2025", or an announcement's subject; null for an upload. */
+  /** "Jul 2026", "Annual Report 2025", or an announcement's subject. */
   period: string | null;
 };
 
@@ -37,7 +38,7 @@ function isDocument(value: unknown): value is StockDocument {
     (d.page_count === null || typeof d.page_count === 'number') &&
     (d.failure_reason === null || typeof d.failure_reason === 'string') &&
     typeof d.created_at === 'string' &&
-    (d.source === 'upload' || d.source === 'bse') &&
+    typeof d.source === 'string' &&
     (d.source_url === null || typeof d.source_url === 'string') &&
     (d.kind === null || (typeof d.kind === 'string' && KINDS.includes(d.kind))) &&
     (d.period === null || typeof d.period === 'string')
@@ -84,7 +85,7 @@ export function isStillWorking(documents: StockDocument[]): boolean {
   return documents.some((d) => d.status === 'pending' || d.status === 'processing');
 }
 
-/** What a row is called: the period for a fetched filing, the title for an upload. */
+/** What a row is called: the filing's period, or its full title when it has none. */
 export function documentLabel(document: StockDocument): string {
   return document.kind !== null && document.period ? document.period : document.title;
 }
@@ -106,18 +107,18 @@ const GROUPS: { kind: DocumentKind | null; title: string; byPeriod: boolean }[] 
   { kind: 'presentation', title: 'Investor presentations', byPeriod: true },
   { kind: 'annual_report', title: 'Annual reports', byPeriod: true },
   { kind: 'announcement', title: 'Announcements', byPeriod: false },
-  { kind: null, title: 'Uploaded', byPeriod: false },
+  { kind: null, title: 'Other documents', byPeriod: false },
 ];
 
 /**
  * The page's sections, in a fixed order, each newest first. Filings with a period are sorted by
- * it; announcements and uploads keep the server's order, which is newest first already.
+ * it; announcements and anything else keep the server's order, which is newest first already.
  */
 export function groupDocuments(documents: StockDocument[]): DocumentGroup[] {
   return GROUPS.map(({ kind, title, byPeriod }) => {
     const members = documents.filter((d) => d.kind === kind);
     if (byPeriod) members.sort((a, b) => periodOrder(b.period) - periodOrder(a.period));
-    return { key: kind ?? 'upload', title, documents: members };
+    return { key: kind ?? 'other', title, documents: members };
   }).filter((group) => group.documents.length > 0);
 }
 
