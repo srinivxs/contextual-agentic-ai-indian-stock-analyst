@@ -22,7 +22,6 @@ already done:
 
 - **Allow 30 minutes.** A cold start is about 15 minutes of waiting; leave room for something to go
   wrong. Do not begin five minutes before an interview.
-- Docker Desktop running (the image is rebuilt and pushed).
 - `aws login --profile stock-analyst-admin` if the session has expired — it is interactive and needs
   MFA.
 - **In PowerShell, quote any Terraform flag containing `=`.** PowerShell splits the argument at the
@@ -96,21 +95,13 @@ terraform apply tfplan
 
 Note the `alb_dns_name` output. You need it in step 5.
 
-### 2. Push the backend image — about 1 minute, only if it changed
+### 2. The backend image — nothing to do
 
-The repository lives in `infra/cicd` and survives teardown, so the last image pushed is still there.
-Push only after changing the backend (until P8b, when CI pushes on every commit to `main`). The
-registry address is `terraform output ecr_repository_url` in `infra/cicd`, without the repository
-name.
-
-```powershell
-cd "C:\Contextual Agentic AI Indian Stock Analyst"
-$reg = "<account>.dkr.ecr.ap-south-1.amazonaws.com"
-docker build -t stock-analyst-backend:latest backend
-aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin $reg
-docker tag stock-analyst-backend:latest "$reg/stock-analyst-demo-backend:latest"
-docker push "$reg/stock-analyst-demo-backend:latest"
-```
+Since P8b, GitHub Actions builds and pushes an image on every push to `main` whose checks pass, tagged
+with the commit SHA, into the permanent repository in `infra/cicd`. Step 1's plan picks the newest one
+by digest. To run an older commit instead, add `"-var=image_tag=<full commit sha>"` to the plan (the
+last five images are kept). If the plan fails with "no matching image", no pipeline run has pushed yet:
+check the Actions tab.
 
 ### 3. Create the schema — about 1 minute
 
@@ -215,7 +206,7 @@ Tagging API, which lags. Trust the six commands above instead.
 | The api task keeps restarting | A setting the backend demands is missing. `aws logs get-log-events` on `/stock-analyst/demo/api` prints the Pydantic validation error naming it. |
 | Sign-in fails with `redirect_uri_mismatch` | Only possible if the distribution was recreated. Compare the Google client's URI with `terraform output public_base_url` in `infra/edge`. |
 | `terraform plan` in `infra/stack` fails on a data source | `infra/edge` or `infra/cicd` has not been applied. Both are permanent and must exist. |
-| The api task fails with `CannotPullContainerError` | The registry is empty: push the image (step 2). |
+| The plan fails with "no matching image" | The registry is empty: no pipeline run has pushed yet (Actions tab). |
 
 ## What it costs
 

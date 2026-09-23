@@ -53,12 +53,8 @@ resource "aws_ecs_cluster" "main" {
   }
 }
 
-locals {
-  container_image = "${local.ecr_repository_url}:${var.image_tag}"
-
-  # local.public_base_url is defined in edge.tf: it is the URL infra/edge published, not anything
-  # this root can work out for itself.
-}
+# local.container_image is defined in registry.tf (the newest image CI pushed, by digest), and
+# local.public_base_url in edge.tf (the URL infra/edge published).
 
 # --- the API task ------------------------------------------------------------------------------------
 

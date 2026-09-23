@@ -70,6 +70,15 @@ run "the_registry_outlives_the_application_and_prunes_itself" {
   }
 }
 
+# ADDED IN P8b. CI tags every image with its commit SHA, so a tag names one commit forever. IMMUTABLE
+# makes ECR refuse a second push to an existing tag: what ran yesterday under a SHA is what runs today.
+run "a_pushed_tag_can_never_be_overwritten" {
+  assert {
+    condition     = aws_ecr_repository.backend.image_tag_mutability == "IMMUTABLE"
+    error_message = "Tags are commit SHAs; a second push under one must be refused, not silently replace the image."
+  }
+}
+
 run "the_stack_is_told_where_to_pull_from" {
   # infra/stack no longer owns the repository, so it reads the URL the same way it reads the edge's
   # values: through a parameter that is always there, because this root is never destroyed.

@@ -57,8 +57,15 @@ variable "desired_count" {
 
 variable "image_tag" {
   type        = string
-  description = "Tag of the backend image in ECR to run."
-  default     = "latest"
+  description = "Commit SHA of the backend image to run. Null, the default, runs the newest image CI pushed."
+  default     = null
+
+  # CI tags images with the full commit SHA and ECR tags are immutable, so nothing else can exist.
+  # `latest` in particular is refused: it was the hand-pushed tag before P8b and is never pushed now.
+  validation {
+    condition     = var.image_tag == null || can(regex("^[0-9a-f]{40}$", var.image_tag))
+    error_message = "image_tag is a full 40-character commit SHA, or leave it unset for the newest image."
+  }
 }
 
 variable "app_env" {

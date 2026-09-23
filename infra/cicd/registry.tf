@@ -18,10 +18,10 @@ resource "aws_ecr_repository" "backend" {
   # that contains images, and if this root is ever retired, `terraform destroy` should just work.
   force_delete = true
 
-  # Still mutable, because images are pushed by hand as `latest` until the P8b workflow exists.
-  # Once CI tags every image with its commit SHA there is a real argument for IMMUTABLE; P8b
-  # decides it.
-  image_tag_mutability = "MUTABLE"
+  # Since P8b, CI tags every image with its commit SHA, so a tag names one commit forever. IMMUTABLE
+  # makes ECR refuse a second push under an existing tag, so an image cannot be swapped out from
+  # under a name. There is no `latest`: infra/stack runs the newest image by digest instead.
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     # Basic scanning is free and reports known vulnerabilities in the image's packages.

@@ -86,6 +86,14 @@ override_data {
   }
 }
 
+# ADDED IN P8b: the image ECR reports, standing in for "the newest image CI pushed".
+override_data {
+  target = data.aws_ecr_image.backend
+  values = {
+    image_digest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  }
+}
+
 # WHY override_resource AND NOT mock_resource FOR THESE
 #   A mock invents a short random string for any computed attribute it is not given, and the AWS
 #   provider validates that arguments like execution_role_arn actually look like ARNs, so a plan
@@ -644,4 +652,65 @@ run "the_application_runs_in_production_mode_by_default" {
     ])
     error_message = "The container must actually be told production."
   }
+}
+
+# --- which image runs (ADDED IN P8b) ------------------------------------------------------------------
+#
+# CI pushes one image per commit, tagged with the commit SHA, and ECR tags are immutable, so there is
+# no `latest` any more. By default the stack runs the newest image in the repository; `image_tag`
+# picks an older commit instead. Either way the task definitions name the image by DIGEST, so what
+# was planned is exactly what runs, whatever is pushed between plan and apply.
+
+run "every_task_runs_the_newest_image_pinned_by_digest" {
+  command = plan
+
+  assert {
+    condition     = data.aws_ecr_image.backend.most_recent == true && data.aws_ecr_image.backend.image_tag == null
+    error_message = "With no tag chosen, the newest image in the repository must run."
+  }
+
+  assert {
+    condition     = data.aws_ecr_image.backend.repository_name == "stock-analyst-demo-backend"
+    error_message = "The image must be looked up in this project's repository."
+  }
+
+  assert {
+    condition = alltrue([
+      for definitions in [
+        aws_ecs_task_definition.api.container_definitions,
+        aws_ecs_task_definition.migrate.container_definitions,
+        aws_ecs_task_definition.provision.container_definitions,
+      ] :
+      jsondecode(definitions)[0].image == "123456789012.dkr.ecr.ap-south-1.amazonaws.com/stock-analyst-demo-backend@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    ])
+    error_message = "All three tasks must run the same image, named by digest rather than by a tag."
+  }
+}
+
+run "an_older_commit_can_be_chosen_instead" {
+  command = plan
+
+  variables {
+    image_tag = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  assert {
+    condition     = data.aws_ecr_image.backend.image_tag == "0123456789abcdef0123456789abcdef01234567"
+    error_message = "A chosen commit must be the image that is looked up."
+  }
+
+  assert {
+    condition     = data.aws_ecr_image.backend.most_recent == null
+    error_message = "When a commit is chosen, 'newest' must not be asked for as well."
+  }
+}
+
+run "latest_is_refused_because_it_no_longer_exists" {
+  command = plan
+
+  variables {
+    image_tag = "latest"
+  }
+
+  expect_failures = [var.image_tag]
 }

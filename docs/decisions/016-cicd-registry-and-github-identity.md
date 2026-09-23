@@ -1,6 +1,6 @@
 # 016 — A permanent registry and a push-only GitHub identity
 
-- **Status:** Proposed (P8a; becomes Accepted after the first real apply. Amends
+- **Status:** Accepted (applied 2026-09-23: 6 resources. P8b amendment below. Amends
   [ADR 015](015-persistent-edge.md), which put ECR in the ephemeral `infra/stack`. Builds on
   [ADR 008](008-minimal-aws-architecture.md) and [ADR 014](014-containers-and-local-compose.md))
 - **Date:** 2026-09-23
@@ -85,3 +85,18 @@ can actually assume the role, which only a real workflow run shows. That is the 
   deliberately if environments are ever used.
 - Only pushes to `main` can assume the role, so pull-request builds (if the project ever uses PRs) can
   test but not push. That matches the open push-vs-PR decision for P8.
+
+## Amendment (P8b): immutable SHA tags, and the stack runs the newest image by digest
+
+- The pipeline (`.github/workflows/pipeline.yml`) runs on **every push to `main`**; there are no pull
+  requests in this solo project, so that is where the checks run. Three check jobs (backend, frontend,
+  infra) never see an AWS credential; only the `image` job asks for an OIDC token, and only after all
+  three pass.
+- Every image is tagged with its **commit SHA** and ECR tags are now **IMMUTABLE**: a tag names one
+  commit forever. A re-run of an already-pushed commit checks ECR first (`batch-get-image`, which the
+  push-only role already has) and stops instead of failing.
+- With no `latest`, `infra/stack` looks the image up with `data "aws_ecr_image"` (`most_recent`), which
+  is the last commit whose checks passed, and names it **by digest** in all three task definitions.
+  `-var image_tag=<sha>` runs an older commit. The stack plan fails while the repository is empty.
+- **Tradeoff:** an image is never overwritten, so a fixed build needs a new commit. The lifecycle policy
+  still keeps five images, which bounds how far back `image_tag` can go.
