@@ -40,9 +40,10 @@ When a question needs something out of scope, the product says so plainly.
 
 The dataset is intentionally small and **real**.
 
-- **Company documents you download yourself, from each company's own investor pages:** for each of the
-  three stocks, the latest quarterly results, the results press release, and an investor presentation
-  (about 12–15 documents in total). Text-friendly documents beat 300-page annual reports.
+- **Official filings, fetched automatically (ADR 018):** for each of the three stocks, the 4 newest
+  earnings-call transcripts and the newest annual report, downloaded from BSE by the worker once a day
+  (15 documents, about one year). Found through each stock's screener.in page, which is used for
+  links only. A user may also upload a PDF; it goes through the same pipeline.
 - **RBI press-release RSS**, ingested automatically (about ten current items at a time).
 - **Events are derived by the pipeline** from those documents and that feed. Nobody writes event notes
   by hand to make the dataset look bigger. Events are as plentiful as the real documents make them.

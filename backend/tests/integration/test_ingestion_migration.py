@@ -22,14 +22,17 @@ async def insert_document(engine: AsyncEngine, sha: str = SHA, **overrides: obje
         "sha256": sha,
         "size_bytes": 1234,
         "blob_key": f"documents/{sha}.pdf",
+        "source": "upload",
+        "source_url": None,
         **overrides,
     }
     async with engine.begin() as connection:
         result = await connection.execute(
             text(
-                "INSERT INTO documents (stock_id, title, sha256, size_bytes, blob_key) "
-                "SELECT id, :title, :sha256, :size_bytes, :blob_key FROM stocks "
-                "WHERE symbol = :symbol RETURNING id"
+                "INSERT INTO documents "
+                "(stock_id, title, sha256, size_bytes, blob_key, source, source_url) "
+                "SELECT id, :title, :sha256, :size_bytes, :blob_key, :source, :source_url "
+                "FROM stocks WHERE symbol = :symbol RETURNING id"
             ),
             values,
         )
@@ -63,7 +66,8 @@ async def columns(engine: AsyncEngine, table: str) -> list[str]:
 async def test_the_tables_have_the_agreed_columns(admin_engine: AsyncEngine) -> None:
     assert await columns(admin_engine, "documents") == [
         "id", "stock_id", "uploaded_by", "title", "sha256", "size_bytes", "blob_key",
-        "status", "failure_reason", "page_count", "created_at", "updated_at",
+        "source", "source_url", "status", "failure_reason", "page_count", "created_at",
+        "updated_at",
     ]  # fmt: skip
     assert await columns(admin_engine, "document_pages") == ["document_id", "page_number", "text"]
     assert await columns(admin_engine, "chunks") == [
@@ -130,6 +134,50 @@ async def test_the_blob_key_is_always_derived_from_the_hash(admin_engine: AsyncE
             )
         ).scalar_one()
     assert unique == ["uq_documents_sha256"]
+
+
+async def test_a_new_document_is_an_upload_with_no_source_url(admin_engine: AsyncEngine) -> None:
+    document_id = await insert_document(admin_engine)
+    async with admin_engine.connect() as connection:
+        source = (
+            await connection.execute(
+                text("SELECT source, source_url FROM documents WHERE id = :id"), {"id": document_id}
+            )
+        ).one()
+    assert tuple(source) == ("upload", None)
+
+
+BSE_URL = "https://www.bseindia.com/stockinfo/AnnPdfOpen.aspx?Pname=x.pdf"
+
+
+@pytest.mark.parametrize(
+    ("source", "source_url"),
+    [
+        ("bse", None),  # a fetched filing must say where it came from
+        ("bse", "https://www.example.com/report.pdf"),  # and only BSE is a source (ADR 018)
+        ("upload", BSE_URL),  # an upload has no public source address
+        ("scraped", BSE_URL),  # no other kinds of source
+    ],
+)
+async def test_the_source_and_its_address_must_agree(
+    admin_engine: AsyncEngine, source: str, source_url: str | None
+) -> None:
+    with pytest.raises(IntegrityError):
+        await insert_document(admin_engine, source=source, source_url=source_url)
+
+
+async def test_one_official_address_is_one_document(admin_engine: AsyncEngine) -> None:
+    await insert_document(admin_engine, source="bse", source_url=BSE_URL)
+    with pytest.raises(IntegrityError):
+        await insert_document(admin_engine, sha=OTHER_SHA, source="bse", source_url=BSE_URL)
+
+
+async def test_the_filing_job_kinds_exist(admin_engine: AsyncEngine) -> None:
+    async with admin_engine.begin() as connection:
+        for kind in ("discover_filings", "fetch_filing"):
+            await connection.execute(
+                text("INSERT INTO jobs (kind, dedupe_key) VALUES (:kind, :kind)"), {"kind": kind}
+            )
 
 
 async def test_a_document_status_outside_the_four_is_refused(admin_engine: AsyncEngine) -> None:

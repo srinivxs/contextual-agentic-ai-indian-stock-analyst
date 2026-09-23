@@ -56,6 +56,10 @@ class DocumentOut(BaseModel):
     page_count: int | None
     failure_reason: str | None
     created_at: str
+    # "upload", or "bse" for a filing fetched automatically (ADR 018). For those, source_url is
+    # the official address the UI links to; the stored file itself is never served.
+    source: str
+    source_url: str | None
 
 
 class DocumentsResponse(BaseModel):

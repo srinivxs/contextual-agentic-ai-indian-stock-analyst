@@ -1,6 +1,7 @@
 # 007 — Source strategy: user-supplied documents plus one public feed
 
-- **Status:** Accepted
+- **Status:** Accepted; **amended by [ADR 018](018-automatic-official-filings.md)** (2026-09-23):
+  company filings are now found and fetched automatically from BSE; uploads remain a second door.
 - **Date:** 2026-09-20
 
 ## Context

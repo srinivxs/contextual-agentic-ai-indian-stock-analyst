@@ -16,10 +16,13 @@ import asyncio
 import contextlib
 import logging
 import signal
+import time
 from dataclasses import dataclass
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app import filings
 from app.blobs import BlobStore, FilesystemBlobStore
 from app.core.config import get_worker_settings
 from app.core.logging import configure_logging
@@ -35,11 +38,19 @@ GAVE_UP_REASON = (
 )
 
 
+# How often the loop asks "is a filing discovery due?". The answer comes from the jobs table
+# (enqueue_discovery), so this only bounds how late a due discovery can start.
+DISCOVERY_CHECK_SECONDS = 600.0
+
+
 @dataclass(frozen=True)
 class WorkerContext:
     session_factory: async_sessionmaker[AsyncSession]
     blob_store: BlobStore
     lease_seconds: int
+    # Only when FILINGS_DISCOVERY is on (ADR 018): the worker's one way onto the internet.
+    http: httpx.AsyncClient | None = None
+    filings_max_bytes: int = 60 * 1024 * 1024
 
 
 async def mark_job_document(
@@ -60,6 +71,18 @@ async def handle(context: WorkerContext, job: ClaimedJob) -> None:
     try:
         if job.kind == "ingest_document":
             await ingest_document(context.session_factory, context.blob_store, job)
+        elif job.kind in ("discover_filings", "fetch_filing") and context.http is None:
+            raise JobCannotSucceed("filing discovery is switched off (FILINGS_DISCOVERY)")
+        elif job.kind == "discover_filings" and context.http is not None:
+            await filings.discover(context.session_factory, context.http, job)
+        elif job.kind == "fetch_filing" and context.http is not None:
+            await filings.fetch(
+                context.session_factory,
+                context.http,
+                context.blob_store,
+                job,
+                limit=context.filings_max_bytes,
+            )
         else:
             raise JobCannotSucceed(f"this worker has no handler for {job.kind!r} jobs yet")
     except DocumentRejected as rejected:
@@ -98,8 +121,33 @@ async def run_once(context: WorkerContext) -> bool:
     return True
 
 
-async def run_forever(context: WorkerContext, stop: asyncio.Event, *, poll_seconds: float) -> None:
-    while not stop.is_set():
+async def _queue_discovery(context: WorkerContext, every_hours: int) -> None:
+    try:
+        async with context.session_factory() as db:
+            queued = await filings.enqueue_discovery(db, every_hours=every_hours)
+            await db.commit()
+        if queued:
+            logger.info("filing_discovery_queued", extra={"stocks": queued})
+    except Exception:
+        logger.exception("filing_discovery_queue_error")
+
+
+async def run_forever(
+    context: WorkerContext,
+    stop: asyncio.Event,
+    *,
+    poll_seconds: float,
+    discovery_every_hours: int | None = None,
+) -> None:
+    """Work through the queue until ``stop`` is set. With ``discovery_every_hours``, also queue a
+    filing discovery per stock that often: the worker's small timer (ADR 008, ADR 018)."""
+    next_discovery_check = 0.0
+    while True:
+        if discovery_every_hours and time.monotonic() >= next_discovery_check:
+            await _queue_discovery(context, discovery_every_hours)
+            next_discovery_check = time.monotonic() + DISCOVERY_CHECK_SECONDS
+        if stop.is_set():
+            break
         try:
             worked = await run_once(context)
         except Exception:
@@ -115,18 +163,29 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
     settings = get_worker_settings()
     configure_logging(settings.log_level)
     engine = create_db_engine(settings)
+    # Created only when discovery is switched on, so a worker with it off cannot reach the internet.
+    http = httpx.AsyncClient(timeout=30.0) if settings.filings_discovery else None
     context = WorkerContext(
         session_factory=create_session_factory(engine),
         blob_store=FilesystemBlobStore(settings.blob_root),
         lease_seconds=settings.job_lease_seconds,
+        http=http,
+        filings_max_bytes=settings.filings_max_bytes,
     )
     stop = asyncio.Event()
     for signal_number in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signal_number, lambda *_: stop.set())
     logger.info("worker_started")
     try:
-        await run_forever(context, stop, poll_seconds=settings.worker_poll_seconds)
+        await run_forever(
+            context,
+            stop,
+            poll_seconds=settings.worker_poll_seconds,
+            discovery_every_hours=settings.filings_refresh_hours if http else None,
+        )
     finally:
+        if http is not None:
+            await http.aclose()
         await engine.dispose()
         logger.info("worker_stopped")
 

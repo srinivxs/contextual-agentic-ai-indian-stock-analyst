@@ -66,6 +66,14 @@ class CommonSettings(BaseSettings):
     # job is claimed again. Far longer than ingesting one document takes (a few seconds).
     job_lease_seconds: int = Field(default=300, ge=30, le=3600)
 
+    # --- automatic filings (ADR 018) ---------------------------------------------------------
+    # Off unless switched on: only then does the worker reach screener.in and www.bseindia.com.
+    filings_discovery: bool = False
+    # How often each stock's page is read: once a day is plenty for quarterly filings.
+    filings_refresh_hours: int = Field(default=24, ge=1, le=168)
+    # A fetched filing may be larger than an upload: annual reports run to tens of megabytes.
+    filings_max_bytes: int = Field(default=60 * 1024 * 1024, ge=1024, le=200 * 1024 * 1024)
+
     @field_validator("database_url")
     @classmethod
     def _require_the_asyncpg_driver(cls, value: SecretStr) -> SecretStr:

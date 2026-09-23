@@ -20,6 +20,15 @@ a constraint here, so concurrent writers converge on one row without any applica
 Text columns carry CHECKs on their allowed values instead of PostgreSQL enums: adding a status later
 is a one-line constraint change rather than an ``ALTER TYPE``.
 
+Documents arrive through two doors (ADR 018): an upload (``source = 'upload'``, no public
+address) or a filing the worker fetched from BSE (``source = 'bse'``, with the https address on
+www.bseindia.com it came from, unique so one filing is fetched once).
+
+AMENDED BEFORE ANY LASTING DATABASE HELD IT (P9c): the source columns and the two filing job kinds
+were added to this migration rather than a new one. Production databases are destroyed after every
+session (ADR 015), so none holds the earlier shape. A local database that ran the first version:
+``alembic downgrade 0003`` then ``alembic upgrade head`` (it loses only P9 test rows).
+
 The embedding column arrives with P10's migration, when there is something to put in it.
 
 Production migrations are forward-only. ``downgrade`` exists so local development and tests can
@@ -60,6 +69,10 @@ def upgrade() -> None:
         sa.Column("size_bytes", sa.BigInteger(), nullable=False),
         # Where the original file is kept (BlobStore). Derived from sha256; never served to users.
         sa.Column("blob_key", sa.Text(), nullable=False),
+        # Which door the document came through, and for a fetched filing, its public address:
+        # what the UI links to, since the stored file itself is never served (ADR 007).
+        sa.Column("source", sa.Text(), server_default="upload", nullable=False),
+        sa.Column("source_url", sa.Text(), nullable=True),
         sa.Column("status", sa.Text(), server_default="pending", nullable=False),
         sa.Column("failure_reason", sa.Text(), nullable=True),
         sa.Column("page_count", sa.Integer(), nullable=True),
@@ -84,6 +97,22 @@ def upgrade() -> None:
         sa.CheckConstraint("size_bytes > 0", name="ck_documents_size_positive"),
         sa.CheckConstraint(STATUSES, name="ck_documents_status"),
         sa.CheckConstraint("page_count IS NULL OR page_count > 0", name="ck_documents_page_count"),
+        sa.CheckConstraint(
+            # IS NOT NULL is not redundant: `NULL LIKE ...` is unknown, and a CHECK accepts unknown,
+            # so without it a 'bse' document with no address would pass (a test caught that).
+            "(source = 'upload' AND source_url IS NULL) OR "
+            "(source = 'bse' AND source_url IS NOT NULL "
+            "AND source_url LIKE 'https://www.bseindia.com/%')",
+            name="ck_documents_source",
+        ),
+    )
+    # One official address, one document: a filing is fetched once, whatever the timer does.
+    op.create_index(
+        "uq_documents_source_url",
+        "documents",
+        ["source_url"],
+        unique=True,
+        postgresql_where=sa.text("source_url IS NOT NULL"),
     )
     # Serves "this stock's documents, newest first" (the list endpoint's cursor walks id downwards).
     op.create_index("ix_documents_stock_id_id", "documents", ["stock_id", "id"])
@@ -153,7 +182,10 @@ def upgrade() -> None:
         _timestamp("created_at"),
         _timestamp("updated_at"),
         sa.PrimaryKeyConstraint("id", name="pk_jobs"),
-        sa.CheckConstraint("kind IN ('ingest_document', 'poll_feed')", name="ck_jobs_kind"),
+        sa.CheckConstraint(
+            "kind IN ('ingest_document', 'poll_feed', 'discover_filings', 'fetch_filing')",
+            name="ck_jobs_kind",
+        ),
         sa.CheckConstraint(STATUSES, name="ck_jobs_status"),
         sa.CheckConstraint("attempts >= 0", name="ck_jobs_attempts"),
         sa.CheckConstraint("max_attempts >= 1", name="ck_jobs_max_attempts"),

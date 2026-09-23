@@ -71,17 +71,24 @@ class DocumentView:
     page_count: int | None
     failure_reason: str | None
     created_at: datetime
+    source: str  # "upload" or "bse" (ADR 018)
+    source_url: str | None  # the official public address of a fetched filing
 
 
 _COLUMNS = (
-    "d.id, s.symbol, d.title, d.status, d.size_bytes, d.page_count, d.failure_reason, d.created_at"
+    "d.id, s.symbol, d.title, d.status, d.size_bytes, d.page_count, d.failure_reason, "
+    "d.created_at, d.source, d.source_url"
 )
 
 _STOCK_ID = text("SELECT id FROM stocks WHERE symbol = :symbol")
 
+# sha256 is the arbiter. The only other unique rule, on source_url, never fires here: uploads have
+# no source_url, and a fetch skips an address already recorded and is the only live job for it.
 _INSERT_DOCUMENT = text(
-    "INSERT INTO documents (stock_id, uploaded_by, title, sha256, size_bytes, blob_key) "
-    "VALUES (:stock_id, :uploaded_by, :title, :sha256, :size_bytes, :blob_key) "
+    "INSERT INTO documents "
+    "(stock_id, uploaded_by, title, sha256, size_bytes, blob_key, source, source_url) "
+    "VALUES (:stock_id, :uploaded_by, :title, :sha256, :size_bytes, :blob_key, "
+    ":source, :source_url) "
     "ON CONFLICT (sha256) DO NOTHING RETURNING id"
 )
 
@@ -125,14 +132,17 @@ async def record_upload(
     db: AsyncSession,
     *,
     stock: int,
-    user_id: UUID,
+    user_id: UUID | None,
     title: str,
     upload: Upload,
     blob_key: str,
+    source: str = "upload",
+    source_url: str | None = None,
 ) -> tuple[DocumentView, bool]:
     """Insert the document and its ingestion job, or find the existing document for this file.
 
-    Returns the document and whether this call created it.
+    Both doors use it: an upload (a user, no source_url) and a fetched filing (no user, the BSE
+    address). Returns the document and whether this call created it.
     """
     created_id = (
         await db.execute(
@@ -144,6 +154,8 @@ async def record_upload(
                 "sha256": upload.sha256,
                 "size_bytes": upload.size,
                 "blob_key": blob_key,
+                "source": source,
+                "source_url": source_url,
             },
         )
     ).scalar_one_or_none()

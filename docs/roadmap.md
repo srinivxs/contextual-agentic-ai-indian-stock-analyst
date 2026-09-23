@@ -174,7 +174,8 @@ leaves a real product.
 - **Goal:** a real, safe ingestion pipeline (no AI yet).
 - **Build:** upload API; `BlobStore` (filesystem locally, S3 in AWS); PDF text extraction with a
   permissively licensed library; content-hash dedupe; page-aware chunking; the Postgres jobs table and
-  worker loop (claim with `SKIP LOCKED`, retries with backoff, leases); Documents page in the UI.
+  worker loop (claim with `SKIP LOCKED`, retries with backoff, leases); automatic official filings
+  from BSE (ADR 018); Documents page in the UI.
 - **Explain first:** idempotency via unique constraints and `ON CONFLICT`; `SKIP LOCKED`; why no
   transaction spans network I/O.
 - **Done when:** the same file uploaded twice or eight times at once gives one document and one set of

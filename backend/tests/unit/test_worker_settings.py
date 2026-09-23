@@ -22,6 +22,15 @@ def test_the_worker_starts_with_only_a_database_url() -> None:
     assert settings.job_lease_seconds == 300
 
 
+def test_filing_discovery_is_off_unless_switched_on() -> None:
+    """ADR 018: the worker reaches screener.in and BSE only where the deployment says so."""
+    settings = build()
+    assert settings.filings_discovery is False
+    assert settings.filings_refresh_hours == 24
+    assert settings.filings_max_bytes == 60 * 1024 * 1024
+    assert build(filings_discovery=True).filings_discovery is True
+
+
 def test_the_worker_settings_hold_no_login_secrets() -> None:
     for field in ("google_client_secret", "google_client_id", "session_secret", "public_base_url"):
         assert field not in CommonSettings.model_fields
@@ -39,6 +48,10 @@ def test_the_api_settings_include_everything_the_worker_has() -> None:
         ("worker_poll_seconds", 61),
         ("job_lease_seconds", 29),
         ("job_lease_seconds", 3601),
+        ("filings_refresh_hours", 0),
+        ("filings_refresh_hours", 169),
+        ("filings_max_bytes", 1023),
+        ("filings_max_bytes", 200 * 1024 * 1024 + 1),
     ],
 )
 def test_unreasonable_worker_timings_are_refused(field: str, value: float) -> None:
