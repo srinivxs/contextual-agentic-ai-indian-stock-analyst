@@ -157,3 +157,12 @@ def test_dockerignore_keeps_secrets_caches_and_tests_out_of_the_build_context() 
         "tests",
     }
     assert required <= entries, f"missing from .dockerignore: {sorted(required - entries)}"
+
+
+def test_the_blob_folder_is_the_one_path_the_app_user_owns(last: list[Instruction]) -> None:
+    """A named volume mounted at /data/blobs takes this folder's owner, so the api and the worker
+    can write stored PDFs there while the rest of the filesystem stays read-only (P9d)."""
+    runs = " ".join(i.args for i in last if i.name == "RUN")
+    assert "mkdir -p /data/blobs" in runs
+    assert "chown 10001:10001 /data/blobs" in runs
+

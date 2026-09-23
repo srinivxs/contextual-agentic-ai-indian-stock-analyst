@@ -59,11 +59,36 @@ describe('the source code', () => {
     ['injected HTML', /dangerouslySetInnerHTML/],
     ['script-visible storage', /localStorage|sessionStorage|document\.cookie|indexedDB/],
     ['build-time public env vars', /NEXT_PUBLIC_/],
-    ['hard-coded absolute URLs', /https?:\/\//],
   ])('never uses %s', (_label, pattern) => {
     expect(sourceFiles.length).toBeGreaterThan(0); // nothing to scan must not count as clean
     const offenders = sourceFiles.filter((file) => pattern.test(read(file))).map(posix);
     expect(offenders).toEqual([]);
+  });
+
+  // The app only ever calls its own origin. The ONE absolute URL allowed in the source is the
+  // prefix of official BSE filing links (ADR 018): a link the user may click, never a request the
+  // app makes. It is allowed in that one file, as that one exact line, and nowhere else.
+  const OFFICIAL_LINK_FILE = 'src/lib/documents.ts';
+  const OFFICIAL_LINK_LINE = "const OFFICIAL_PREFIX = 'https://www.bseindia.com/';";
+
+  it('never uses hard-coded absolute URLs, except the one official-filing link prefix', () => {
+    expect(sourceFiles.length).toBeGreaterThan(0);
+    const offenders = sourceFiles
+      .filter((file) => {
+        const text = read(file);
+        const scanned = posix(file).endsWith(OFFICIAL_LINK_FILE)
+          ? text.replace(OFFICIAL_LINK_LINE, '')
+          : text;
+        return /https?:\/\//.test(scanned);
+      })
+      .map(posix);
+    expect(offenders).toEqual([]);
+  });
+
+  it('still has that one exception where it says (so the allowance cannot go stale)', () => {
+    const file = sourceFiles.find((path) => posix(path).endsWith(OFFICIAL_LINK_FILE));
+    expect(file).toBeDefined();
+    expect(read(file ?? '')).toContain(OFFICIAL_LINK_LINE);
   });
 });
 

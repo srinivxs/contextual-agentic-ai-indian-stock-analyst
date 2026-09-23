@@ -160,10 +160,10 @@ def web_image(daemon: None) -> Iterator[str]:
 
 @pytest.fixture(scope="module")
 def stack(daemon: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
-    """The whole app profile (db, migrate, api, web) running in an isolated Compose project."""
+    """The whole app profile (db, migrate, api, worker, web) running in an isolated Compose project."""
     running = Stack(tmp_path_factory.mktemp("stack"))
     # Fail fast, and for the right reason, before building or starting anything.
-    expected = {"db", "migrate", "api", "web"}
+    expected = {"db", "migrate", "api", "worker", "web"}
     found = running.services()
     assert found == expected, (
         f"the `app` profile should define {sorted(expected)}, found {sorted(found)}"

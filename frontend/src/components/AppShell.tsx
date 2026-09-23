@@ -12,6 +12,10 @@ export function AppShell({ email, onSignOut, children }: Props) {
     <>
       <header className="header">
         <span className="brand">Indian Stock Analyst</span>
+        <nav aria-label="Main" className="nav">
+          <a href="/stocks/">Stocks</a>
+          <a href="/documents/">Documents</a>
+        </nav>
         <span className="who">
           <span>{email}</span>
           <button type="button" className="button secondary" onClick={onSignOut}>

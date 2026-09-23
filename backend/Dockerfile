@@ -39,7 +39,12 @@ ENV PATH=/app/.venv/bin:$PATH \
 
 # A fixed numeric uid, so it can be named in orchestrator settings and compared with a file owner.
 RUN groupadd --system --gid 10001 app \
-    && useradd --system --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app
+    && useradd --system --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app \
+    && mkdir -p /data/blobs && chown 10001:10001 /data/blobs
+
+# /data/blobs is where stored PDFs live when BLOB_ROOT points at it (P9d). It is the ONE path the
+# app user may write. Compose mounts a named volume here, and a new named volume takes the owner of
+# the folder it is mounted over, which is why the folder is created and handed over in the image.
 
 WORKDIR /app
 

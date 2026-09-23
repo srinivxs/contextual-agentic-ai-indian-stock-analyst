@@ -23,7 +23,41 @@ const json = (status: number, body?: unknown): Response =>
 const envelope = (status: number, code: string): Response =>
   json(status, { error: { code, message: 'generic message', request_id: 'req-1' } });
 
-export type Options = { signedIn?: boolean; email?: string; followed?: string[]; stocks?: FakeStock[] };
+export type FakeDocument = {
+  id: number;
+  symbol: string;
+  title: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  size_bytes: number;
+  page_count: number | null;
+  failure_reason: string | null;
+  created_at: string;
+  source: 'upload' | 'bse';
+  source_url: string | null;
+};
+
+/** A fictional DemoCo filing; override any field. */
+export const demoDocument = (overrides: Partial<FakeDocument> = {}): FakeDocument => ({
+  id: 1,
+  symbol: 'DEMOA',
+  title: 'DEMOA earnings call transcript, Jul 2026',
+  status: 'completed',
+  size_bytes: 12345,
+  page_count: 12,
+  failure_reason: null,
+  created_at: '2026-09-23T10:00:00+00:00',
+  source: 'bse',
+  source_url: 'https://www.bseindia.com/stockinfo/AnnPdfOpen.aspx?Pname=0000.pdf',
+  ...overrides,
+});
+
+export type Options = {
+  signedIn?: boolean;
+  email?: string;
+  followed?: string[];
+  stocks?: FakeStock[];
+  documents?: FakeDocument[];
+};
 
 export type FakeApi = {
   /** Every request made, as "METHOD /path". */
@@ -34,6 +68,8 @@ export type FakeApi = {
   /** Keep matching requests waiting until the returned function is called. */
   hold: (key: string) => () => void;
   expireSession: () => void;
+  /** Replace the documents the fake serves (to move a status along, for example). */
+  setDocuments: (documents: FakeDocument[]) => void;
 };
 
 export function installFakeApi(options: Options = {}): FakeApi {
@@ -44,6 +80,7 @@ export function installFakeApi(options: Options = {}): FakeApi {
   const failures = new Map<string, number>();
   const gates = new Map<string, Promise<void>>();
   const requests: string[] = [];
+  let documents = options.documents ?? [];
 
   const handler = async (input: string, init?: RequestInit): Promise<Response> => {
     const method = init?.method ?? 'GET';
@@ -65,6 +102,12 @@ export function installFakeApi(options: Options = {}): FakeApi {
     }
     if (key === 'GET /api/v1/stocks') {
       return json(200, { items: stocks.map((s) => ({ ...s, followed: follows.has(s.symbol) })) });
+    }
+    const listing = /^GET \/api\/v1\/stocks\/([^/]+)\/documents$/.exec(key);
+    if (listing) {
+      const symbol = decodeURIComponent(listing[1] ?? '');
+      if (!stocks.some((s) => s.symbol === symbol)) return envelope(404, 'not_found');
+      return json(200, { items: documents.filter((d) => d.symbol === symbol), next_cursor: null });
     }
     const match = /^(PUT|DELETE) \/api\/v1\/stocks\/([^/]+)\/follow$/.exec(key);
     if (match) {
@@ -89,6 +132,9 @@ export function installFakeApi(options: Options = {}): FakeApi {
     },
     expireSession: () => {
       state.signedIn = false;
+    },
+    setDocuments: (next) => {
+      documents = next;
     },
   };
 }

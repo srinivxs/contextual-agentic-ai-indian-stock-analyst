@@ -154,3 +154,10 @@ p {
   font-size: 0.85rem;
   text-align: center;
 }
+
+/* Documents page (P9d) */
+.nav { display: flex; gap: 1rem; }
+.documents { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 0.5rem; }
+.status { font-size: 0.85em; padding: 0.1rem 0.45rem; border-radius: 0.4rem; background: #eef1f5; }
+.status.completed { background: #e3f4e6; }
+.status.failed { background: #fbe4e4; }

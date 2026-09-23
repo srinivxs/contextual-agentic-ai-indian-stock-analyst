@@ -14,7 +14,7 @@ import pytest
 from helpers import BACKEND, FRONTEND, local_secret_values
 from stack import COMPOSE_FILE, Stack
 
-APP_SERVICES = {"db", "migrate", "api", "web"}
+APP_SERVICES = {"db", "migrate", "api", "worker", "web"}
 
 
 @pytest.fixture(scope="module")
@@ -102,7 +102,7 @@ def test_no_service_uses_env_file_so_nothing_reaches_a_container_by_accident() -
 
 
 def test_only_migrate_holds_the_admin_credentials(stack: Stack, model: dict[str, Any]) -> None:
-    for name in ("api", "web"):
+    for name in ("api", "worker", "web"):
         dump = repr(service(model, name))
         assert stack.admin_password not in dump, f"{name} was given the admin password"
         assert stack.admin_user not in dump, f"{name} was given the admin role"
@@ -141,8 +141,62 @@ def test_the_api_gets_the_runtime_role_and_exactly_the_settings_it_needs(
         "APP_ENV",
         "COOKIE_SECURE",
         "LOG_LEVEL",
+        "BLOB_ROOT",
     }
     assert set(env) <= allowed, f"unexpected api environment: {sorted(set(env) - allowed)}"
+
+
+def test_the_worker_gets_the_runtime_role_and_no_login_secrets(
+    stack: Stack, model: dict[str, Any]
+) -> None:
+    """Least privilege (P9b): the worker handles no logins, so it never sees the Google client
+    secret or the session secret. Its settings are CommonSettings, which does not even have them."""
+    worker = service(model, "worker")
+    env = worker["environment"]
+    assert env["DATABASE_URL"] == (
+        f"postgresql+asyncpg://{stack.app_user}:{stack.app_password}@db:5432/{stack.db_name}"
+    )
+    dump = repr(worker)
+    assert stack.google_secret not in dump
+    assert stack.session_secret not in dump
+    allowed = {
+        "DATABASE_URL",
+        "BLOB_ROOT",
+        "FILINGS_DISCOVERY",
+        "APP_ENV",
+        "LOG_LEVEL",
+        "PYTHONPATH",
+    }
+    assert set(env) <= allowed, f"unexpected worker environment: {sorted(set(env) - allowed)}"
+    assert worker["command"] == ["python", "-m", "app.worker"]
+    # `python -m app.worker` finds the package only with this; without it the worker exits at once.
+    assert env["PYTHONPATH"] == "/app/src"
+    assert "ports" not in worker
+
+
+def test_filing_discovery_is_off_unless_the_developer_switches_it_on(model: dict[str, Any]) -> None:
+    """ADR 018: a plain `docker compose --profile app up` never reaches screener.in or BSE."""
+    assert service(model, "worker")["environment"]["FILINGS_DISCOVERY"] == "false"
+
+
+def test_the_api_and_the_worker_share_one_folder_for_stored_files(model: dict[str, Any]) -> None:
+    """The api stores an upload; the worker reads it. The same named volume, at the same path."""
+    for name in ("api", "worker"):
+        container = service(model, name)
+        assert container["environment"]["BLOB_ROOT"] == "/data/blobs", name
+        mounts = [
+            (m["type"], m["source"], m["target"], m.get("read_only", False))
+            for m in container.get("volumes", [])
+        ]
+        assert ("volume", "blobs", "/data/blobs", False) in mounts, (name, mounts)
+    assert "blobs" in model["volumes"]
+
+
+def test_the_worker_has_its_own_health_check_not_the_apis(model: dict[str, Any]) -> None:
+    """The image's HEALTHCHECK calls the api's /api/healthz, which a worker does not serve: left in
+    place, the worker would be reported unhealthy and `up --wait` would fail."""
+    health = service(model, "worker").get("healthcheck", {})
+    assert health.get("disable") is True or "healthz" not in repr(health.get("test"))
 
 
 def test_the_web_container_receives_no_configuration_or_secrets(
@@ -180,6 +234,9 @@ def test_startup_order_is_db_then_migrate_then_api_then_web(model: dict[str, Any
     api = service(model, "api")
     assert api["depends_on"]["migrate"]["condition"] == "service_completed_successfully"
 
+    worker = service(model, "worker")
+    assert worker["depends_on"]["migrate"]["condition"] == "service_completed_successfully"
+
     web = service(model, "web")
     assert web["depends_on"]["api"]["condition"] == "service_healthy"
 
@@ -192,13 +249,14 @@ def test_api_and_migrate_are_built_from_the_same_backend_image_definition(
     overwrite a tag the developer's own stack uses."""
     api, migrate, web = (service(model, name) for name in ("api", "migrate", "web"))
     assert api["build"] == migrate["build"], "api and migrate must build the identical image"
+    assert service(model, "worker")["build"] == api["build"], "the worker is the same image too"
     assert Path(api["build"]["context"]).resolve() == BACKEND.resolve()
     assert Path(web["build"]["context"]).resolve() == FRONTEND.resolve()
-    for name in ("api", "migrate", "web"):
+    for name in ("api", "migrate", "worker", "web"):
         assert "image" not in service(model, name), f"{name} names an image tag"
 
 
-@pytest.mark.parametrize("name", ["api", "web"])
+@pytest.mark.parametrize("name", ["api", "worker", "web"])
 def test_the_long_running_containers_have_a_read_only_filesystem_and_no_capabilities(
     model: dict[str, Any], name: str
 ) -> None:

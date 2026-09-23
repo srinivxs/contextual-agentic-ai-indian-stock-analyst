@@ -98,6 +98,36 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
+      # Uploads are stored here, in the volume the worker reads from (P9d).
+      BLOB_ROOT: /data/blobs
+    volumes:
+      - blobs:/data/blobs
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # The worker (P9): the same image with another command. It claims jobs from the database, fetches
+  # official filings when FILINGS_DISCOVERY is on (ADR 018; off unless you set it in `.env`), and
+  # turns PDFs into page text and chunks. The runtime role only, and no Google or session secrets:
+  # it handles no logins. Nothing is published; it only makes outbound requests.
+  worker:
+    profiles: [app]
+    build: *backend-build
+    <<: *hardened
+    command: ["python", "-m", "app.worker"]
+    environment:
+      # The code is in /app/src. uvicorn is told so with --app-dir; `python -m` needs this instead
+      # (the same as the provision task in infra/stack).
+      PYTHONPATH: /app/src
+      APP_ENV: local
+      DATABASE_URL: postgresql+asyncpg://${APP_DB_USER:-stock_app}:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@db:5432/${POSTGRES_DB:-stock_analyst}
+      BLOB_ROOT: /data/blobs
+      FILINGS_DISCOVERY: ${FILINGS_DISCOVERY:-false}
+    volumes:
+      - blobs:/data/blobs
+    # The image's HEALTHCHECK calls the api's /api/healthz, which the worker does not serve.
+    healthcheck:
+      disable: true
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -117,3 +147,5 @@ services:
 
 volumes:
   pgdata:
+  # Stored PDFs, shared by the api and the worker (P9d).
+  blobs:
