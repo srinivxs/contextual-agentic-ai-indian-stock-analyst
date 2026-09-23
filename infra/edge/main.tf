@@ -48,4 +48,8 @@ locals {
   # them exactly (persistent -> ephemeral through SSM; see versions.tf).
   origin_verify_parameter_name   = "/stock-analyst/demo/origin_verify"
   public_base_url_parameter_name = "/stock-analyst/demo/public_base_url"
+
+  # The two values the deploy pipeline reads (P8c), and infra/cicd reads to scope the deploy role.
+  site_bucket_name_parameter_name = "/stock-analyst/demo/site_bucket_name"
+  distribution_id_parameter_name  = "/stock-analyst/demo/distribution_id"
 }

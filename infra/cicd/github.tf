@@ -42,16 +42,13 @@ locals {
   github_owner   = split("/", var.github_repository)[0]
   github_name    = split("/", var.github_repository)[1]
   github_subject = "repo:${local.github_owner}@${var.github_owner_id}/${local.github_name}@${var.github_repository_id}:ref:refs/heads/main"
-}
 
-# Written with jsonencode rather than aws_iam_policy_document, as in the other roots: the policy is
-# visible exactly as AWS receives it, and a mocked data source would return invented JSON that the
-# offline tests could not inspect.
-resource "aws_iam_role" "ci" {
-  name        = "${local.name_prefix}-ci"
-  description = "Assumed by GitHub Actions on main of one repository; may only push images"
-
-  assume_role_policy = jsonencode({
+  # Who may assume a pipeline role: GitHub Actions, for this repository, on main. Both roles use
+  # exactly this policy (the push role here, the deploy role in deploy.tf); what differs is only what
+  # each may DO once assumed. Written with jsonencode rather than aws_iam_policy_document, as in the
+  # other roots: the policy is visible exactly as AWS receives it, and a mocked data source would
+  # return invented JSON that the offline tests could not inspect.
+  github_main_trust_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
@@ -77,6 +74,13 @@ resource "aws_iam_role" "ci" {
       },
     ]
   })
+}
+
+resource "aws_iam_role" "ci" {
+  name        = "${local.name_prefix}-ci"
+  description = "Assumed by GitHub Actions on main of one repository; may only push images"
+
+  assume_role_policy = local.github_main_trust_policy
 
   # One hour, the default. A build and push takes a few minutes.
   max_session_duration = 3600
@@ -90,7 +94,7 @@ resource "aws_iam_role" "ci" {
 #
 # Pushing an image and changing a running system are different powers, so they are different
 # roles. This one is used on every push to main, so it gets the smaller power. The role that deploys
-# arrives in P8c, written against what the deploy job actually does.
+# is in deploy.tf, written against what the deploy job actually does.
 resource "aws_iam_role_policy" "ci_push_images" {
   name = "push-backend-images"
   role = aws_iam_role.ci.id

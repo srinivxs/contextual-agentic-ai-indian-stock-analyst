@@ -1,12 +1,13 @@
-# The pipeline (P8b): every push to main is checked, and only a commit that passes every check is
-# built and pushed to ECR, tagged with its commit SHA. Deploying that image is P8c.
+# The pipeline: every push to main is checked; only a commit that passes every check is built and
+# pushed to ECR, tagged with its commit SHA (P8b), and then deployed (P8c, ADR 017).
 #
 #   backend ─┐
-#   frontend ├─> image   (the only job that can reach AWS, through OIDC: no stored keys)
+#   frontend ├─> image ──> deploy
 #   infra ───┘
 #
-# The three check jobs run in parallel and never see an AWS credential. The rules this file must
-# keep are tested in infra/tests/test_pipeline_workflow.py.
+# The three check jobs run in parallel and never see an AWS credential. `image` and `deploy` reach
+# AWS through OIDC (no stored keys), each with its own role: pushing and deploying are different
+# powers. The rules this file must keep are tested in infra/tests/test_pipeline_workflow.py.
 #
 # Third-party actions are pinned to a commit SHA, with the release it came from in a comment: a tag
 # can be moved by whoever controls the action's repository, a commit cannot.
@@ -23,7 +24,7 @@ permissions:
   contents: read
 
 # One run at a time, and a run that has started always finishes: cancelling a push halfway would
-# leave the registry and, from P8c, the running service in a state no commit describes.
+# leave the registry or the running service in a state no commit describes.
 concurrency:
   group: pipeline-${{ github.ref }}
   cancel-in-progress: false
@@ -126,10 +127,13 @@ jobs:
       - name: CloudFront Function test
         run: node --test infra/edge/functions/rewrite-index.test.mjs
 
-      - name: Repository hygiene tests
+      - name: Repository hygiene, workflow and deploy-script tests
         run: |
           python -m pip install uv==0.12.17
           (cd backend && uv sync --frozen)
+          backend/.venv/bin/ruff check infra/tests docker/tests .github/scripts
+          backend/.venv/bin/ruff format --check infra/tests docker/tests .github/scripts
+          backend/.venv/bin/mypy --strict .github/scripts infra/tests
           backend/.venv/bin/python -m pytest infra/tests
 
   image:
@@ -137,12 +141,16 @@ jobs:
     needs: [backend, frontend, infra]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    # The only job that may ask GitHub for an OIDC token. AWS trades it for one-hour credentials
-    # for the push-only role (infra/cicd/github.tf), and only for this repository's main branch.
-    # No `environment:` here: it would change the token's subject and the role would refuse it.
+    # AWS trades this job's OIDC token for one-hour credentials for the push-only role
+    # (infra/cicd/github.tf), and only for this repository's main branch. No `environment:` on any
+    # job: it would change the token's subject and the role would refuse it.
     permissions:
       contents: read
       id-token: write
+    # The digest names the exact bytes that passed the checks. Only the digest is handed on: the
+    # deploy job reads the registry's address from SSM itself.
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -151,22 +159,69 @@ jobs:
           aws-region: ap-south-1
 
       # Tags are immutable (infra/cicd/registry.tf), so a re-run of a commit that was already pushed
-      # must stop before the push rather than fail on it.
+      # skips the push rather than failing on it, and hands on the digest that is already there.
       - name: Build and push, tagged with the commit SHA
+        id: push
         run: |
           account=$(aws sts get-caller-identity --query Account --output text)
           registry="$account.dkr.ecr.ap-south-1.amazonaws.com"
           repository="stock-analyst-demo-backend"
           image="$registry/$repository:$GITHUB_SHA"
 
-          existing=$(aws ecr batch-get-image --repository-name "$repository" \
-            --image-ids "imageTag=$GITHUB_SHA" --query 'images[0].imageId.imageDigest' --output text)
-          if [[ "$existing" == sha256:* ]]; then
-            echo "Commit $GITHUB_SHA is already in ECR as $existing; nothing to push."
-            exit 0
-          fi
+          pushed_digest() {
+            aws ecr batch-get-image --repository-name "$repository" \
+              --image-ids "imageTag=$GITHUB_SHA" --query 'images[0].imageId.imageDigest' --output text
+          }
 
-          aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
-          docker build --tag "$image" backend
-          docker push "$image"
-          echo "Pushed $repository:$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          digest=$(pushed_digest)
+          if [[ "$digest" == sha256:* ]]; then
+            echo "Commit $GITHUB_SHA is already in ECR as $digest; nothing to push."
+          else
+            aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
+            docker build --tag "$image" backend
+            docker push "$image"
+            digest=$(pushed_digest)
+            echo "Pushed $repository:$GITHUB_SHA ($digest)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy (backend while the stack is up, then the frontend)
+    needs: [image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # The deploy role (infra/cicd/deploy.tf): run the migration, update the one service, sync the
+    # site, invalidate the cache. Same trust as the push role, different power.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+
+      # Migrate, roll out, check /api/readyz; or, with the stack down, nothing. A failure here stops
+      # the job, so the frontend below is never published ahead of a backend that did not deploy.
+      - name: Deploy the backend
+        env:
+          IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
+        run: python3 .github/scripts/deploy_backend.py
+
+      # The edge is permanent, so the site is published whether or not the stack is up.
+      - name: Publish the frontend
+        run: |
+          (cd frontend && npm ci && npm run build)
+          bucket=$(aws ssm get-parameter --name /stock-analyst/demo/site_bucket_name \
+            --query Parameter.Value --output text)
+          distribution=$(aws ssm get-parameter --name /stock-analyst/demo/distribution_id \
+            --query Parameter.Value --output text)
+          aws s3 sync frontend/out "s3://$bucket/" --delete
+          aws cloudfront create-invalidation --distribution-id "$distribution" --paths "/*" \
+            --query Invalidation.Id --output text

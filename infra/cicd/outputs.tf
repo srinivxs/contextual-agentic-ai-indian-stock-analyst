@@ -12,3 +12,8 @@ output "ci_role_arn" {
   description = "The role the GitHub workflow assumes: role-to-assume in configure-aws-credentials."
   value       = aws_iam_role.ci.arn
 }
+
+output "deploy_role_arn" {
+  description = "The role the deploy job assumes: DEPLOY_ROLE_ARN in the workflow."
+  value       = aws_iam_role.deploy.arn
+}

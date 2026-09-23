@@ -73,6 +73,7 @@ EXPECTED_FILES = {
         "variables.tf",
         "registry.tf",
         "github.tf",
+        "deploy.tf",
         "outputs.tf",
         "tests/cicd.tftest.hcl",
     ],

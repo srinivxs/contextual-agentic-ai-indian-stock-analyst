@@ -45,7 +45,8 @@ Get-Content "C:\Contextual Agentic AI Indian Stock Analyst\.env" | ForEach-Objec
 ## Once: the build machinery (`infra/cicd`)
 
 Applied once, like the edge, and never destroyed. It must exist before `infra/stack` can be planned,
-because the stack reads the registry URL from the parameter it publishes.
+because the stack reads the registry URL from the parameter it publishes. Since P8c it also reads the
+site bucket and distribution id that `infra/edge` publishes, so **apply the edge before this root**.
 
 First check the account has no GitHub identity provider already. AWS allows one per issuer, and an
 existing one would have to be imported rather than created:
@@ -72,8 +73,9 @@ terraform plan "-out=tfplan"
 terraform apply tfplan
 ```
 
-6 resources: the repository, its lifecycle policy, the SSM parameter, the OIDC provider, the CI role
-and its policy. Note `ci_role_arn`; the P8b workflow needs it.
+8 resources: the repository, its lifecycle policy, the SSM parameter, the OIDC provider, the push
+role and its policy, the deploy role and its policy. The workflow reads `ci_role_arn` and
+`deploy_role_arn` from the repository variables `CI_ROLE_ARN` and `DEPLOY_ROLE_ARN`.
 
 ---
 
@@ -152,16 +154,11 @@ curl.exe -s https://<distribution>.cloudfront.net/api/readyz
 `/api/readyz` returning `{"status":"ready"}` is the real green light: it proves the api can reach RDS
 as the runtime role. If it fails, step 4 did not run.
 
-### 7. Upload the frontend — only if it changed
+### 7. The frontend — nothing to do
 
-The static site survives teardown, so this is usually unnecessary.
-
-```powershell
-cd "C:\Contextual Agentic AI Indian Stock Analyst\frontend"
-npm run build
-aws s3 sync out "s3://stock-analyst-demo-site-<account>/" --delete
-aws cloudfront create-invalidation --distribution-id <distribution-id> --paths "/*"
-```
+Since P8c the pipeline publishes the static export on every push to `main`, whether or not the stack
+is up (the edge is permanent), and a push while the stack is up also migrates and rolls out the
+backend ([ADR 017](decisions/017-deploy-pipeline.md)). Watch it in the Actions tab.
 
 ---
 

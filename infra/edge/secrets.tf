@@ -67,3 +67,31 @@ resource "aws_ssm_parameter" "public_base_url" {
     Name = "${local.name_prefix}-public-base-url"
   }
 }
+
+# --- where the pipeline publishes the site (P8c) ---------------------------------------------------
+#
+# The deploy job syncs the static export to the bucket and invalidates the distribution's cache.
+# Terraform outputs never reach GitHub, so both are published here, like public_base_url. infra/cicd
+# reads them too, to scope the deploy role to exactly this bucket and this distribution. Neither is a
+# secret, so both are plain Strings.
+resource "aws_ssm_parameter" "site_bucket_name" {
+  name        = local.site_bucket_name_parameter_name
+  description = "The private bucket that holds the static export"
+  type        = "String"
+  value       = aws_s3_bucket.site.bucket
+
+  tags = {
+    Name = "${local.name_prefix}-site-bucket-name"
+  }
+}
+
+resource "aws_ssm_parameter" "distribution_id" {
+  name        = local.distribution_id_parameter_name
+  description = "The CloudFront distribution whose cache the pipeline invalidates"
+  type        = "String"
+  value       = aws_cloudfront_distribution.main.id
+
+  tags = {
+    Name = "${local.name_prefix}-distribution-id"
+  }
+}

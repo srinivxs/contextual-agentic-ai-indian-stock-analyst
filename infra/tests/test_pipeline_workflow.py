@@ -66,13 +66,13 @@ def test_the_default_token_can_only_read(workflow: dict[Any, Any]) -> None:
     assert workflow.get("permissions") == {"contents": "read"}
 
 
-def test_only_the_image_job_can_ask_for_an_aws_token(workflow: dict[Any, Any]) -> None:
+def test_only_the_image_and_deploy_jobs_can_ask_for_an_aws_token(workflow: dict[Any, Any]) -> None:
     asking = {
         name
         for name, job in _jobs(workflow).items()
         if (job.get("permissions") or {}).get("id-token") == "write"
     }
-    assert asking == {"image"}, (
+    assert asking == {"image", "deploy"}, (
         "An OIDC token is what AWS trades for credentials. The jobs that run tests never need one."
     )
 
@@ -100,16 +100,18 @@ def test_aws_is_reached_through_oidc_and_never_a_stored_key(workflow: dict[Any, 
     for forbidden in ("aws-access-key-id", "aws-secret-access-key", "aws_secret_access_key"):
         assert forbidden not in text
 
-    login = [
-        step
-        for step in _steps(_jobs(workflow)["image"])
-        if str(step.get("uses", "")).startswith("aws-actions/configure-aws-credentials@")
-    ]
-    assert len(login) == 1
-    assert login[0]["with"] == {
-        "role-to-assume": "${{ vars.CI_ROLE_ARN }}",
-        "aws-region": "ap-south-1",
-    }
+    # Each job assumes its own role: pushing and deploying are different powers (ADR 016, 017).
+    for job, role in (("image", "CI_ROLE_ARN"), ("deploy", "DEPLOY_ROLE_ARN")):
+        login = [
+            step
+            for step in _steps(_jobs(workflow)[job])
+            if str(step.get("uses", "")).startswith("aws-actions/configure-aws-credentials@")
+        ]
+        assert len(login) == 1, job
+        assert login[0]["with"] == {
+            "role-to-assume": f"${{{{ vars.{role} }}}}",
+            "aws-region": "ap-south-1",
+        }, job
 
 
 def test_no_job_declares_an_environment(workflow: dict[Any, Any]) -> None:
@@ -164,3 +166,38 @@ def test_every_terraform_root_is_checked(workflow: dict[Any, Any]) -> None:
     loop = re.search(r"for root in ([\w ]+);", _scripts(_jobs(workflow)["infra"]))
     assert loop, "the infra job must loop over the roots"
     assert set(loop.group(1).split()) == on_disk
+
+
+# --- the deploy job (P8c) -------------------------------------------------------------------------
+
+
+def test_the_image_job_hands_its_digest_to_the_deploy_job(workflow: dict[Any, Any]) -> None:
+    # A digest names the exact bytes that passed the checks; a tag would be a second lookup.
+    jobs = _jobs(workflow)
+    assert jobs["image"].get("outputs") == {"digest": "${{ steps.push.outputs.digest }}"}
+    assert "GITHUB_OUTPUT" in _scripts(jobs["image"])
+
+
+def test_only_an_image_that_was_built_and_pushed_is_deployed(workflow: dict[Any, Any]) -> None:
+    assert _jobs(workflow)["deploy"].get("needs") == ["image"]
+
+
+def test_the_backend_is_deployed_before_the_frontend_is_published(
+    workflow: dict[Any, Any],
+) -> None:
+    # New pages may call new endpoints; publishing them first would break the site until the API
+    # caught up. And if the backend deploy fails, the step stops the job before the frontend goes.
+    steps = _steps(_jobs(workflow)["deploy"])
+    runs = [str(step.get("run", "")) for step in steps]
+    backend = next(i for i, run in enumerate(runs) if "deploy_backend.py" in run)
+    frontend = next(i for i, run in enumerate(runs) if "aws s3 sync" in run)
+    assert backend < frontend
+    assert steps[backend].get("env") == {"IMAGE_DIGEST": "${{ needs.image.outputs.digest }}"}
+    assert "create-invalidation" in runs[frontend]
+
+
+def test_the_deploy_script_is_linted_and_typed_in_ci(workflow: dict[Any, Any]) -> None:
+    scripts = _scripts(_jobs(workflow)["infra"])
+    assert "ruff check" in scripts
+    assert ".github/scripts" in scripts
+    assert "mypy" in scripts

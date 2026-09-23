@@ -25,6 +25,7 @@
 #               random_password.origin_verify
 #               aws_ssm_parameter.origin_verify
 #               aws_ssm_parameter.public_base_url
+#               aws_ssm_parameter.site_bucket_name / .distribution_id   (added in P8c)
 #   outputs     cloudfront_domain_name, public_base_url, site_bucket_name, distribution_id
 #
 # WHY THESE TESTS ARE RED TODAY
@@ -322,6 +323,37 @@ run "the_stack_is_told_the_https_url_to_call_itself" {
   assert {
     condition     = aws_ssm_parameter.public_base_url.type == "String"
     error_message = "A public URL is not a secret; SecureString would cost a KMS call for nothing."
+  }
+}
+
+# ADDED IN P8c. The deploy job syncs the static export and invalidates the cache, so it needs the
+# bucket's name and the distribution's id. Terraform outputs never reach GitHub, so they are
+# published the same way as public_base_url: plain String parameters with fixed names, which
+# infra/cicd also reads to scope the deploy role to exactly this bucket and this distribution.
+run "the_pipeline_is_told_where_the_site_lives" {
+  assert {
+    condition     = aws_ssm_parameter.site_bucket_name.name == "/stock-analyst/demo/site_bucket_name"
+    error_message = "infra/cicd and the deploy job read this exact name."
+  }
+
+  assert {
+    condition     = aws_ssm_parameter.site_bucket_name.value == aws_s3_bucket.site.bucket
+    error_message = "The parameter must name this bucket."
+  }
+
+  assert {
+    condition     = aws_ssm_parameter.distribution_id.name == "/stock-analyst/demo/distribution_id"
+    error_message = "infra/cicd and the deploy job read this exact name."
+  }
+
+  assert {
+    condition     = aws_ssm_parameter.distribution_id.value == "E1MOCKDISTRIB"
+    error_message = "The parameter must hold this distribution's id."
+  }
+
+  assert {
+    condition     = aws_ssm_parameter.site_bucket_name.type == "String" && aws_ssm_parameter.distribution_id.type == "String"
+    error_message = "Neither is a secret; SecureString would cost a KMS call for nothing."
   }
 }
 

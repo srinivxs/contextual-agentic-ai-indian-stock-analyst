@@ -18,6 +18,11 @@
 #               aws_iam_role_policy.ci_push_images
 #   outputs     ecr_repository_url, ci_role_arn
 #
+# ADDED IN P8c (the deploy role, deploy.tf)
+#   data        aws_ssm_parameter.site_bucket_name / .distribution_id   published by infra/edge
+#   resources   aws_iam_role.deploy, aws_iam_role_policy.deploy
+#   outputs     deploy_role_arn
+#
 # WHY THESE TESTS ARE RED TODAY
 #   None of the names above are declared, so Terraform reports "reference to undeclared ...".
 #
@@ -42,6 +47,22 @@ override_resource {
   target = aws_iam_openid_connect_provider.github
   values = {
     arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+  }
+}
+
+# ADDED IN P8c: the two values infra/edge publishes for the deploy role. Mocked data sources return
+# invented strings, so each is overridden by address.
+override_data {
+  target = data.aws_ssm_parameter.site_bucket_name
+  values = {
+    value = "stock-analyst-demo-site-123456789012"
+  }
+}
+
+override_data {
+  target = data.aws_ssm_parameter.distribution_id
+  values = {
+    value = "E1MOCKDISTRIB"
   }
 }
 
@@ -244,4 +265,147 @@ run "an_owner_id_that_is_not_a_number_is_rejected" {
   }
 
   expect_failures = [var.github_owner_id]
+}
+
+# --- the deploy role (ADDED IN P8c) --------------------------------------------------------------------
+#
+# The deploy job changes a running system, so its power is written against exactly what
+# .github/scripts/deploy_backend.py and the frontend step call, resource by resource. Each run below
+# finds a statement by the action it grants, so a reordered policy cannot make a test pass by accident.
+
+run "the_deploy_role_is_trusted_exactly_like_the_push_role" {
+  assert {
+    condition     = aws_iam_role.deploy.assume_role_policy == aws_iam_role.ci.assume_role_policy
+    error_message = "Same trust as the push role: this repository's main branch, by its immutable subject."
+  }
+
+  assert {
+    condition     = aws_iam_role.deploy.name == "stock-analyst-demo-deploy"
+    error_message = "The workflow's DEPLOY_ROLE_ARN names this role."
+  }
+
+  assert {
+    condition     = output.deploy_role_arn == aws_iam_role.deploy.arn
+    error_message = "The workflow needs the deploy role's ARN."
+  }
+}
+
+run "the_deploy_role_never_grants_a_wildcard_action" {
+  assert {
+    condition = alltrue(flatten([
+      for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement : [
+        for action in flatten([statement.Action]) : !strcontains(action, "*")
+      ]
+    ]))
+    error_message = "Every action must be named; ecs:* or s3:* would hand the pipeline the account."
+  }
+}
+
+run "the_deploy_role_runs_only_the_migration_task_and_only_in_this_cluster" {
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement :
+      statement if contains(flatten([statement.Action]), "ecs:RunTask")
+    ]).Resource == "arn:aws:ecs:ap-south-1:123456789012:task-definition/stock-analyst-demo-migrate:*"
+    error_message = "RunTask must be limited to the migration family: never the provision task or anything else."
+  }
+
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement :
+      statement if contains(flatten([statement.Action]), "ecs:RunTask")
+    ]).Condition.ArnEquals["ecs:cluster"] == "arn:aws:ecs:ap-south-1:123456789012:cluster/stock-analyst-demo"
+    error_message = "The migration may only run in this project's cluster."
+  }
+}
+
+run "the_deploy_role_changes_only_the_one_service" {
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement :
+      statement if contains(flatten([statement.Action]), "ecs:UpdateService")
+    ]).Resource == "arn:aws:ecs:ap-south-1:123456789012:service/stock-analyst-demo/stock-analyst-demo-api"
+    error_message = "UpdateService must name the api service in this cluster, nothing else."
+  }
+
+  assert {
+    condition = alltrue([
+      for action in ["ecs:CreateService", "ecs:DeleteService", "ecs:DeleteCluster", "ecs:StopTask", "ecs:DeregisterTaskDefinition"] :
+      !strcontains(aws_iam_role_policy.deploy.policy, "\"${action}\"")
+    ])
+    error_message = "Deploying never creates or deletes anything in ECS."
+  }
+}
+
+run "the_deploy_role_passes_only_the_three_task_roles_and_only_to_ecs" {
+  assert {
+    condition = toset(flatten([one([
+      for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement :
+      statement if contains(flatten([statement.Action]), "iam:PassRole")
+      ]).Resource])) == toset([
+      "arn:aws:iam::123456789012:role/stock-analyst-demo-api-execution",
+      "arn:aws:iam::123456789012:role/stock-analyst-demo-migrate-execution",
+      "arn:aws:iam::123456789012:role/stock-analyst-demo-task",
+    ])
+    error_message = "PassRole on any other role would let the pipeline run a task with that role's power."
+  }
+
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement :
+      statement if contains(flatten([statement.Action]), "iam:PassRole")
+    ]).Condition.StringEquals["iam:PassedToService"] == "ecs-tasks.amazonaws.com"
+    error_message = "The roles may only be handed to ECS tasks."
+  }
+}
+
+run "the_deploy_role_touches_only_this_site_bucket_and_distribution" {
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement :
+      statement if contains(flatten([statement.Action]), "s3:PutObject")
+    ]).Resource == "arn:aws:s3:::stock-analyst-demo-site-123456789012/*"
+    error_message = "Objects may be written only in the site bucket."
+  }
+
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement :
+      statement if contains(flatten([statement.Action]), "s3:ListBucket")
+    ]).Resource == "arn:aws:s3:::stock-analyst-demo-site-123456789012"
+    error_message = "Only the site bucket may be listed (aws s3 sync --delete lists it)."
+  }
+
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement :
+      statement if contains(flatten([statement.Action]), "cloudfront:CreateInvalidation")
+    ]).Resource == "arn:aws:cloudfront::123456789012:distribution/E1MOCKDISTRIB"
+    error_message = "Only this distribution's cache may be invalidated."
+  }
+}
+
+run "the_deploy_role_reads_only_the_four_values_it_needs" {
+  assert {
+    condition = toset(flatten([one([
+      for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement :
+      statement if contains(flatten([statement.Action]), "ssm:GetParameter")
+      ]).Resource])) == toset([
+      "arn:aws:ssm:ap-south-1:123456789012:parameter/stock-analyst/demo/site_bucket_name",
+      "arn:aws:ssm:ap-south-1:123456789012:parameter/stock-analyst/demo/distribution_id",
+      "arn:aws:ssm:ap-south-1:123456789012:parameter/stock-analyst/demo/public_base_url",
+      "arn:aws:ssm:ap-south-1:123456789012:parameter/stock-analyst/demo/ecr_repository_url",
+    ])
+    error_message = "Never the origin secret, the Google secret or the database URLs."
+  }
+}
+
+run "the_deploy_role_cannot_push_images" {
+  assert {
+    condition = alltrue([
+      for action in ["ecr:PutImage", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload"] :
+      !strcontains(aws_iam_role_policy.deploy.policy, "\"${action}\"")
+    ])
+    error_message = "Building and pushing is the push role's job; each role gets only its own power."
+  }
 }
