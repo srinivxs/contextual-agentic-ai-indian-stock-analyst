@@ -42,8 +42,9 @@ The dataset is intentionally small and **real**.
 
 - **Official filings, fetched automatically (ADR 018):** for each of the three stocks, every
   BSE-hosted earnings-call transcript and investor presentation of the last three years, the last
-  three annual reports and the recent announcements, downloaded from BSE by the worker once a day
-  (about 85 documents). Found through each stock's screener.in page, which is used for
+  three annual reports and the recent announcements, downloaded from BSE by the worker once a day,
+  when a user follows the stock, and when they press "Check for new filings" (at most once an hour
+  per stock; only filings not already stored are downloaded; about 85 documents). Found through each stock's screener.in page, which is used for
   links only. There is no upload: the challenge asks the app to ingest data itself (P9d).
 - **RBI press-release RSS**, ingested automatically (about ten current items at a time).
 - **Events are derived by the pipeline** from those documents and that feed. Nobody writes event notes
@@ -61,7 +62,8 @@ The dataset is intentionally small and **real**.
 2. They follow RELIANCE, TCS and HDFCBANK and see basic information: name, NSE/BSE identifiers, sector.
 3. Each stock page shows key facts **with citation chips**, a rolling-sentiment badge, and recent
    events derived from the ingested documents and feed.
-4. On the Documents page they see each stock's filings, fetched automatically; a new one's status
+4. On the Documents page they see each stock's filings, fetched automatically, when it was last
+   checked, and a "Check for new filings" button (at most once an hour). A new filing's status
    moves pending → processing → completed, and its extracted facts and events then appear.
 5. They say "I'm conservative, dividend-focused, and I avoid high debt." The profile updates and a
    "what I remember" panel shows it with the supporting quote. They can edit or forget any field.

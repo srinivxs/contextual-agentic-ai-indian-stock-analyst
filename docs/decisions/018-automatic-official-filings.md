@@ -98,3 +98,24 @@ forbidden.
   migrations are forward-only, and dropping them would buy nothing.
 - **Cost:** if screener.in blocks us or its layout changes, no new documents arrive until the parser
   is fixed. Already-ingested documents are unaffected.
+
+## Amendment (P9d, 2026-09-23): a follow and a button check a stock at once
+
+- **Why:** the challenge names two triggers for ingestion, "a scheduled refresh and a manual
+  follow" ("User follows a ticker; the app fetches ..."). The daily timer was the only one.
+- **What:** following a stock (`PUT /api/v1/stocks/{symbol}/follow`) also queues a
+  `discover_filings` job for that stock, in the same transaction as the follow row. The Documents
+  page shows "Last checked 14:05 (12 minutes ago)" per stock and a **Check for new filings** button
+  (`POST /api/v1/stocks/{symbol}/filings/check`; `GET` on the same path gives the status: enabled,
+  checking, last checked, next check). A check reads the page and downloads **only filings not
+  already stored**, so a repeat check costs one page read.
+- **Rules:** at most one check per stock per hour (`CHECK_COOLDOWN_HOURS`, the owner's choice),
+  for everyone together, to protect screener.in. Eight clicks at once give one job (the partial
+  unique index on the live dedupe key). POST answers 202 while a check runs (whoever started it),
+  429 within the hour, 409 when `FILINGS_DISCOVERY` is off; with the switch off a follow only
+  follows. The api reads the same switch as the worker, so it never queues a job the worker cannot
+  run. A manual check also counts for the daily timer, which then skips that stock for the day.
+- **Considered and rejected:** a follow that expires after an hour, so that following again means
+  "refresh". A follow is a lasting preference (the chat and the matching use it); an action to
+  refresh is a separate thing, so it got its own button.
+- **Still the api makes no outbound request:** it only inserts a job row; the worker fetches.

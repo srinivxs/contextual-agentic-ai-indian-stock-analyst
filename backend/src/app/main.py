@@ -12,7 +12,7 @@ import httpx
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import auth, documents, health, stocks
+from app.api import auth, documents, filing_checks, health, stocks
 from app.api.middleware import NoStoreMiddleware, RequestContextMiddleware
 from app.auth.jwks import JwksCache
 from app.core.config import Settings, get_settings
@@ -60,4 +60,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth.router)
     app.include_router(stocks.router)
     app.include_router(documents.router)
+    app.include_router(filing_checks.router)
     return app

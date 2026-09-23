@@ -248,6 +248,38 @@ p {
   margin-bottom: 0.5rem;
 }
 
+/* "Last checked 14:05 (12 minutes ago)" on the left, the check button on the right. */
+.doc-freshness {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.doc-freshness p {
+  margin: 0;
+}
+
+.doc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.doc-check .button {
+  padding: 0.35rem 0.8rem;
+}
+
+/* Off because of the hourly limit, not because something is loading. */
+.doc-check .button:disabled {
+  cursor: not-allowed;
+}
+
 .empty {
   padding: 2rem 0;
   text-align: center;

@@ -55,6 +55,20 @@ export const demoDocument = (overrides: Partial<FakeDocument> = {}): FakeDocumen
   ...overrides,
 });
 
+export type FakeCheck = {
+  enabled: boolean;
+  checking: boolean;
+  last_checked_at: string | null;
+  next_check_at: string | null;
+};
+
+const IDLE_CHECK: FakeCheck = {
+  enabled: true,
+  checking: false,
+  last_checked_at: null,
+  next_check_at: null,
+};
+
 export type Options = {
   signedIn?: boolean;
   email?: string;
@@ -63,6 +77,8 @@ export type Options = {
   documents?: FakeDocument[];
   /** How many documents one page of the list holds (the real API allows up to 100). */
   pageSize?: number;
+  /** Each stock's filing-check status; anything left out is enabled, idle, never checked. */
+  checks?: Record<string, Partial<FakeCheck>>;
 };
 
 export type FakeApi = {
@@ -76,6 +92,8 @@ export type FakeApi = {
   expireSession: () => void;
   /** Replace the documents the fake serves (to move a status along, for example). */
   setDocuments: (documents: FakeDocument[]) => void;
+  /** Change one stock's filing-check status. */
+  setCheck: (symbol: string, check: Partial<FakeCheck>) => void;
 };
 
 export function installFakeApi(options: Options = {}): FakeApi {
@@ -87,6 +105,12 @@ export function installFakeApi(options: Options = {}): FakeApi {
   const gates = new Map<string, Promise<void>>();
   const requests: string[] = [];
   let documents = options.documents ?? [];
+  const checks = new Map<string, FakeCheck>();
+  const checkOf = (symbol: string): FakeCheck => ({
+    ...IDLE_CHECK,
+    ...options.checks?.[symbol],
+    ...checks.get(symbol),
+  });
 
   const handler = async (input: string, init?: RequestInit): Promise<Response> => {
     const method = init?.method ?? 'GET';
@@ -124,6 +148,22 @@ export function installFakeApi(options: Options = {}): FakeApi {
       const more = all.length > limit;
       return json(200, { items, next_cursor: more ? (items.at(-1)?.id ?? null) : null });
     }
+    const checking = /^(GET|POST) \/api\/v1\/stocks\/([^/]+)\/filings\/check$/.exec(key);
+    if (checking) {
+      const symbol = decodeURIComponent(checking[2] ?? '');
+      if (!stocks.some((s) => s.symbol === symbol)) return envelope(404, 'not_found');
+      const check = checkOf(symbol);
+      if (checking[1] === 'GET') return json(200, check);
+      // The real rules: switched off, already running, within the hour, or start one now.
+      if (!check.enabled) return envelope(409, 'conflict');
+      if (check.checking) return json(202, check);
+      if (check.next_check_at && Date.parse(check.next_check_at) > Date.now()) {
+        return envelope(429, 'rate_limited');
+      }
+      const next = new Date(Date.now() + 3_600_000).toISOString();
+      checks.set(symbol, { ...check, checking: true, next_check_at: next });
+      return json(202, checkOf(symbol));
+    }
     const match = /^(PUT|DELETE) \/api\/v1\/stocks\/([^/]+)\/follow$/.exec(key);
     if (match) {
       const symbol = decodeURIComponent(match[2] ?? '');
@@ -150,6 +190,9 @@ export function installFakeApi(options: Options = {}): FakeApi {
     },
     setDocuments: (next) => {
       documents = next;
+    },
+    setCheck: (symbol, check) => {
+      checks.set(symbol, { ...checkOf(symbol), ...check });
     },
   };
 }

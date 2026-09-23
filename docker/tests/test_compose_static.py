@@ -141,6 +141,7 @@ def test_the_api_gets_the_runtime_role_and_exactly_the_settings_it_needs(
         "APP_ENV",
         "COOKIE_SECURE",
         "LOG_LEVEL",
+        "FILINGS_DISCOVERY",
     }
     assert set(env) <= allowed, f"unexpected api environment: {sorted(set(env) - allowed)}"
 
@@ -174,8 +175,10 @@ def test_the_worker_gets_the_runtime_role_and_no_login_secrets(
 
 
 def test_filing_discovery_is_off_unless_the_developer_switches_it_on(model: dict[str, Any]) -> None:
-    """ADR 018: a plain `docker compose --profile app up` never reaches screener.in or BSE."""
+    """ADR 018: a plain `docker compose --profile app up` never reaches screener.in or BSE. The
+    api reads the same switch: it must never queue a check the worker is not able to run."""
     assert service(model, "worker")["environment"]["FILINGS_DISCOVERY"] == "false"
+    assert service(model, "api")["environment"]["FILINGS_DISCOVERY"] == "false"
 
 
 def test_only_the_worker_has_the_folder_for_stored_files(model: dict[str, Any]) -> None:

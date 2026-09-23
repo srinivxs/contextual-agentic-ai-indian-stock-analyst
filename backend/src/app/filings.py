@@ -30,7 +30,7 @@ import hashlib
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from html.parser import HTMLParser
 from typing import Any, cast
 
@@ -261,7 +261,12 @@ def fetch_key(url: str) -> str:
     return "fetch_filing:" + hashlib.sha256(url.encode("utf-8")).hexdigest()
 
 
-# --- the timer -----------------------------------------------------------------------------------
+# --- queueing a check: the daily timer, a follow, the "Check for new filings" button -------------
+
+# How long after a check is queued before the same stock may be checked again on demand (a follow
+# or the button). Per stock, not per person: it protects screener.in, not a user's quota. The owner
+# chose one hour. The daily timer uses the same query with its own interval.
+CHECK_COOLDOWN_HOURS = 1
 
 _ENQUEUE_DISCOVERY = text(
     """
@@ -270,7 +275,8 @@ _ENQUEUE_DISCOVERY = text(
            jsonb_build_object('symbol', s.symbol),
            'discover_filings:' || s.symbol
     FROM stocks s
-    WHERE NOT EXISTS (
+    WHERE (CAST(:symbol AS text) IS NULL OR s.symbol = :symbol)
+      AND NOT EXISTS (
         SELECT 1 FROM jobs j
         WHERE j.dedupe_key = 'discover_filings:' || s.symbol
           AND j.created_at > now() - make_interval(hours => :hours)
@@ -280,11 +286,57 @@ _ENQUEUE_DISCOVERY = text(
 )
 
 
-async def enqueue_discovery(db: AsyncSession, *, every_hours: int) -> int:
-    """Queue one discovery per stock unless one was queued within ``every_hours``."""
-    params = {"hours": every_hours}
+async def enqueue_discovery(
+    db: AsyncSession, *, every_hours: int, symbol: str | None = None
+) -> int:
+    """Queue a discovery for every stock (or just ``symbol``) not checked within ``every_hours``.
+
+    Returns how many were queued. Two callers racing both pass NOT EXISTS; the partial unique
+    index on the live dedupe key then lets only one insert through, and ON CONFLICT skips the rest.
+    """
+    params = {"hours": every_hours, "symbol": symbol}
     result = cast("CursorResult[Any]", await db.execute(_ENQUEUE_DISCOVERY, params))
     return result.rowcount
+
+
+@dataclass(frozen=True)
+class FilingCheck:
+    """What the Documents page shows next to a stock."""
+
+    checking: bool  # a discovery, or a download it queued, is still waiting or running
+    last_checked_at: datetime | None  # when the newest completed discovery finished
+    next_check_at: datetime | None  # when the button works again; None means now
+
+
+# The newest discovery of this stock, and whether any of its work is still live. A fetch_filing
+# job carries its stock in the payload; a discovery only in its dedupe key.
+_CHECK_STATUS = text(
+    """
+    SELECT
+      EXISTS (
+        SELECT 1 FROM jobs
+        WHERE status IN ('pending', 'processing')
+          AND (dedupe_key = 'discover_filings:' || :symbol
+               OR (kind = 'fetch_filing' AND payload->>'symbol' = :symbol))
+      ) AS checking,
+      (SELECT max(updated_at) FROM jobs
+        WHERE dedupe_key = 'discover_filings:' || :symbol AND status = 'completed')
+        AS last_checked_at,
+      (SELECT max(created_at) + make_interval(hours => :hours) FROM jobs
+        WHERE dedupe_key = 'discover_filings:' || :symbol) AS cooldown_ends,
+      now() AS now
+    """
+)
+
+
+async def filing_check(db: AsyncSession, symbol: str) -> FilingCheck:
+    row = (await db.execute(_CHECK_STATUS, {"symbol": symbol, "hours": CHECK_COOLDOWN_HOURS})).one()
+    ends: datetime | None = row.cooldown_ends
+    return FilingCheck(
+        checking=row.checking,
+        last_checked_at=row.last_checked_at,
+        next_check_at=ends if ends is not None and ends > row.now else None,
+    )
 
 
 # --- the two jobs -------------------------------------------------------------------------------

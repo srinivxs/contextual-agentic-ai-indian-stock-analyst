@@ -98,6 +98,9 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
+      # The same switch as the worker's: with it on, a follow or the "Check for new filings" button
+      # queues a check; with it off, the api queues nothing the worker could not run (ADR 018).
+      FILINGS_DISCOVERY: ${FILINGS_DISCOVERY:-false}
     # No file storage: the api only reads document metadata from the database. The worker alone
     # writes and reads the stored PDFs (uploads were removed in P9d).
     depends_on:

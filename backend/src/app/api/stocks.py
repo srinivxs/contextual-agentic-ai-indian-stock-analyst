@@ -14,6 +14,7 @@ from starlette.responses import Response
 from app.auth.deps import current_user, require_same_origin
 from app.auth.sessions import CurrentUser
 from app.core.errors import AppError
+from app.filings import CHECK_COOLDOWN_HOURS, enqueue_discovery
 from app.stocks import follow, list_stocks, unfollow
 
 router = APIRouter(prefix="/api/v1", tags=["stocks"])
@@ -61,6 +62,11 @@ async def follow_stock(
 ) -> Response:
     async with request.app.state.session_factory() as db:
         found = await follow(db, user.id, symbol)
+        # Following checks the stock for new filings too (the challenge: "the app fetches" on a
+        # follow). Only a job row, in the same transaction; the worker does the fetching, and
+        # nothing is queued within the hour after the last check (ADR 018, P9d).
+        if found and request.app.state.settings.filings_discovery:
+            await enqueue_discovery(db, every_hours=CHECK_COOLDOWN_HOURS, symbol=symbol)
         await db.commit()
     if not found:
         raise _no_such_stock()

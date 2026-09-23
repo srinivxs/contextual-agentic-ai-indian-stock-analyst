@@ -156,6 +156,113 @@ describe('the documents page', () => {
     expect(api.requests.length).toBe(settled); // nothing left to wait for: no more requests
   });
 
+  describe('checking for new filings', () => {
+    const CHECK = 'POST /api/v1/stocks/DEMOA/filings/check';
+
+    it('offers the check for a stock never checked', async () => {
+      installFakeApi();
+      render(<DocumentsView />);
+
+      expect(await screen.findByText('Not checked yet')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Check for new filings' })).toBeEnabled();
+    });
+
+    it('says when the stock was last checked', async () => {
+      installFakeApi({ checks: { DEMOA: { last_checked_at: '2026-09-23T08:35:00+00:00' } } });
+      render(<DocumentsView />);
+      expect(await screen.findByText(/^Last checked 14:05 \(/)).toBeInTheDocument();
+    });
+
+    it('starts a check, then shows it running', async () => {
+      const api = installFakeApi();
+      render(<DocumentsView />);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Check for new filings' }));
+
+      expect(await screen.findByText('Checking for new filings…')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Checking…' })).toBeDisabled();
+      expect(api.requests).toContain(CHECK);
+    });
+
+    it('keeps the button off within the hour and says when it works again', async () => {
+      const next = new Date(Date.now() + 30 * 60_000).toISOString();
+      installFakeApi({ checks: { DEMOA: { next_check_at: next } } });
+      render(<DocumentsView />);
+
+      expect(await screen.findByRole('button', { name: 'Check for new filings' })).toBeDisabled();
+      expect(screen.getByText(/^Available at \d\d:\d\d$/)).toBeInTheDocument();
+    });
+
+    it('turns the button back on once the hour has passed', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const next = new Date(Date.now() + 60_000).toISOString();
+      const api = installFakeApi({ checks: { DEMOA: { next_check_at: next } } });
+      render(<DocumentsView />);
+      expect(await screen.findByRole('button', { name: 'Check for new filings' })).toBeDisabled();
+
+      api.setCheck('DEMOA', { next_check_at: null });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
+
+      await vi.waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Check for new filings' })).toBeEnabled(),
+      );
+    });
+
+    it('refreshes while a check runs, then stops', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const api = installFakeApi({ checks: { DEMOA: { checking: true } } });
+      render(<DocumentsView />);
+      await screen.findByText('Checking for new filings…');
+
+      api.setCheck('DEMOA', { checking: false, last_checked_at: new Date().toISOString() });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(REFRESH_MS);
+      });
+      await vi.waitFor(() => expect(screen.queryByText('Checking for new filings…')).toBeNull());
+
+      const settled = api.requests.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(REFRESH_MS * 3);
+      });
+      expect(api.requests.length).toBe(settled);
+    });
+
+    it('treats "checked less than an hour ago" as no error, just a fresh status', async () => {
+      const api = installFakeApi();
+      render(<DocumentsView />);
+      const button = await screen.findByRole('button', { name: 'Check for new filings' });
+
+      // Someone else checked this stock a moment ago.
+      api.setCheck('DEMOA', { next_check_at: new Date(Date.now() + 3_600_000).toISOString() });
+      await userEvent.click(button);
+
+      await vi.waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Check for new filings' })).toBeDisabled(),
+      );
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('says so when the check could not be started', async () => {
+      const api = installFakeApi();
+      api.failWith(CHECK, 500);
+      render(<DocumentsView />);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Check for new filings' }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't start the check/i);
+    });
+
+    it('offers no button when automatic filings are switched off', async () => {
+      installFakeApi({ checks: { DEMOA: { enabled: false } } });
+      render(<DocumentsView />);
+
+      expect(await screen.findByText(/switched off/i)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /check for new filings/i })).toBeNull();
+    });
+  });
+
   it('goes back to sign-in when the session has ended', async () => {
     const api = installFakeApi();
     api.expireSession();
