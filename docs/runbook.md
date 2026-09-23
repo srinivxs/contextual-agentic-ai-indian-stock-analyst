@@ -59,11 +59,11 @@ If the list contains `token.actions.githubusercontent.com`, stop and import it b
 Otherwise:
 
 ```powershell
-cd "C:\Contextual Agentic AI Indian Stock Analyst\infraootstrap"
-terraform output -raw backend_config_hcl > ..\cicdackend.hcl
+cd "C:\Contextual Agentic AI Indian Stock Analyst\infra\bootstrap"
+terraform output -raw backend_config_hcl > ..\cicd\backend.hcl
 ```
 
-Edit `infra\cicdackend.hcl` so the `key` line reads `cicd/terraform.tfstate`. **Never share a key
+Edit `infra\cicd\backend.hcl` so the `key` line reads `cicd/terraform.tfstate`. **Never share a key
 with another root.** Then:
 
 ```powershell
