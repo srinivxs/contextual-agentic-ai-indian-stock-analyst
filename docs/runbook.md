@@ -81,7 +81,16 @@ role and its policy, the deploy role and its policy. The workflow reads `ci_role
 
 ## Switching it on
 
-Measured timings are from the 2026-09-22 drill.
+**The quick way (since P8):** one script runs steps 1 to 6 below, stopping at each Terraform plan
+for your `yes`, and finishes when `/api/readyz` is ready. It writes no plan file.
+
+```powershell
+& "C:\Contextual Agentic AI Indian Stock Analyst\scripts\demo-up.ps1"
+```
+
+Run `aws login --profile stock-analyst-admin` first if the session has expired. The steps below are
+what it does, for when one of them needs doing by hand. Measured timings are from the 2026-09-22
+drill.
 
 ### 1. Apply the application stack — about 7 minutes
 
@@ -127,7 +136,7 @@ RDS has no `docker-entrypoint-initdb.d`, so nothing else creates the no-DDL `sto
 ADR 011 requires. Without this the site loads and `/api/healthz` passes, but every real query fails.
 It is idempotent and order-independent, so it may run before or after step 3, and twice if you like.
 
-### 5. Point CloudFront at the new load balancer — 33 seconds
+### 5. Point CloudFront at the new load balancer — 1 to 7 minutes
 
 ```powershell
 cd "C:\Contextual Agentic AI Indian Stock Analyst\infra\edge"
@@ -136,7 +145,8 @@ terraform apply tfplan
 ```
 
 The load balancer's name changes on every rebuild; the public URL does not. This is invisible to
-Google.
+Google. CloudFront copies the change to every edge location before Terraform returns: 33 seconds on
+2026-09-22, 7 minutes on 2026-09-23. Do not interrupt it.
 
 ### 6. Start the application — about 45 seconds to healthy
 
@@ -163,6 +173,15 @@ backend ([ADR 017](decisions/017-deploy-pipeline.md)). Watch it in the Actions t
 ---
 
 ## Switching it off — do this every time
+
+**The quick way:** destroys only `infra/stack`, then runs the six checks below and says whether
+anything is still billing.
+
+```powershell
+& "C:\Contextual Agentic AI Indian Stock Analyst\scripts\demo-down.ps1"
+```
+
+By hand:
 
 ```powershell
 cd "C:\Contextual Agentic AI Indian Stock Analyst\infra\stack"
