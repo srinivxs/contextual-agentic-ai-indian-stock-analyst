@@ -37,3 +37,31 @@ variable "github_repository" {
     error_message = "Give the repository as owner/name, with no wildcards."
   }
 }
+
+# GitHub signs this repository's tokens with an IMMUTABLE subject (found on the first real run, P8b):
+#   repo:<owner>@<owner id>/<name>@<repository id>:ref:refs/heads/main
+# The ids never change, even if the repository is renamed, and a repository deleted and recreated
+# under the same name gets a NEW id -- so a look-alike can never inherit this trust. Neither id is a
+# secret: `gh api repos/<owner>/<name> --jq '[.owner.id,.id]'` prints both for anyone who can see it.
+
+variable "github_owner_id" {
+  type        = string
+  description = "Numeric GitHub id of the repository's owner, part of the immutable OIDC subject."
+  default     = "164909971"
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_owner_id))
+    error_message = "github_owner_id is the owner's numeric id, digits only."
+  }
+}
+
+variable "github_repository_id" {
+  type        = string
+  description = "Numeric GitHub id of the repository, part of the immutable OIDC subject."
+  default     = "1377490279"
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repository_id))
+    error_message = "github_repository_id is the repository's numeric id, digits only."
+  }
+}

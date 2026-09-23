@@ -856,9 +856,12 @@ def test_github_is_trusted_by_repository_and_ref_not_merely_by_issuer() -> None:
     assert "token.actions.githubusercontent.com:sub" in text, (
         "the trust policy must check the subject claim, not only the issuer"
     )
-    assert '"repo:${var.github_repository}:ref:refs/heads/main"' in text, (
-        "the subject must be exactly this repository on main"
-    )
+    # GitHub's immutable subject (P8b): owner@owner_id/name@repository_id, then the ref.
+    assert '"token.actions.githubusercontent.com:sub" = local.github_subject' in text
+    assert (
+        '"repo:${local.github_owner}@${var.github_owner_id}/'
+        '${local.github_name}@${var.github_repository_id}:ref:refs/heads/main"'
+    ) in text, "the subject must be exactly this repository, by its immutable ids, on main"
     assert "refs/heads/*" not in text, "a wildcard ref would let any branch assume the role"
     assert not re.search(r'"repo:\*', text), "a wildcard repository would trust all of GitHub"
 

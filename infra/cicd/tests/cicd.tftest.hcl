@@ -9,6 +9,7 @@
 #
 # WHAT THE IMPLEMENTATION MUST CALL THINGS (the contract, written before the implementation)
 #   variables   region, allowed_account_id, github_repository
+#               github_owner_id, github_repository_id   (added in P8b: the immutable subject)
 #   resources   aws_ecr_repository.backend
 #               aws_ecr_lifecycle_policy.backend
 #               aws_ssm_parameter.ecr_repository_url
@@ -45,8 +46,10 @@ override_resource {
 }
 
 variables {
-  allowed_account_id = "123456789012"
-  github_repository  = "srinivxs/contextual-agentic-ai-indian-stock-analyst"
+  allowed_account_id   = "123456789012"
+  github_repository    = "srinivxs/contextual-agentic-ai-indian-stock-analyst"
+  github_owner_id      = "164909971"
+  github_repository_id = "1377490279"
 }
 
 # --- the registry ------------------------------------------------------------------------------------
@@ -116,12 +119,17 @@ run "only_this_repository_on_main_may_assume_the_role" {
   # The single most important assertion in this file. A trust policy that checks the issuer but not
   # the subject would let ANY GitHub repository in the world -- including a fork of this one -- assume
   # the role and push to the registry.
+  #
+  # CHANGED AFTER THE FIRST REAL RUN (P8b). GitHub signs this repository's tokens with an IMMUTABLE
+  # subject: owner and repository each carry their numeric id. The old owner/name form was refused
+  # by AWS with "Not authorized to perform sts:AssumeRoleWithWebIdentity". The expected value is
+  # written out literally, so the test cannot agree with a wrong formula in the implementation.
   assert {
     condition = strcontains(
       aws_iam_role.ci.assume_role_policy,
-      "repo:${var.github_repository}:ref:refs/heads/main"
+      "\"repo:srinivxs@164909971/contextual-agentic-ai-indian-stock-analyst@1377490279:ref:refs/heads/main\""
     )
-    error_message = "The trust policy must name this repository AND the main ref, not just the issuer."
+    error_message = "The trust policy must name this repository by its immutable subject AND the main ref."
   }
 
   assert {
@@ -216,4 +224,24 @@ run "a_repository_that_is_not_owner_slash_name_is_rejected" {
   }
 
   expect_failures = [var.github_repository]
+}
+
+run "a_repository_id_that_is_not_a_number_is_rejected" {
+  command = plan
+
+  variables {
+    github_repository_id = "*"
+  }
+
+  expect_failures = [var.github_repository_id]
+}
+
+run "an_owner_id_that_is_not_a_number_is_rejected" {
+  command = plan
+
+  variables {
+    github_owner_id = "srinivxs"
+  }
+
+  expect_failures = [var.github_owner_id]
 }

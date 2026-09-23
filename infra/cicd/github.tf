@@ -34,6 +34,16 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 # --- the role GitHub assumes on every push to main ------------------------------------------------
 
+# The subject GitHub puts in this repository's tokens. It is the IMMUTABLE form, with numeric ids
+# (variables.tf explains why that is safer). P8a expected the older repo:<owner>/<name>:ref:... form;
+# the first real run was refused, and `gh api repos/<owner>/<name>/actions/oidc/customization/sub`
+# showed "use_immutable_subject": true. Both forms fail closed when they do not match.
+locals {
+  github_owner   = split("/", var.github_repository)[0]
+  github_name    = split("/", var.github_repository)[1]
+  github_subject = "repo:${local.github_owner}@${var.github_owner_id}/${local.github_name}@${var.github_repository_id}:ref:refs/heads/main"
+}
+
 # Written with jsonencode rather than aws_iam_policy_document, as in the other roots: the policy is
 # visible exactly as AWS receives it, and a mocked data source would return invented JSON that the
 # offline tests could not inspect.
@@ -59,9 +69,9 @@ resource "aws_iam_role" "ci" {
             #
             # StringEquals, not StringLike, so no stray character can widen the match. The ref is
             # pinned to main: a workflow on any other branch is refused. If a job ever declares a
-            # GitHub `environment:`, the subject becomes repo:<owner>/<name>:environment:<name> and
-            # this stops matching. That is the likeliest first failure in P8b, and it fails closed.
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:ref:refs/heads/main"
+            # GitHub `environment:`, the subject ends in :environment:<name> instead and this stops
+            # matching, which fails closed. The subject's shape is explained at local.github_subject.
+            "token.actions.githubusercontent.com:sub" = local.github_subject
           }
         }
       },

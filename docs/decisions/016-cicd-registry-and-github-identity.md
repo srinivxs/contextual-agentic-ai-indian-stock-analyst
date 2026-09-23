@@ -100,3 +100,9 @@ can actually assume the role, which only a real workflow run shows. That is the 
   `-var image_tag=<sha>` runs an older commit. The stack plan fails while the repository is empty.
 - **Tradeoff:** an image is never overwritten, so a fixed build needs a new commit. The lifecycle policy
   still keeps five images, which bounds how far back `image_tag` can go.
+- **The OIDC subject is GitHub's immutable form.** The first real run was refused
+  (`Not authorized to perform sts:AssumeRoleWithWebIdentity`): this repository's tokens carry
+  `repo:<owner>@<owner id>/<name>@<repository id>:ref:refs/heads/main`, not `repo:<owner>/<name>:...`.
+  The trust policy now builds that string from `github_repository`, `github_owner_id` and
+  `github_repository_id`. It is also the safer form: a repository deleted and recreated under the same
+  name gets a new id and is refused.
