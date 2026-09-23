@@ -396,9 +396,13 @@ async def _download(
 ) -> tuple[bytes, str]:
     """The first candidate address that has the file, and which one it was.
 
-    A 404 means "not in this folder": try the next. Any other failure propagates (a 5xx or a
-    timeout is retried later by the job queue). Before each request, a pause: to be gentle with BSE.
+    404, or 503, means "not in this folder": try the next. (Found in the three-year local run: for a
+    filing not yet moved to AttachHis, BSE answers 503 there while AttachLive serves it.) If every
+    folder said 503, that is an outage: the last 503 propagates and the job queue retries later.
+    Only 404 everywhere means the filing is gone. Before each request, a pause, to be gentle with
+    BSE.
     """
+    unavailable: httpx.HTTPStatusError | None = None
     for candidate in candidates:
         await asyncio.sleep(pause_seconds)
         try:
@@ -410,6 +414,10 @@ async def _download(
         except FetchTooLarge as error:
             raise JobCannotSucceed(f"the filing is larger than {limit} bytes") from error
         except httpx.HTTPStatusError as error:
-            if error.response.status_code != 404:
+            if error.response.status_code == 503:
+                unavailable = error
+            elif error.response.status_code != 404:
                 raise
+    if unavailable is not None:
+        raise unavailable
     raise JobCannotSucceed("the filing was not found at BSE (not found in either folder)")

@@ -573,3 +573,50 @@ async def test_downloads_are_spaced_out_to_be_gentle_with_bse(
         started = time.monotonic()
         await run_once(paced)
     assert time.monotonic() - started >= 0.3
+
+
+async def test_a_503_from_the_historical_folder_means_try_the_live_one(
+    context: WorkerContext, internet: FakeInternet, admin_engine: AsyncEngine
+) -> None:
+    """Found in the three-year local run: for a filing not yet moved to AttachHis, BSE answers 503
+    there (not 404), while AttachLive serves it."""
+    url = transcript_url(1)
+    historical = url.replace("stockinfo/AnnPdfOpen.aspx?Pname=", "xml-data/corpfiling/AttachHis/")
+    live = historical.replace("/AttachHis/", "/AttachLive/")
+    internet.pages[historical] = httpx.Response(503)
+    internet.pages[live] = httpx.Response(200, content=pdf_for(live))
+    await insert_fetch(admin_engine, url)
+
+    await drain(context)
+
+    assert await rows(admin_engine, "SELECT source_url, status FROM documents") == [
+        (live, "completed")
+    ]
+
+
+async def test_503_from_every_folder_is_an_outage_and_is_retried(
+    context: WorkerContext, internet: FakeInternet, admin_engine: AsyncEngine
+) -> None:
+    url = transcript_url(1)
+    historical = url.replace("stockinfo/AnnPdfOpen.aspx?Pname=", "xml-data/corpfiling/AttachHis/")
+    internet.pages[historical] = httpx.Response(503)
+    internet.pages[historical.replace("/AttachHis/", "/AttachLive/")] = httpx.Response(503)
+    await insert_fetch(admin_engine, url)
+
+    await run_once(context)
+
+    assert await rows(admin_engine, "SELECT status, attempts FROM jobs") == [("pending", 1)]
+
+
+async def test_any_other_server_error_is_retried_without_trying_the_other_folder(
+    context: WorkerContext, internet: FakeInternet, admin_engine: AsyncEngine
+) -> None:
+    url = transcript_url(1)
+    historical = url.replace("stockinfo/AnnPdfOpen.aspx?Pname=", "xml-data/corpfiling/AttachHis/")
+    internet.pages[historical] = httpx.Response(500)
+    await insert_fetch(admin_engine, url)
+
+    await run_once(context)
+
+    assert internet.requests == [historical]
+    assert await rows(admin_engine, "SELECT status, attempts FROM jobs") == [("pending", 1)]

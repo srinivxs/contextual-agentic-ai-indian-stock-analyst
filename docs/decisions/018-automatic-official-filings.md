@@ -74,7 +74,9 @@ forbidden.
 - **Direct file addresses:** the first real run showed BSE's `AnnPdfOpen.aspx` script page often
   answering 406, while the file it redirects to (`xml-data/corpfiling/AttachHis/<same id>.pdf`)
   answered every time. Links are kept by that direct address; `AttachLive/` is tried for a filing made
-  today. A 2 s pause precedes every download.
+  today. For such a filing BSE answers **503** (not 404) in `AttachHis/`, so 404 and 503 both mean
+  "try the other folder"; 503 from every folder is an outage and is retried. A 2 s pause precedes
+  every download. The three-year local run then fetched 71 of about 85 before the 503 fix.
 - **Consequence for AWS:** the database is destroyed after every session (ADR 015), so each spin-up
   fetches and ingests the whole window again (several minutes for about 85 PDFs). Decided in the
   AWS step of P9d.
