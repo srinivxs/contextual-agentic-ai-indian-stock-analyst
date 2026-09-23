@@ -111,12 +111,15 @@ jobs:
           python-version: "3.11"
 
       # Offline only: -backend=false and mock providers, so no state is read and AWS is never called.
+      # Every root is formatted and validated. preflight's test is the one exception: its whole
+      # purpose is to prove the owner's real AWS login works, so it has no mock and never runs here.
       - name: Terraform format, validate and test (every root)
         run: |
           terraform fmt -check -recursive infra
           for root in preflight bootstrap edge cicd stack; do
             echo "::group::infra/$root"
-            (cd "infra/$root" && terraform init -backend=false -input=false && terraform validate && terraform test)
+            (cd "infra/$root" && terraform init -backend=false -input=false && terraform validate)
+            if [ "$root" != preflight ]; then (cd "infra/$root" && terraform test); fi
             echo "::endgroup::"
           done
 
