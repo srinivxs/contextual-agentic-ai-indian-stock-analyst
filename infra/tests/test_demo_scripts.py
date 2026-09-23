@@ -39,7 +39,7 @@ def test_nothing_is_applied_or_destroyed_without_a_typed_yes(name: str) -> None:
 def test_no_plan_file_is_written(name: str) -> None:
     # `terraform plan -out=tfplan` saves the Google client secret in plaintext. (`--output` is the
     # AWS CLI's flag and is fine, hence the look-behind.)
-    assert not re.search(r"(?<![-\w])-out", _code(name))
+    assert not re.search(r"(?<![-\w])-out\b", _code(name))
 
 
 def test_terraform_can_only_reach_the_stack_and_the_edge() -> None:
