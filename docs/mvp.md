@@ -40,9 +40,10 @@ When a question needs something out of scope, the product says so plainly.
 
 The dataset is intentionally small and **real**.
 
-- **Official filings, fetched automatically (ADR 018):** for each of the three stocks, the 4 newest
-  earnings-call transcripts and the newest annual report, downloaded from BSE by the worker once a day
-  (15 documents, about one year). Found through each stock's screener.in page, which is used for
+- **Official filings, fetched automatically (ADR 018):** for each of the three stocks, every
+  BSE-hosted earnings-call transcript and investor presentation of the last three years, the last
+  three annual reports and the recent announcements, downloaded from BSE by the worker once a day
+  (about 85 documents). Found through each stock's screener.in page, which is used for
   links only. A user may also upload a PDF; it goes through the same pipeline.
 - **RBI press-release RSS**, ingested automatically (about ten current items at a time).
 - **Events are derived by the pipeline** from those documents and that feed. Nobody writes event notes

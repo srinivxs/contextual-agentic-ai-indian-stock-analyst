@@ -18,6 +18,7 @@ from app.filings import (
 from tests.filings_html import (
     DEMOCO_PAGE,
     EXPECTED,
+    TODAY,
     UUIDS,
     annual_report_url,
     file_url,
@@ -26,25 +27,43 @@ from tests.filings_html import (
 )
 
 
-def test_the_newest_four_bse_transcripts_and_the_newest_bse_annual_report_are_chosen() -> None:
-    chosen = select_filings(parse_documents(DEMOCO_PAGE))
+def test_every_bse_filing_of_the_last_three_years_is_chosen() -> None:
+    chosen = select_filings(parse_documents(DEMOCO_PAGE), today=TODAY, years=3)
     assert [(f.kind, f.label, f.url) for f in chosen] == EXPECTED
 
 
-def test_announcements_and_presentations_are_not_chosen() -> None:
-    urls = {f.url for f in select_filings(parse_documents(DEMOCO_PAGE))}
-    assert transcript_url(9) not in urls  # the press release in Announcements
-    assert not any("democo.example" in url for url in urls)  # the PPT on the company's site
+def test_a_shorter_window_keeps_only_the_newer_filings() -> None:
+    chosen = select_filings(parse_documents(DEMOCO_PAGE), today=TODAY, years=1)
+    assert [(f.kind, f.label) for f in chosen] == [
+        ("transcript", "Jul 2026"),
+        ("transcript", "Jan 2026"),
+        ("transcript", "Oct 2025"),
+        ("presentation", "Jul 2026"),
+        ("annual_report", "Financial Year 2026"),
+        ("announcement", "Press release - DemoCo opens a widget plant"),
+    ]
+
+
+@pytest.mark.parametrize("label", ["", "Soon", "Jul", "2026", "Foo 2026"])
+def test_an_earnings_call_without_a_readable_month_is_left_out(label: str) -> None:
+    link = FilingLink("transcript", label, transcript_url(1))
+    assert select_filings([link], today=TODAY, years=3) == []
+
+
+def test_nothing_hosted_off_bse_is_chosen() -> None:
+    urls = {f.url for f in select_filings(parse_documents(DEMOCO_PAGE), today=TODAY, years=3)}
+    assert not any("democo.example" in url for url in urls)  # company-site newsletter and filings
+    assert not any("nseindia" in url for url in urls)  # the NSE-hosted annual report
 
 
 def test_a_page_without_a_documents_section_gives_nothing() -> None:
     assert parse_documents("<html><body><h1>Not found</h1></body></html>") == []
-    assert select_filings([]) == []
+    assert select_filings([], today=TODAY, years=3) == []
 
 
 def test_the_same_link_listed_twice_is_chosen_once() -> None:
     links = [FilingLink("transcript", "Apr 2025", transcript_url(7))] * 2
-    assert len(select_filings(links)) == 1
+    assert len(select_filings(links, today=TODAY, years=3)) == 1
 
 
 @pytest.mark.parametrize(
@@ -133,3 +152,21 @@ def test_every_candidate_is_itself_an_official_address() -> None:
 
 def test_only_an_official_address_has_candidates() -> None:
     assert file_candidates("https://evil.example/x.pdf") == []
+
+
+def test_presentations_and_announcements_have_their_own_titles() -> None:
+    assert title_for("TCS", FilingLink("presentation", "Jul 2026", "x")) == (
+        "TCS investor presentation, Jul 2026"
+    )
+    assert title_for("TCS", FilingLink("announcement", "Press release - results", "x")) == (
+        "TCS announcement, Press release - results"
+    )
+
+
+def test_the_announcements_list_is_read_but_not_the_credit_ratings() -> None:
+    page = (
+        '<div id="documents"><div class="documents credit-ratings"><ul class="list-links">'
+        f'<li><a href="{transcript_url(15)}">Rating update<div>from crisil</div></a></li>'
+        "</ul></div></div>"
+    )
+    assert parse_documents(page) == []

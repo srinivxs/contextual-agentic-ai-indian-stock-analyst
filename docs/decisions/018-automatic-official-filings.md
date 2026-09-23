@@ -62,3 +62,20 @@ forbidden.
   they are not fetched; annual reports cover the balance sheet instead.
 - Migration 0004 was amended in place (source columns, two job kinds) rather than adding 0005: no
   lasting database held it (production is destroyed after every session, ADR 015).
+
+## Amendment (P9d, 2026-09-23): three years of every BSE-hosted filing, and direct file addresses
+
+- **Scope widened by the owner:** "the last 3 years, every PDF". `FILINGS_YEARS` (default 3, 1-5)
+  now selects every earnings-call transcript and **investor presentation** dated within the window,
+  the annual reports among the newest `FILINGS_YEARS` listed, and the **announcements** the page
+  shows. About 85 PDFs for the three stocks (was 15). A call without a readable month is left out
+  rather than guessed. Credit-rating reports (rating agencies' sites), presentations on company
+  websites (about 26) and announcements older than the page's latest few remain out of reach.
+- **Direct file addresses:** the first real run showed BSE's `AnnPdfOpen.aspx` script page often
+  answering 406, while the file it redirects to (`xml-data/corpfiling/AttachHis/<same id>.pdf`)
+  answered every time. Links are kept by that direct address; `AttachLive/` is tried for a filing made
+  today. A 2 s pause precedes every download.
+- **Consequence for AWS:** the database is destroyed after every session (ADR 015), so each spin-up
+  fetches and ingests the whole window again (several minutes for about 85 PDFs). Decided in the
+  AWS step of P9d.
+

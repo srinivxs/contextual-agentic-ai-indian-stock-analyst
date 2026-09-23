@@ -21,7 +21,7 @@ from app.blobs import FilesystemBlobStore, blob_key_for
 from app.documents import read_pdf, record_upload
 from app.filings import SCREENER_URL, enqueue_discovery
 from app.worker import WorkerContext, run_forever, run_once
-from tests.filings_html import DEMOCO_PAGE, EXPECTED, file_url, transcript_url
+from tests.filings_html import DEMOCO_PAGE, EXPECTED, TODAY, file_url, transcript_url
 from tests.pdfs import make_pdf
 
 pytestmark = pytest.mark.usefixtures("migrated_db", "clean_document_tables")
@@ -73,6 +73,7 @@ async def context(
             lease_seconds=300,
             http=http,
             fetch_pause_seconds=0,
+            today=lambda: TODAY,
         )
 
 
@@ -132,7 +133,7 @@ async def test_the_chain_ends_in_ingested_official_documents(
         admin_engine,
         "SELECT title, source, source_url, uploaded_by, status FROM documents ORDER BY id",
     )
-    assert len(documents) == 5
+    assert len(documents) == len(EXPECTED)
     assert {d[1] for d in documents} == {"bse"}
     assert {d[2] for d in documents} == {url for _, _, url in EXPECTED}
     assert {d[3] for d in documents} == {None}  # nobody uploaded these
@@ -156,7 +157,7 @@ async def test_a_second_discovery_fetches_nothing_already_known(
     await drain(context)
 
     assert internet.requests[before:] == [SCREENER_URL.format(symbol="TCS")]  # the page only
-    assert await rows(admin_engine, "SELECT count(*) FROM documents") == [(5,)]
+    assert await rows(admin_engine, "SELECT count(*) FROM documents") == [(len(EXPECTED),)]
     # And nothing was even queued: known addresses are skipped at discovery, not just at fetch.
     assert await rows(admin_engine, "SELECT kind FROM jobs") == [("discover_filings",)]
 

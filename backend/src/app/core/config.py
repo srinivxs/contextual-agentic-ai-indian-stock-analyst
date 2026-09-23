@@ -71,6 +71,8 @@ class CommonSettings(BaseSettings):
     filings_discovery: bool = False
     # How often each stock's page is read: once a day is plenty for quarterly filings.
     filings_refresh_hours: int = Field(default=24, ge=1, le=168)
+    # How far back to fetch: every BSE-hosted filing of the last N years (the owner chose 3).
+    filings_years: int = Field(default=3, ge=1, le=5)
     # A fetched filing may be larger than an upload: annual reports run to tens of megabytes.
     filings_max_bytes: int = Field(default=60 * 1024 * 1024, ge=1024, le=200 * 1024 * 1024)
 

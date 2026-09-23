@@ -9,9 +9,11 @@ those that point at a PDF on www.bseindia.com, where companies file. We never st
 never keep or show screener's own numbers or opinions: every fact is later cited to the official
 filing and its page.
 
-What is chosen per stock: the 4 newest earnings-call transcripts and the newest annual report,
-BSE-hosted only (company websites refused automated downloads in P0): five per stock, fifteen
-in all.
+What is chosen per stock (FILINGS_YEARS, default 3; the owner asked for three years of every
+PDF): every earnings-call transcript and investor presentation dated within the window, the
+annual reports among the newest FILINGS_YEARS listed, and the announcements the page shows.
+BSE-hosted only: company websites refused automated downloads in P0, and credit-rating agencies'
+sites are not on the allow-list. About 85 PDFs for the three stocks.
 
 Politeness: one page per stock per day (the timer), an honest User-Agent (app/polite_fetch.py), a
 path screener's robots.txt allows (/company/<symbol>/), a pause before every download, and a
@@ -28,6 +30,7 @@ import hashlib
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from html.parser import HTMLParser
 from typing import Any, cast
 
@@ -43,8 +46,15 @@ from app.polite_fetch import FetchRefused, FetchTooLarge, polite_get
 
 SCREENER_URL = "https://www.screener.in/company/{symbol}/consolidated/"
 PAGE_LIMIT = 3 * 1024 * 1024  # a company page is a few hundred kilobytes
-TRANSCRIPTS = 4
-ANNUAL_REPORTS = 1
+
+_MONTHS = {
+    name: number
+    for number, name in enumerate(
+        ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+        start=1,
+    )
+}
+_MONTH_YEAR = re.compile(r"^([A-Z][a-z]{2}) (\d{4})$")
 
 _FILE = r"[0-9A-Fa-f-]{32,40}\.pdf"
 _FILE_ID = re.compile(r"(?:Pname=|/AttachHis/|/AttachLive/)([0-9A-Fa-f-]{32,40})\.pdf$")
@@ -57,13 +67,18 @@ _OFFICIAL_PDF = re.compile(
     r")$"
 )
 
-KIND_WORDS = {"transcript": "earnings call transcript", "annual_report": "annual report"}
+KIND_WORDS = {
+    "transcript": "earnings call transcript",
+    "presentation": "investor presentation",
+    "annual_report": "annual report",
+    "announcement": "announcement",
+}
 
 
 @dataclass(frozen=True)
 class FilingLink:
-    kind: str  # "transcript" or "annual_report"
-    label: str  # as the page shows it: "Jul 2026", "Financial Year 2026"
+    kind: str  # "transcript", "presentation", "annual_report" or "announcement"
+    label: str  # as the page shows it: "Jul 2026", "Financial Year 2026", an announcement's subject
     url: str
 
 
@@ -96,7 +111,10 @@ def is_screener_page(symbol: str) -> Callable[[str], bool]:
 
 
 class _DocumentsParser(HTMLParser):
-    """Reads only the links of the #documents section's annual-reports and concalls lists."""
+    """Reads only the links of the #documents section: announcements, annual reports, concalls.
+
+    Credit ratings are skipped: they live on the rating agencies' sites, which are not allowed.
+    """
 
     _VOID = frozenset({"br", "img", "hr", "input", "meta", "link", "wbr", "source"})
 
@@ -105,7 +123,7 @@ class _DocumentsParser(HTMLParser):
         self.links: list[FilingLink] = []
         self._depth = 0
         self._documents_at: int | None = None  # depth at which #documents opened
-        self._block: str | None = None  # "annual" or "concalls"
+        self._block: str | None = None  # "announcements", "annual", "concalls" or "skip"
         self._block_at: int | None = None
         self._href: str | None = None  # the <a> being read
         self._text: list[str] = []
@@ -123,15 +141,20 @@ class _DocumentsParser(HTMLParser):
         if self._documents_at is None:
             return
         classes = (attributes.get("class") or "").split()
-        if tag == "div" and self._block is None:
+        if tag == "div" and self._block is None and "documents" in classes:
             if "annual-reports" in classes:
-                self._block, self._block_at = "annual", self._depth
+                self._block = "annual"
             elif "concalls" in classes:
-                self._block, self._block_at = "concalls", self._depth
+                self._block = "concalls"
+            elif "credit-ratings" in classes:
+                self._block = "skip"
+            else:
+                self._block = "announcements"
+            self._block_at = self._depth
             return
         if self._block == "concalls" and tag == "li":
             self._month = []
-        elif tag == "a" and self._block:
+        elif tag == "a" and self._block in ("announcements", "annual", "concalls"):
             self._href, self._text, self._in_nested_div = attributes.get("href") or "", [], False
         elif tag == "div" and self._href is not None:
             self._in_nested_div = True  # "from bse" inside an annual-report link
@@ -141,11 +164,15 @@ class _DocumentsParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag == "a" and self._href is not None:
             label = " ".join("".join(self._text).split())
+            month = " ".join("".join(self._month or []).split())
             if self._block == "annual":
                 self.links.append(FilingLink("annual_report", label, self._href))
+            elif self._block == "announcements" and label:
+                self.links.append(FilingLink("announcement", label, self._href))
             elif self._block == "concalls" and "transcript" in label.lower():
-                month = " ".join("".join(self._month or []).split())
                 self.links.append(FilingLink("transcript", month, self._href))
+            elif self._block == "concalls" and label.lower() == "ppt":
+                self.links.append(FilingLink("presentation", month, self._href))
             self._href = None
         elif tag == "div" and self._in_nested_div:
             self._in_nested_div = False
@@ -173,8 +200,23 @@ def parse_documents(html: str) -> list[FilingLink]:
     return parser.links
 
 
-def select_filings(links: list[FilingLink]) -> list[FilingLink]:
-    """The newest official transcripts and annual reports (the page lists newest first)."""
+def _month_of(label: str) -> tuple[int, int] | None:
+    """(year, month) of an earnings call's "Jul 2026" label; None if it is not one."""
+    match = _MONTH_YEAR.match(label)
+    if match is None or match.group(1) not in _MONTHS:
+        return None
+    return int(match.group(2)), _MONTHS[match.group(1)]
+
+
+def select_filings(links: list[FilingLink], *, today: date, years: int) -> list[FilingLink]:
+    """Every official filing of the last ``years`` years, in a fixed order: transcripts,
+    presentations, annual reports, announcements (each newest first, as the page lists them).
+
+    Calls and presentations count by the month on their label; an entry without a readable month is
+    left out rather than guessed. Annual reports: those among the newest ``years`` listed that are
+    on BSE. Announcements: the page shows only the latest few, and all of them are kept.
+    """
+    oldest = (today.year - years, today.month)
     seen: set[str] = set()
     official = []
     for link in links:
@@ -182,9 +224,28 @@ def select_filings(links: list[FilingLink]) -> list[FilingLink]:
         if candidates and candidates[0] not in seen:  # kept by its direct file address
             seen.add(candidates[0])
             official.append(FilingLink(link.kind, link.label, candidates[0]))
-    transcripts = [link for link in official if link.kind == "transcript"][:TRANSCRIPTS]
-    reports = [link for link in official if link.kind == "annual_report"][:ANNUAL_REPORTS]
-    return transcripts + reports
+
+    def recent(link: FilingLink) -> bool:
+        month = _month_of(link.label)
+        return month is not None and month >= oldest
+
+    # The newest `years` annual reports as listed, by their direct file address. One on NSE takes
+    # its place in the count, so an older BSE report is not pulled in to replace it.
+    listed_reports = [link for link in links if link.kind == "annual_report"][:years]
+    newest_reports = {
+        file_candidates(link.url)[0] for link in listed_reports if file_candidates(link.url)
+    }
+    chosen = []
+    for kind in ("transcript", "presentation", "annual_report", "announcement"):
+        for link in official:
+            if link.kind != kind:
+                continue
+            if kind in ("transcript", "presentation") and not recent(link):
+                continue
+            if kind == "annual_report" and link.url not in newest_reports:
+                continue
+            chosen.append(link)
+    return chosen
 
 
 def title_for(symbol: str, link: FilingLink) -> str:
@@ -246,7 +307,12 @@ def _payload(job: ClaimedJob, *keys: str) -> list[str]:
 
 
 async def discover(
-    session_factory: async_sessionmaker[AsyncSession], http: httpx.AsyncClient, job: ClaimedJob
+    session_factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    job: ClaimedJob,
+    *,
+    today: date,
+    years: int,
 ) -> None:
     [symbol] = _payload(job, "symbol")
     async with session_factory() as db:
@@ -257,7 +323,9 @@ async def discover(
     page = await polite_get(
         http, SCREENER_URL.format(symbol=symbol), allowed=is_screener_page(symbol), limit=PAGE_LIMIT
     )
-    links = select_filings(parse_documents(page.decode("utf-8", errors="replace")))
+    links = select_filings(
+        parse_documents(page.decode("utf-8", errors="replace")), today=today, years=years
+    )
 
     async with session_factory() as db:
         if not await still_mine(db, job):

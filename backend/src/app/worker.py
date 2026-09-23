@@ -17,7 +17,9 @@ import contextlib
 import logging
 import signal
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -53,6 +55,9 @@ class WorkerContext:
     filings_max_bytes: int = 60 * 1024 * 1024
     # A pause before every BSE download, to be gentle with it (tests set 0).
     fetch_pause_seconds: float = 2.0
+    # How many years of filings to fetch (FILINGS_YEARS), and what "today" is (tests fix it).
+    filings_years: int = 3
+    today: Callable[[], date] = date.today
 
 
 async def mark_job_document(
@@ -76,7 +81,13 @@ async def handle(context: WorkerContext, job: ClaimedJob) -> None:
         elif job.kind in ("discover_filings", "fetch_filing") and context.http is None:
             raise JobCannotSucceed("filing discovery is switched off (FILINGS_DISCOVERY)")
         elif job.kind == "discover_filings" and context.http is not None:
-            await filings.discover(context.session_factory, context.http, job)
+            await filings.discover(
+                context.session_factory,
+                context.http,
+                job,
+                today=context.today(),
+                years=context.filings_years,
+            )
         elif job.kind == "fetch_filing" and context.http is not None:
             await filings.fetch(
                 context.session_factory,
@@ -174,6 +185,7 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
         lease_seconds=settings.job_lease_seconds,
         http=http,
         filings_max_bytes=settings.filings_max_bytes,
+        filings_years=settings.filings_years,
     )
     stop = asyncio.Event()
     for signal_number in (signal.SIGINT, signal.SIGTERM):
