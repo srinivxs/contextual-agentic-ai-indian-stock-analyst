@@ -18,10 +18,10 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.core.config import Settings
+from app.core.config import CommonSettings
 
 
-def create_db_engine(settings: Settings) -> AsyncEngine:
+def create_db_engine(settings: CommonSettings) -> AsyncEngine:
     return create_async_engine(
         settings.database_url.get_secret_value(),
         pool_size=settings.db_pool_size,

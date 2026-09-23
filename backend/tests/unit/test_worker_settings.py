@@ -1,0 +1,65 @@
+"""The worker's configuration: the shared part of Settings, and nothing about Google or sessions.
+
+Least privilege: the worker never handles a login, so it must start without the Google client
+secret or the session secret, and those must not even be fields it could read.
+"""
+
+import pytest
+from pydantic import ValidationError
+
+from app.core.config import CommonSettings, Settings
+from tests.helpers import TEST_DATABASE_URL
+
+
+def build(**overrides: object) -> CommonSettings:
+    values: dict[str, object] = {"database_url": TEST_DATABASE_URL, **overrides}
+    return CommonSettings(_env_file=None, **values)  # type: ignore[arg-type]
+
+
+def test_the_worker_starts_with_only_a_database_url() -> None:
+    settings = build()
+    assert settings.worker_poll_seconds == 2.0
+    assert settings.job_lease_seconds == 300
+
+
+def test_the_worker_settings_hold_no_login_secrets() -> None:
+    for field in ("google_client_secret", "google_client_id", "session_secret", "public_base_url"):
+        assert field not in CommonSettings.model_fields
+        assert field in Settings.model_fields  # the API still has them
+
+
+def test_the_api_settings_include_everything_the_worker_has() -> None:
+    assert set(CommonSettings.model_fields) <= set(Settings.model_fields)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("worker_poll_seconds", 0),
+        ("worker_poll_seconds", 61),
+        ("job_lease_seconds", 29),
+        ("job_lease_seconds", 3601),
+    ],
+)
+def test_unreasonable_worker_timings_are_refused(field: str, value: float) -> None:
+    with pytest.raises(ValidationError):
+        build(**{field: value})
+
+
+def test_the_database_driver_rule_applies_to_the_worker_too() -> None:
+    with pytest.raises(ValidationError):
+        build(database_url="postgresql://sync-driver/nope")
+
+
+def test_the_worker_reads_its_settings_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import get_worker_settings
+
+    monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
+    monkeypatch.setenv("JOB_LEASE_SECONDS", "120")
+    get_worker_settings.cache_clear()
+    try:
+        assert get_worker_settings().job_lease_seconds == 120
+    finally:
+        get_worker_settings.cache_clear()

@@ -20,7 +20,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
-class Settings(BaseSettings):
+class CommonSettings(BaseSettings):
+    """What every process needs: the API and the worker (P9) alike.
+
+    The worker is built from this class alone, so it never receives the Google client secret or
+    the session secret: it has no login to handle (least privilege).
+    """
+
     model_config = SettingsConfigDict(
         env_file=_REPO_ROOT / ".env",
         env_file_encoding="utf-8",
@@ -44,6 +50,38 @@ class Settings(BaseSettings):
     db_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     # How long /api/readyz waits for `SELECT 1`. Kept below the pool timeout on purpose.
     db_ready_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
+
+    # --- documents (P9) ---------------------------------------------------------------------
+    # Where uploaded files are kept locally: inside the git-ignored data/local/ folder (the project notes:
+    # real documents never enter git). In AWS a private S3 bucket takes its place (P9c).
+    blob_root: Path = _REPO_ROOT / "data" / "local" / "blobs"
+    # The largest upload accepted. The body is read into memory, so this also bounds memory per
+    # request. 20 MB fits a results announcement or an annual-report extract with room to spare.
+    upload_max_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
+
+    # --- the worker (P9) ----------------------------------------------------------------------
+    # How long an idle worker waits before looking for work again.
+    worker_poll_seconds: float = Field(default=2.0, gt=0, le=60)
+    # How long a claimed job is reserved. A worker that dies mid-job loses it after this, and the
+    # job is claimed again. Far longer than ingesting one document takes (a few seconds).
+    job_lease_seconds: int = Field(default=300, ge=30, le=3600)
+
+    @field_validator("database_url")
+    @classmethod
+    def _require_the_asyncpg_driver(cls, value: SecretStr) -> SecretStr:
+        # Any other driver is synchronous and would block the event loop on every query.
+        if not value.get_secret_value().startswith("postgresql+asyncpg://"):
+            raise ValueError("database_url must start with postgresql+asyncpg://")
+        return value
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def _normalise_log_level(cls, value: object) -> object:
+        return value.upper() if isinstance(value, str) else value
+
+
+class Settings(CommonSettings):
+    """The API: everything common, plus the public URL, cookies, Google sign-in and sessions."""
 
     # The origin the BROWSER sees (CloudFront in AWS, the dev server locally). It is the one place
     # redirect URIs and the Origin check come from: never from Host or X-Forwarded-* headers.
@@ -69,14 +107,6 @@ class Settings(BaseSettings):
     oauth_login_ttl_seconds: int = Field(default=600, ge=60, le=3600)
     # Timeout for our server-to-server calls to Google, so a slow Google cannot hang a login.
     google_timeout_seconds: float = Field(default=5.0, ge=1, le=120)
-
-    # --- documents (P9) ---------------------------------------------------------------------
-    # Where uploaded files are kept locally: inside the git-ignored data/local/ folder (the project notes:
-    # real documents never enter git). In AWS a private S3 bucket takes its place (P9c).
-    blob_root: Path = _REPO_ROOT / "data" / "local" / "blobs"
-    # The largest upload accepted. The body is read into memory, so this also bounds memory per
-    # request. 20 MB fits a results announcement or an annual-report extract with room to spare.
-    upload_max_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
 
     @field_validator("google_client_id")
     @classmethod
@@ -121,21 +151,14 @@ class Settings(BaseSettings):
                 raise ValueError("PUBLIC_BASE_URL must be an https URL in production")
         return self
 
-    @field_validator("database_url")
-    @classmethod
-    def _require_the_asyncpg_driver(cls, value: SecretStr) -> SecretStr:
-        # Any other driver is synchronous and would block the event loop on every query.
-        if not value.get_secret_value().startswith("postgresql+asyncpg://"):
-            raise ValueError("database_url must start with postgresql+asyncpg://")
-        return value
-
-    @field_validator("log_level", mode="before")
-    @classmethod
-    def _normalise_log_level(cls, value: object) -> object:
-        return value.upper() if isinstance(value, str) else value
-
 
 @lru_cache
 def get_settings() -> Settings:
     """Process-wide settings, built once. Tests construct ``Settings`` directly instead."""
     return Settings()
+
+
+@lru_cache
+def get_worker_settings() -> CommonSettings:
+    """The worker's settings: the common part only, so it starts without any login secrets."""
+    return CommonSettings()
