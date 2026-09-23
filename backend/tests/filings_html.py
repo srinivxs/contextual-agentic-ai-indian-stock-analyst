@@ -6,6 +6,7 @@ The page deliberately mixes links that must be followed with links that must NOT
 websites, plain http, other BSE paths, a look-alike host, and a javascript: link.
 """
 
+# Every filing has its own id, as on BSE: an id shared by two links would be one file (and deduped).
 UUIDS = [f"0000000{n}-aaaa-4bbb-8ccc-00000000000{n}" for n in range(10)]
 
 
@@ -33,7 +34,7 @@ DEMOCO_PAGE = f"""<!doctype html>
     <h3>Annual reports</h3>
     <ul class="list-links">
       <li><a href="{annual_report_url(0)}">Financial Year 2026<div>from bse</div></a></li>
-      <li><a href="{annual_report_url(1)}">Financial Year 2025<div>from bse</div></a></li>
+      <li><a href="{annual_report_url(8)}">Financial Year 2025<div>from bse</div></a></li>
       <li><a href="{NSE_REPORT}">Financial Year 2024<div>from nse</div></a></li>
     </ul>
   </div>
@@ -59,12 +60,24 @@ DEMOCO_PAGE = f"""<!doctype html>
 </body></html>
 """
 
+
+def file_url(n: int) -> str:
+    """The direct file address BSE serves a filing from (and AnnPdfOpen redirects to)."""
+    return f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{UUIDS[n]}.pdf"
+
+
+def live_url(n: int) -> str:
+    return f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{UUIDS[n]}.pdf"
+
+
 # What the selection must produce from DEMOCO_PAGE: the four newest BSE-hosted transcripts, in page
-# order (newest first), then the newest BSE-hosted annual report.
+# order (newest first), then the newest BSE-hosted annual report. Transcripts are listed on the
+# page through BSE's AnnPdfOpen.aspx script, which redirects to the file at AttachHis/<same id>.pdf
+# and in the first real run often answered 406 instead; so the DIRECT file address is what is kept.
 EXPECTED = [
-    ("transcript", "Jul 2026", transcript_url(1)),
-    ("transcript", "Jan 2026", transcript_url(2)),
-    ("transcript", "Oct 2025", transcript_url(4)),
-    ("transcript", "Jul 2025", transcript_url(6)),
+    ("transcript", "Jul 2026", file_url(1)),
+    ("transcript", "Jan 2026", file_url(2)),
+    ("transcript", "Oct 2025", file_url(4)),
+    ("transcript", "Jul 2025", file_url(6)),
     ("annual_report", "Financial Year 2026", annual_report_url(0)),
 ]

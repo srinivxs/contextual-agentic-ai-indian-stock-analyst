@@ -9,12 +9,21 @@ import pytest
 
 from app.filings import (
     FilingLink,
+    file_candidates,
     is_official_pdf_url,
     parse_documents,
     select_filings,
     title_for,
 )
-from tests.filings_html import DEMOCO_PAGE, EXPECTED, UUIDS, annual_report_url, transcript_url
+from tests.filings_html import (
+    DEMOCO_PAGE,
+    EXPECTED,
+    UUIDS,
+    annual_report_url,
+    file_url,
+    live_url,
+    transcript_url,
+)
 
 
 def test_the_newest_four_bse_transcripts_and_the_newest_bse_annual_report_are_chosen() -> None:
@@ -102,3 +111,25 @@ def test_self_closing_tags_inside_the_section_do_not_confuse_the_parser() -> Non
     )
     links = parse_documents(page)
     assert links == [FilingLink("annual_report", "Financial Year 2026", annual_report_url(0))]
+
+
+def test_a_script_page_link_becomes_the_direct_file_it_redirects_to() -> None:
+    """AnnPdfOpen.aspx?Pname=<id>.pdf redirects to AttachHis/<id>.pdf: go there directly."""
+    assert file_candidates(transcript_url(1)) == [file_url(1), live_url(1)]
+
+
+def test_a_historical_file_is_tried_first_and_the_live_folder_second() -> None:
+    assert file_candidates(annual_report_url(0)) == [annual_report_url(0), live_url(0)]
+
+
+def test_a_live_file_is_tried_first_and_the_historical_folder_second() -> None:
+    assert file_candidates(live_url(3)) == [live_url(3), annual_report_url(3)]
+
+
+def test_every_candidate_is_itself_an_official_address() -> None:
+    for url in (transcript_url(1), annual_report_url(0), live_url(3)):
+        assert all(is_official_pdf_url(candidate) for candidate in file_candidates(url))
+
+
+def test_only_an_official_address_has_candidates() -> None:
+    assert file_candidates("https://evil.example/x.pdf") == []

@@ -21,7 +21,7 @@ from app.blobs import FilesystemBlobStore, blob_key_for
 from app.documents import read_pdf, record_upload
 from app.filings import SCREENER_URL, enqueue_discovery
 from app.worker import WorkerContext, run_forever, run_once
-from tests.filings_html import DEMOCO_PAGE, EXPECTED, transcript_url
+from tests.filings_html import DEMOCO_PAGE, EXPECTED, file_url, transcript_url
 from tests.pdfs import make_pdf
 
 pytestmark = pytest.mark.usefixtures("migrated_db", "clean_document_tables")
@@ -50,7 +50,9 @@ class FakeInternet:
             return self.pages[url]
         if url.startswith(SCREENER_URL.format(symbol="TCS")):
             return httpx.Response(200, text=DEMOCO_PAGE)
-        if url.startswith("https://www.bseindia.com/"):
+        if "/stockinfo/AnnPdfOpen.aspx" in url:
+            return httpx.Response(406)  # what BSE's script page often answered in the real run
+        if url.startswith("https://www.bseindia.com/xml-data/corpfiling/AttachHis/"):
             return httpx.Response(200, content=pdf_for(url))
         return httpx.Response(404)
 
@@ -70,6 +72,7 @@ async def context(
             blob_store=FilesystemBlobStore(tmp_path / "blobs"),
             lease_seconds=300,
             http=http,
+            fetch_pause_seconds=0,
         )
 
 
@@ -195,7 +198,7 @@ async def test_a_filing_that_is_not_a_pdf_is_refused_without_retrying(
     context: WorkerContext, internet: FakeInternet, admin_engine: AsyncEngine
 ) -> None:
     url = transcript_url(1)
-    internet.pages[url] = httpx.Response(200, text="<html>maintenance</html>")
+    internet.pages[file_url(1)] = httpx.Response(200, text="<html>maintenance</html>")
     await insert_fetch(admin_engine, url)
 
     await run_once(context)
@@ -210,7 +213,7 @@ async def test_a_bse_outage_is_retried_later(
     context: WorkerContext, internet: FakeInternet, admin_engine: AsyncEngine
 ) -> None:
     url = transcript_url(1)
-    internet.pages[url] = httpx.Response(503)
+    internet.pages[file_url(1)] = httpx.Response(503)
     await insert_fetch(admin_engine, url)
 
     await run_once(context)
@@ -237,7 +240,9 @@ async def test_a_filing_identical_to_an_uploaded_file_is_not_stored_twice(
 ) -> None:
     """Same bytes, same document: the sha256 rule from P9a covers both doors."""
     url = transcript_url(1)
-    upload = await read_pdf(one_chunk(pdf_for(url)), limit=10_000_000)
+    upload = await read_pdf(
+        one_chunk(pdf_for(file_url(1))), limit=10_000_000
+    )  # the bytes BSE serves
     await context.blob_store.put(blob_key_for(upload.sha256), upload.data)  # as the endpoint does
     async with session_factory() as db:  # someone uploaded this very file by hand earlier
         stock = (await db.execute(text("SELECT id FROM stocks WHERE symbol = 'TCS'"))).scalar_one()
@@ -394,12 +399,14 @@ async def test_a_filing_redirected_to_another_host_is_refused_for_good(
     context: WorkerContext, internet: FakeInternet, admin_engine: AsyncEngine
 ) -> None:
     url = transcript_url(1)
-    internet.pages[url] = httpx.Response(302, headers={"Location": "https://evil.example/x.pdf"})
+    internet.pages[file_url(1)] = httpx.Response(
+        302, headers={"Location": "https://evil.example/x.pdf"}
+    )
     await insert_fetch(admin_engine, url)
 
     await run_once(context)
 
-    assert internet.requests == [url]  # the redirect target was never requested
+    assert internet.requests == [file_url(1)]  # the redirect target was never requested
     assert await rows(admin_engine, "SELECT status FROM jobs") == [("failed",)]
 
 
@@ -516,3 +523,52 @@ async def test_a_second_pass_of_the_timer_queues_nothing_and_says_nothing(
     assert await rows(
         admin_engine, "SELECT count(*) FROM jobs WHERE kind = 'discover_filings'"
     ) == [(3,)]
+
+
+async def test_a_filing_only_in_the_live_folder_is_found_there(
+    context: WorkerContext, internet: FakeInternet, admin_engine: AsyncEngine
+) -> None:
+    """A filing made today may not have moved to AttachHis yet."""
+    url = transcript_url(1)
+    historical = url.replace("stockinfo/AnnPdfOpen.aspx?Pname=", "xml-data/corpfiling/AttachHis/")
+    live = historical.replace("/AttachHis/", "/AttachLive/")
+    internet.pages[historical] = httpx.Response(404)
+    internet.pages[live] = httpx.Response(200, content=pdf_for(live))
+    await insert_fetch(admin_engine, url)
+
+    await drain(context)
+
+    assert internet.requests == [historical, live]
+    assert await rows(admin_engine, "SELECT source_url, status FROM documents") == [
+        (live, "completed")
+    ]
+
+
+async def test_a_filing_in_neither_folder_fails_without_retrying(
+    context: WorkerContext, internet: FakeInternet, admin_engine: AsyncEngine
+) -> None:
+    url = transcript_url(1)
+    historical = url.replace("stockinfo/AnnPdfOpen.aspx?Pname=", "xml-data/corpfiling/AttachHis/")
+    internet.pages[historical] = httpx.Response(404)
+    await insert_fetch(admin_engine, url)
+
+    await run_once(context)
+
+    [(status, error)] = await rows(admin_engine, "SELECT status, last_error FROM jobs")
+    assert status == "failed"
+    assert "not found" in error
+
+
+async def test_downloads_are_spaced_out_to_be_gentle_with_bse(
+    session_factory: Factory, tmp_path: Path, internet: FakeInternet, admin_engine: AsyncEngine
+) -> None:
+    import time
+
+    await insert_fetch(admin_engine, transcript_url(1))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(internet)) as http:
+        paced = WorkerContext(
+            session_factory, FilesystemBlobStore(tmp_path), 300, http=http, fetch_pause_seconds=0.3
+        )
+        started = time.monotonic()
+        await run_once(paced)
+    assert time.monotonic() - started >= 0.3

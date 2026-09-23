@@ -14,9 +14,16 @@ BSE-hosted only (company websites refused automated downloads in P0): five per s
 in all.
 
 Politeness: one page per stock per day (the timer), an honest User-Agent (app/polite_fetch.py), a
-path screener's robots.txt allows (/company/<symbol>/), and a switch that is off by default.
+path screener's robots.txt allows (/company/<symbol>/), a pause before every download, and a
+switch that is off by default.
+
+FOUND IN THE FIRST REAL RUN: transcripts are linked through BSE's AnnPdfOpen.aspx script page,
+which redirects to the file at xml-data/corpfiling/AttachHis/<same id>.pdf, but often answered
+406 Not Acceptable instead. The file addresses answered every time. So each link is turned into
+its direct file address (``file_candidates``); a filing made today may still be under AttachLive/.
 """
 
+import asyncio
 import hashlib
 import re
 from collections.abc import Callable
@@ -40,6 +47,9 @@ TRANSCRIPTS = 4
 ANNUAL_REPORTS = 1
 
 _FILE = r"[0-9A-Fa-f-]{32,40}\.pdf"
+_FILE_ID = re.compile(r"(?:Pname=|/AttachHis/|/AttachLive/)([0-9A-Fa-f-]{32,40})\.pdf$")
+_FILES = "https://www.bseindia.com/xml-data/corpfiling/"
+
 _OFFICIAL_PDF = re.compile(
     r"^https://www\.bseindia\.com/(?:"
     rf"stockinfo/AnnPdfOpen\.aspx\?Pname={_FILE}"
@@ -61,6 +71,22 @@ def is_official_pdf_url(url: str) -> bool:
     """A PDF on www.bseindia.com at one of the two addresses BSE serves filings from. Nothing else:
     no other host, no port, no userinfo, no extra query, no path tricks."""
     return bool(_OFFICIAL_PDF.match(url))
+
+
+def file_candidates(url: str) -> list[str]:
+    """The direct file addresses to try for an official filing link, best first.
+
+    A script-page link or a historical file: AttachHis/ first, then AttachLive/. A live file: the
+    other way round. Anything that is not an official address has none.
+    """
+    if not is_official_pdf_url(url):
+        return []
+    match = _FILE_ID.search(url)
+    if match is None:  # pragma: no cover - every official address carries an id
+        return []
+    historical = f"{_FILES}AttachHis/{match.group(1)}.pdf"
+    live = f"{_FILES}AttachLive/{match.group(1)}.pdf"
+    return [live, historical] if "/AttachLive/" in url else [historical, live]
 
 
 def is_screener_page(symbol: str) -> Callable[[str], bool]:
@@ -152,9 +178,10 @@ def select_filings(links: list[FilingLink]) -> list[FilingLink]:
     seen: set[str] = set()
     official = []
     for link in links:
-        if is_official_pdf_url(link.url) and link.url not in seen:
-            seen.add(link.url)
-            official.append(link)
+        candidates = file_candidates(link.url)
+        if candidates and candidates[0] not in seen:  # kept by its direct file address
+            seen.add(candidates[0])
+            official.append(FilingLink(link.kind, link.label, candidates[0]))
     transcripts = [link for link in official if link.kind == "transcript"][:TRANSCRIPTS]
     reports = [link for link in official if link.kind == "annual_report"][:ANNUAL_REPORTS]
     return transcripts + reports
@@ -197,7 +224,7 @@ async def enqueue_discovery(db: AsyncSession, *, every_hours: int) -> int:
 
 # --- the two jobs -------------------------------------------------------------------------------
 
-_KNOWN = text("SELECT 1 FROM documents WHERE source_url = :url")
+_KNOWN = text("SELECT 1 FROM documents WHERE source_url = ANY(:urls)")
 
 _ENQUEUE_FETCH = text(
     "INSERT INTO jobs (kind, payload, dedupe_key) "
@@ -257,24 +284,21 @@ async def fetch(
     job: ClaimedJob,
     *,
     limit: int,
+    pause_seconds: float = 2.0,
 ) -> None:
     symbol, url, kind, label = _payload(job, "symbol", "url", "kind", "label")
-    if not is_official_pdf_url(url) or kind not in KIND_WORDS:
+    candidates = file_candidates(url)
+    if not candidates or kind not in KIND_WORDS:
         raise JobCannotSucceed("not an official filing address")
 
     async with session_factory() as db:
         stock = await stock_id(db, symbol)
-        known = (await db.execute(_KNOWN, {"url": url})).first() is not None
+        known = (await db.execute(_KNOWN, {"urls": candidates})).first() is not None
     if stock is None:
         raise JobCannotSucceed(f"no such stock: {symbol[:20]}")
 
     if not known:
-        try:
-            data = await polite_get(http, url, allowed=is_official_pdf_url, limit=limit)
-        except FetchRefused as error:
-            raise JobCannotSucceed(str(error)) from error
-        except FetchTooLarge as error:
-            raise JobCannotSucceed(f"the filing is larger than {limit} bytes") from error
+        data, url = await _download(http, candidates, limit=limit, pause_seconds=pause_seconds)
         if not data.startswith(PDF_SIGNATURE):
             raise JobCannotSucceed("the filing address did not return a PDF (not a PDF)")
         upload = Upload(data=data, sha256=hashlib.sha256(data).hexdigest())
@@ -297,3 +321,27 @@ async def fetch(
             )
         await complete(db, job)
         await db.commit()
+
+
+async def _download(
+    http: httpx.AsyncClient, candidates: list[str], *, limit: int, pause_seconds: float
+) -> tuple[bytes, str]:
+    """The first candidate address that has the file, and which one it was.
+
+    A 404 means "not in this folder": try the next. Any other failure propagates (a 5xx or a
+    timeout is retried later by the job queue). Before each request, a pause: to be gentle with BSE.
+    """
+    for candidate in candidates:
+        await asyncio.sleep(pause_seconds)
+        try:
+            return await polite_get(
+                http, candidate, allowed=is_official_pdf_url, limit=limit
+            ), candidate
+        except FetchRefused as error:
+            raise JobCannotSucceed(str(error)) from error
+        except FetchTooLarge as error:
+            raise JobCannotSucceed(f"the filing is larger than {limit} bytes") from error
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code != 404:
+                raise
+    raise JobCannotSucceed("the filing was not found at BSE (not found in either folder)")

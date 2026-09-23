@@ -51,6 +51,8 @@ class WorkerContext:
     # Only when FILINGS_DISCOVERY is on (ADR 018): the worker's one way onto the internet.
     http: httpx.AsyncClient | None = None
     filings_max_bytes: int = 60 * 1024 * 1024
+    # A pause before every BSE download, to be gentle with it (tests set 0).
+    fetch_pause_seconds: float = 2.0
 
 
 async def mark_job_document(
@@ -82,6 +84,7 @@ async def handle(context: WorkerContext, job: ClaimedJob) -> None:
                 context.blob_store,
                 job,
                 limit=context.filings_max_bytes,
+                pause_seconds=context.fetch_pause_seconds,
             )
         else:
             raise JobCannotSucceed(f"this worker has no handler for {job.kind!r} jobs yet")
