@@ -38,7 +38,8 @@ def resolve_request_id(inbound: str | None) -> str:
 # `/api/v1/stocks` carries the caller's own follows. The prefixes end in a slash, so look-alikes
 # such as `/api/v1/stocks-archive` or `/api/v1/authors` are not caught.
 _NO_STORE_EXACT = frozenset({"/api/v1/me", "/api/v1/stocks"})
-_NO_STORE_PREFIXES = ("/api/v1/auth/", "/api/v1/stocks/")
+# `/api/v1/documents/` (P9) needs a session, and a document's status changes as it is ingested.
+_NO_STORE_PREFIXES = ("/api/v1/auth/", "/api/v1/stocks/", "/api/v1/documents/")
 
 
 def is_no_store_path(path: str) -> bool:

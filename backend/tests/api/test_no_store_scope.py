@@ -21,6 +21,8 @@ from app.api.middleware import is_no_store_path
         "/api/v1/auth/anything-else",
         "/api/v1/stocks",  # P5: holds the caller's own follows; no shared cache may keep it
         "/api/v1/stocks/TCS/follow",  # P5
+        "/api/v1/stocks/TCS/documents",  # P9: under /stocks/ already
+        "/api/v1/documents/1",  # P9: signed-in only, and its status changes as it is ingested
     ],
 )
 def test_authentication_paths_are_no_store(path: str) -> None:
@@ -33,7 +35,7 @@ def test_authentication_paths_are_no_store(path: str) -> None:
         "/api/healthz",
         "/api/readyz",
         "/api/docs",
-        "/api/v1/documents",  # a future unrelated endpoint
+        "/api/v1/documents-archive",  # a prefix look-alike of /api/v1/documents/ must not match
         "/api/v1/stocks-archive",  # a prefix look-alike of a no-store path must not match
         "/api/v1/me-not-really",  # a prefix look-alike must not match
         "/api/v1/authors",  # neither must a sibling that merely starts with "auth"

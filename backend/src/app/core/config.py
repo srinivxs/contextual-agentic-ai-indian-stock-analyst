@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     # Timeout for our server-to-server calls to Google, so a slow Google cannot hang a login.
     google_timeout_seconds: float = Field(default=5.0, ge=1, le=120)
 
+    # --- documents (P9) ---------------------------------------------------------------------
+    # Where uploaded files are kept locally: inside the git-ignored data/local/ folder (the project notes:
+    # real documents never enter git). In AWS a private S3 bucket takes its place (P9c).
+    blob_root: Path = _REPO_ROOT / "data" / "local" / "blobs"
+    # The largest upload accepted. The body is read into memory, so this also bounds memory per
+    # request. 20 MB fits a results announcement or an annual-report extract with room to spare.
+    upload_max_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
+
     @field_validator("google_client_id")
     @classmethod
     def _require_a_non_blank_client_id(cls, value: str) -> str:

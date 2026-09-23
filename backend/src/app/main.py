@@ -12,9 +12,10 @@ import httpx
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import auth, health, stocks
+from app.api import auth, documents, health, stocks
 from app.api.middleware import NoStoreMiddleware, RequestContextMiddleware
 from app.auth.jwks import JwksCache
+from app.blobs import FilesystemBlobStore
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
@@ -52,6 +53,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = create_session_factory(engine)
     app.state.http_client = http_client
     app.state.jwks = JwksCache(client=http_client)
+    # Uploaded files. Constructing it touches no disk; the folder appears on the first upload.
+    app.state.blob_store = FilesystemBlobStore(settings.blob_root)
 
     app.add_middleware(NoStoreMiddleware)
     app.add_middleware(RequestContextMiddleware)
@@ -59,4 +62,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(stocks.router)
+    app.include_router(documents.router)
     return app

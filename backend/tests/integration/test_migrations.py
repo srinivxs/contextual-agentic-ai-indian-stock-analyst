@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.integration.conftest import DbConfig, Migrator, make_alembic_config
 
-HEAD = "0003"
+HEAD = "0004"
 
 STATE_QUERIES = {
     "extension": "SELECT extversion FROM pg_extension WHERE extname = 'vector'",
@@ -18,6 +18,10 @@ STATE_QUERIES = {
     "users_table": "SELECT to_regclass('public.users') IS NOT NULL",
     "sessions_table": "SELECT to_regclass('public.sessions') IS NOT NULL",
     "follows_table": "SELECT to_regclass('public.user_follows') IS NOT NULL",
+    "ingestion_tables": (
+        "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' "
+        "AND tablename IN ('documents', 'document_pages', 'chunks', 'jobs')"
+    ),
     "version_table": "SELECT to_regclass('public.alembic_version') IS NOT NULL",
 }
 
@@ -31,6 +35,7 @@ class State:
     users_table: bool
     sessions_table: bool
     follows_table: bool
+    ingestion_tables: int  # documents, document_pages, chunks, jobs (0004)
     revision: str | None
     stock_rows: tuple[tuple[object, ...], ...]
 
@@ -64,6 +69,7 @@ async def snapshot(admin_engine: AsyncEngine) -> State:
             users_table=bool(await scalar("users_table")),
             sessions_table=bool(await scalar("sessions_table")),
             follows_table=bool(await scalar("follows_table")),
+            ingestion_tables=int(str(await scalar("ingestion_tables"))),
             revision=revision,
             stock_rows=rows,
         )
@@ -75,6 +81,7 @@ EMPTY = State(
     users_table=False,
     sessions_table=False,
     follows_table=False,
+    ingestion_tables=0,
     revision=None,
     stock_rows=(),
 )
@@ -93,6 +100,7 @@ async def test_up_down_up_round_trip_verified_at_every_step(
     assert first.users_table is True
     assert first.sessions_table is True
     assert first.follows_table is True
+    assert first.ingestion_tables == 4
     assert first.revision == HEAD
     assert [row[1] for row in first.stock_rows] == ["RELIANCE", "TCS", "HDFCBANK"]
 
@@ -106,9 +114,15 @@ async def test_up_down_up_round_trip_verified_at_every_step(
 async def test_each_downgrade_step_removes_only_what_its_revision_created(
     migrator: Migrator, admin_engine: AsyncEngine
 ) -> None:
-    """0003 owns user_follows, 0002 owns users and sessions, 0001 owns stocks and the extension."""
+    """0004 owns the ingestion tables, 0003 user_follows, 0002 users and sessions, 0001 stocks."""
     await migrator.upgrade("head")
     at_head = await snapshot(admin_engine)
+
+    await migrator.downgrade("-1")
+    no_ingestion = await snapshot(admin_engine)
+    assert no_ingestion.revision == "0003"
+    assert no_ingestion.ingestion_tables == 0
+    assert no_ingestion.follows_table is True  # everything older is untouched
 
     await migrator.downgrade("-1")
     no_follows = await snapshot(admin_engine)
