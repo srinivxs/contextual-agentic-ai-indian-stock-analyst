@@ -165,4 +165,3 @@ def test_the_blob_folder_is_the_one_path_the_app_user_owns(last: list[Instructio
     runs = " ".join(i.args for i in last if i.name == "RUN")
     assert "mkdir -p /data/blobs" in runs
     assert "chown 10001:10001 /data/blobs" in runs
-
