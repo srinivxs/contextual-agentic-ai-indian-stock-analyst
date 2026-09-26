@@ -4,8 +4,9 @@
 
 When a validator rule is tightened, facts stored under the old rule may no longer pass it. Every
 filing fact keeps its verbatim quote, so the label rule can be applied again for free: a fact whose
-quote does not name its metric by the current synonyms is deleted. The page, number, currency and
-period checks passed when the fact was stored and do not depend on the synonyms.
+quote does not name its metric by the current synonyms, or shows a figure of another definition (a
+definition guard: an adjusted profit, a partial or paid dividend), is deleted. The page, number,
+currency and period checks passed when the fact was stored and do not depend on these rules.
 
 Found in the first real run: revenue accepted the loose word "revenue", so a headline figure of
 another definition (gross of taxes) was stored as revenue from operations. screener.in facts have
@@ -21,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_worker_settings
 from app.core.logging import configure_logging
 from app.db.engine import create_db_engine, create_session_factory
-from app.fact_validation import label_in_quote
+from app.fact_validation import definition_problem, label_in_quote
 
 logger = logging.getLogger("app.recheck_facts")
 
@@ -30,11 +31,13 @@ _DELETE = text("DELETE FROM facts WHERE id = ANY(:ids)")
 
 
 async def recheck_labels(db: AsyncSession) -> int:
-    """Delete the filing facts whose quote no longer names their metric. Returns how many."""
+    """Delete the filing facts whose quote no longer passes the label rule or a definition guard.
+    Returns how many."""
     failing = [
         row.id
         for row in await db.execute(_FILING_FACTS)
         if not label_in_quote(row.metric, row.quote)
+        or definition_problem(row.metric, row.quote) is not None
     ]
     if failing:
         await db.execute(_DELETE, {"ids": failing})

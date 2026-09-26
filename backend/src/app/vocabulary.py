@@ -73,8 +73,10 @@ _ALL_METRICS = (
         name="total_borrowings",
         kind="amount",
         applies_to="non_financial",
-        # Plain "debt", but not "net debt": net debt subtracts cash and is a different number.
-        synonyms=("total borrowings", "borrowings", "total debt", "gross debt", "(?<!net )debt"),
+        # Named as a total only. Found in the hand check of the first real run: a balance sheet's
+        # lone "Borrowings" line is non-current borrowings, not the total; and "net debt"
+        # subtracts cash. screener.in's table supplies the total for every year anyway.
+        synonyms=("total borrowings", "total debt", "gross debt"),
         description="Total borrowings (gross debt) at the end of the period.",
     ),
     Metric(

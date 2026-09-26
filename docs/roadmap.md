@@ -34,7 +34,7 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | P8 | CI/CD → **Gate A: login and follow live on AWS** | ✅ done (ADRs 016, 017): P8a registry + GitHub OIDC; P8b checks + image; P8c deploy job; demo scripts; **Gate A passed 2026-09-23** |
 | P9 | Document ingestion core | ✅ done locally (ADR 018): P9a store + dedupe; P9b worker, PDF text, chunks; P9c automatic BSE filings; P9d Documents page, three years, follow/check trigger, uploads removed. AWS part moved to GL |
 | P10 | Embeddings and retrieval | ✅ done locally (ADR 019): P10a fingerprints + token cap; P10b search API and box; first real run about $0.07 |
-| P11 | Fact and event extraction, derived values | |
+| P11 | Fact and event extraction, derived values | ✅ done locally (ADR 020): P11a/b facts and events (Nova 2 Lite + validator, screener.in table by code); P11c stock page with citations; real run $0.49; definition guards after the hand check |
 | P12 | Grounded chat (LangGraph) → **Gate B: cited RAG chat working** (locally; live at GL) | |
 | P13 | Investor memory | |
 | P14 | Deterministic matching → **Gate C: full MVP working** | |
@@ -210,9 +210,14 @@ leaves a real product.
 - **Explain first:** why verify the model's output; compute-on-read; the debt-to-equity rules.
 - **Done when:** extraction of a synthetic fixture is verified; a tampered quote is rejected; sentiment
   and ratio functions have unit tests including "insufficient data".
-- **Decide here:** the policy when two documents disagree on a fact.
+- **Decide here:** the policy when two documents disagree on a fact. Decided in ADR 020: resolved on
+  read by source rank, more than 1% apart is "disputed".
 - **You should be able to answer:** how do you stop the model inventing a number? Why is debt/equity
   wrong for banks?
+- **Done (locally, 2026-09-27):** 225 LLM calls over 84 filings for $0.49 (cap $2); 93 filing facts,
+  272 screener.in figures and 88 events stored. The hand check of 20 facts found 3 wrong (wrong
+  entity, wrong column, wrong year); the owner chose free definition guards in the validator over
+  Nova Pro. Details and the remaining limitation in ADR 020.
 
 ## P12 — Grounded chat (LangGraph) → Gate B
 
@@ -262,6 +267,9 @@ leaves a real product.
   applied until GL.
 - **Build (from P10):** Bedrock permissions (`bedrock:InvokeModel` on Titan V2) for the ECS task
   role, `EMBEDDINGS_ENABLED` on for api and worker, and the re-fingerprinting after `demo-up`.
+- **Build (from P11):** `bedrock:InvokeModel` (Converse) on the Nova 2 Lite global inference
+  profile for the task role, and `EXTRACTION_ENABLED` on for the worker (spend capped by
+  `EXTRACTION_BUDGET_USD`).
 - **Build (from P9):** the S3 `BlobStore` and a private documents bucket; the `worker` container in
   the ECS task (ADR 008) with the runtime database role, no Google or session secrets, and access to
   that bucket only; a larger task (planned 0.5 vCPU / 1 GB, cost approved at GL); `FILINGS_DISCOVERY`

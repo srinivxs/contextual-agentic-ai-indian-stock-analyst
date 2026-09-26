@@ -153,7 +153,6 @@ def _mentions(metric: Metric, text: str) -> bool:
         ("net_profit", "profit for the year 1,234"),
         ("net_profit", "profit for the quarter 321"),
         ("total_borrowings", "total borrowings 9,876"),
-        ("total_borrowings", "borrowings 9,876"),
         ("total_borrowings", "total debt of 9,876 crore"),
         ("total_borrowings", "gross debt 9,876"),
         ("total_equity", "total equity 45,678"),

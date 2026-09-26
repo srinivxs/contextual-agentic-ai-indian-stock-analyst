@@ -649,7 +649,7 @@ def test_eps_without_a_scale_word_is_rupees_per_share() -> None:
 
 
 def test_a_dividend_per_share_written_with_slash_dash() -> None:
-    quote = "a final dividend of ₹ 10/- per equity share"
+    quote = "a total dividend of ₹ 10/- per equity share"
     fact = _accepted(
         _validate(
             _one_page(quote),
@@ -682,7 +682,7 @@ def test_a_dollar_dividend_per_share() -> None:
 @pytest.mark.parametrize(
     ("quote", "value_text", "unit_word"),
     [
-        ("an interim dividend of ₹ 5,000 crore", "5,000", "per_share"),  # a total
+        ("a dividend of ₹ 5,000 crore", "5,000", "per_share"),  # a total
         ("dividend per share ₹ 10 crore", "10", "crore"),  # no scale word per share
     ],
 )

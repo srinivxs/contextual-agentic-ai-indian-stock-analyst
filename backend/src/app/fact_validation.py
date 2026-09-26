@@ -448,6 +448,34 @@ _LABELS = {
 }
 
 
+# Definition guards (the owner's option A after the hand check of the first real run): the quote
+# names the metric, but its figure is a different number from the one the metric means.
+_ADJUSTED = re.compile(
+    r"\b(?:excluding|before) exceptional|\badjusted\b|\bunderlying\b|\bnormali[sz]ed\b"
+)
+_INSTALMENT = re.compile(r"\b(?:final|interim|special) dividend")
+_TOTAL_DIVIDEND = re.compile(r"\btotal dividend")
+_PAID = re.compile(r"\bdividends? (?:on equity shares|paid)\b|\bappropriation")
+
+
+def definition_problem(metric: str, quote: str) -> str | None:
+    """Why the quote's figure is not the metric's figure, or None when it may be.
+
+    - net profit is the reported figure, not one excluding exceptional items or "adjusted";
+    - a dividend per share is the year's total, not a final, interim or special instalment alone,
+      and not what was paid or appropriated during the year (that is the year before's dividend).
+    """
+    text = normalise(quote)
+    if metric == "net_profit" and _ADJUSTED.search(text):
+        return "adjusted_figure"
+    if metric == "dividend_per_share":
+        if _PAID.search(text):
+            return "dividend_paid_not_declared"
+        if _INSTALMENT.search(text) and not _TOTAL_DIVIDEND.search(text):
+            return "partial_dividend"
+    return None
+
+
 def label_in_quote(metric: str, quote: str) -> bool:
     """Whether the quote names the metric, by the current synonyms (also used to re-check facts
     already stored when a rule is tightened: app/recheck_facts.py)."""
@@ -521,6 +549,9 @@ def validate(
         return _reject(candidate, "quote_not_on_page")
     if not _LABELS[metric.name].search(quote):
         return _reject(candidate, "label_not_in_quote")
+    problem = definition_problem(metric.name, candidate.quote)
+    if problem is not None:
+        return _reject(candidate, problem)
     value = parse_number(candidate.value_text)
     if value is None or value not in numbers_in(candidate.quote):
         return _reject(candidate, "number_not_in_quote")

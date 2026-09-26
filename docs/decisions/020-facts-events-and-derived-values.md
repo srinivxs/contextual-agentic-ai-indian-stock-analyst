@@ -1,7 +1,6 @@
 # 020 — Facts from filings and screener.in, events, and values computed on read
 
-- **Status:** Proposed (P11, 2026-09-27; the owner's decisions below). Accepted once the real run
-  and the owner's hand check pass. **Amends [ADR 018](018-automatic-official-filings.md)** (screener's
+- **Status:** Accepted (P11, 2026-09-27), after the real run and the hand check below. **Amends [ADR 018](018-automatic-official-filings.md)** (screener's
   numbers are now used, not only its links) and the INR constraint in the project notes.
 - **Date:** 2026-09-27
 
@@ -57,11 +56,44 @@ Two facts about the real data shaped this (found by reading the stored pages):
 8. **Model check:** after the first run the owner hand-checks 20 facts against the PDFs; more than
    2 wrong values, or an acceptance rate under 60%, means switching to Nova Pro (about $1.10).
 
+## Outcome of the first run and the hand check
+
+- **Trial, then the real run.** A one-cent trial (6 calls, 68% accepted) came first. The real run
+  read all 84 filings with Nova 2 Lite: 225 calls, **$0.49** (cap $2, expected about $0.65).
+  Stored after the re-checks: 93 filing facts, 272 screener.in figures, 88 events.
+- **Acceptance.** Events 115 accepted, 68 refused. Facts 156 accepted, 325 refused, mostly
+  `label_not_in_quote`: the model quoted a row of numbers whose label sits on another line of a
+  flattened table. That is strict proof refusing true figures, not invented numbers.
+- **Pitfalls on real data.** The rupee sign extracts as "H", "C" or a backtick; tables mix ₹ crore
+  and US$ million columns; Reliance's headline "revenue" (Value of Sales and Services, gross of
+  taxes) is not Revenue from Operations. Fixed by accepting the statutory label only; the free
+  re-check removed 17 stored facts.
+- **Hand check** (20 filing facts, about 7 per company, against the stored page text and
+  screener.in): 14 right, 6 wrong. By the owner's test (right number, right year) 3 wrong: a gross
+  NPA of 1.9% that belonged to HDB Financial (a subsidiary), not the bank; a return on equity read
+  from the wrong column of a flattened table; a dividend paid during FY2026 (for FY2025) stored as
+  FY2026. The other three were definition traps: non-current borrowings stored as total
+  borrowings; a final dividend (₹31) instead of the year's total (₹110); net profit "excluding
+  exceptional items".
+- **The owner's choice (option A).** The rule in decision 8 (more than 2 wrong) pointed to Nova
+  Pro. The owner chose free, deterministic **definition guards** in the validator instead: a net
+  profit quote that says excluding or before exceptional items, adjusted, underlying or normalised
+  is refused; a dividend must be the year's total or a per-share table figure, not "final",
+  "interim" or "special" alone, and not a dividend paid or appropriated during the year; total
+  borrowings needs "total borrowings", "total debt" or "gross debt", not a lone "Borrowings" line.
+  The guards were applied to the stored facts by the free re-check (`python -m
+  app.recheck_facts`). Nova Pro was not adopted.
+- **Known limitation.** Reasoning errors (wrong entity, wrong column) remain at roughly 1 in 10
+  accepted filing facts. They are mitigated, not removed, by the "disputed" marker when another
+  source disagrees and by ranking annual reports and screener.in first.
+
 ## Consequences
 
 - The validator proves that the quote and the number are on the cited page, not that a value
   was read from the right column or year of a flattened table: the period and label checks, the
   disputed flag and the hand check reduce that risk; they do not remove it.
+- A new definition guard costs nothing to apply: the re-check runs the validator over stored facts
+  without calling the LLM.
 - screener's layout can change; the parser then finds nothing and the facts simply stop updating.
 - Changing the prompt, the page selection or the vocabulary bumps `EXTRACTOR_VERSION` and runs the
   extraction again (about $0.70 each time).

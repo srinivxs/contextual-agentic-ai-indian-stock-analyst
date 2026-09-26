@@ -90,3 +90,23 @@ def test_the_label_check_is_the_validators_own() -> None:
     assert label_in_quote("revenue_from_operations", "Revenue from Operations 1,000")
     assert not label_in_quote("revenue_from_operations", "Consolidated revenue ₹ 1,000 crore")
     assert not label_in_quote("no_such_metric", "anything")
+
+
+async def test_facts_failing_a_definition_guard_are_removed(
+    session_factory: async_sessionmaker[AsyncSession], admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    async with admin_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO facts (stock_id, source, document_id, page_number, quote, metric, "
+                "period, period_end, basis, currency, unit, value) SELECT stock_id, 'filing', id, "
+                "5, 'Net profit (excluding exceptional items) ₹ 900 crore', 'net_profit', "
+                "'FY2026', DATE '2026-03-31', 'consolidated', 'INR', 'INR_CRORE', 900 "
+                "FROM documents LIMIT 1"
+            )
+        )
+
+    async with session_factory() as db:
+        assert await recheck_labels(db) == 2  # the loose revenue and the adjusted profit
+        await db.commit()
