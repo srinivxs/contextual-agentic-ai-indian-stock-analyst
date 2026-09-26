@@ -325,6 +325,31 @@ def test_growth_is_the_latest_year_against_the_year_before() -> None:
     assert "FY2025" in result.reason
 
 
+def test_growth_compares_two_years_from_the_same_kind_of_source() -> None:
+    """Found in the first real run: an annual report's FY2026 figure against screener.in's FY2025
+    one measured a difference of definitions, not growth. A pair must share its kind of source."""
+    rows = [
+        fact(1, "110", period="FY2026", source="annual_report"),  # wins FY2026 on rank
+        fact(2, "105", period="FY2026", source="screener"),
+        fact(3, "100", period="FY2025", source="screener"),  # the only FY2025 figure
+    ]
+    result = growth_yoy(rows, "revenue")
+    assert (result.value, result.fact_ids) == (Decimal("5.0"), (3, 2))
+    assert "screener.in" in result.reason
+
+
+def test_growth_prefers_the_best_ranked_source_that_has_a_pair() -> None:
+    rows = [
+        fact(1, "100", period="FY2025", source="screener"),
+        fact(2, "105", period="FY2026", source="screener"),
+        fact(3, "200", period="FY2025", source="annual_report"),
+        fact(4, "220", period="FY2026", source="annual_report"),
+    ]
+    result = growth_yoy(rows, "revenue")
+    assert (result.value, result.fact_ids) == (Decimal("10.0"), (3, 4))
+    assert "annual reports" in result.reason
+
+
 def test_growth_is_rounded_to_one_decimal_and_can_be_negative() -> None:
     up = growth_yoy([fact(1, "1000", period="FY2025"), fact(2, "1234.56")], "revenue")
     assert up.value == Decimal("23.5")  # 23.456

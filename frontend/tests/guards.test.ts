@@ -27,11 +27,12 @@ const sourceFiles = allPaths.filter((p) => /\.(ts|tsx)$/.test(p));
 const posix = (p: string): string => relative(ROOT, p).split('\\').join('/');
 
 describe('the source tree', () => {
-  it('exists and has the two static routes', () => {
+  it('exists and has the static routes', () => {
     expect(existsSync(SRC)).toBe(true);
     const pages = allPaths.map(posix);
     expect(pages).toContain('src/app/page.tsx');
     expect(pages).toContain('src/app/stocks/page.tsx');
+    expect(pages).toContain('src/app/stock/page.tsx'); // one page for every stock, via ?symbol=
   });
 
   it('has no route handlers, middleware or proxy files (ADR 006)', () => {
@@ -65,30 +66,41 @@ describe('the source code', () => {
     expect(offenders).toEqual([]);
   });
 
-  // The app only ever calls its own origin. The ONE absolute URL allowed in the source is the
-  // prefix of official BSE filing links (ADR 018): a link the user may click, never a request the
-  // app makes. It is allowed in that one file, as that one exact line, and nowhere else.
-  const OFFICIAL_LINK_FILE = 'src/lib/documents.ts';
-  const OFFICIAL_LINK_LINE = "const OFFICIAL_PREFIX = 'https://www.bseindia.com/';";
+  // The app only ever calls its own origin. The ONLY absolute URLs allowed in the source are two
+  // link prefixes: official BSE filings (ADR 018) and screener.in company pages (ADR 020, the
+  // source of some key facts). Both are links the user may click, never requests the app makes.
+  // They are allowed in that one file, as those two exact lines, and nowhere else.
+  const LINK_FILE = 'src/lib/documents.ts';
+  const LINK_LINES = [
+    "const OFFICIAL_PREFIX = 'https://www.bseindia.com/';",
+    "const SCREENER_PREFIX = 'https://www.screener.in/company/';",
+  ];
 
-  it('never uses hard-coded absolute URLs, except the one official-filing link prefix', () => {
+  const withoutAllowedLines = (text: string): string =>
+    LINK_LINES.reduce((rest, line) => rest.replace(line, ''), text);
+
+  it('never uses hard-coded absolute URLs, except the two source-link prefixes', () => {
     expect(sourceFiles.length).toBeGreaterThan(0);
     const offenders = sourceFiles
       .filter((file) => {
         const text = read(file);
-        const scanned = posix(file).endsWith(OFFICIAL_LINK_FILE)
-          ? text.replace(OFFICIAL_LINK_LINE, '')
-          : text;
+        const scanned = posix(file).endsWith(LINK_FILE) ? withoutAllowedLines(text) : text;
         return /https?:\/\//.test(scanned);
       })
       .map(posix);
     expect(offenders).toEqual([]);
   });
 
-  it('still has that one exception where it says (so the allowance cannot go stale)', () => {
-    const file = sourceFiles.find((path) => posix(path).endsWith(OFFICIAL_LINK_FILE));
+  it('still has those exceptions where it says (so the allowance cannot go stale)', () => {
+    const file = sourceFiles.find((path) => posix(path).endsWith(LINK_FILE));
     expect(file).toBeDefined();
-    expect(read(file ?? '')).toContain(OFFICIAL_LINK_LINE);
+    for (const line of LINK_LINES) expect(read(file ?? '')).toContain(line);
+  });
+
+  it('allows each exception once only: a second copy of an allowed line is still caught', () => {
+    const doubled = `${LINK_LINES[0]}\n${LINK_LINES[0]}\n${LINK_LINES[1]}`;
+    expect(/https?:\/\//.test(withoutAllowedLines(doubled))).toBe(true);
+    expect(/https?:\/\//.test(withoutAllowedLines(LINK_LINES.join('\n')))).toBe(false);
   });
 });
 

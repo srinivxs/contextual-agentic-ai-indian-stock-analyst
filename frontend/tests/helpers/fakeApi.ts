@@ -4,6 +4,8 @@
  */
 import { vi } from 'vitest';
 
+import type { Citation, DerivedValue, KeyFact, StockInsights } from '@/lib/insights';
+
 export type FakeStock = { symbol: string; name: string; bse_code: string; sector: string };
 
 export const STOCKS: FakeStock[] = [
@@ -81,6 +83,137 @@ export const demoHit = (overrides: Partial<FakeHit> = {}): FakeHit => ({
   ...overrides,
 });
 
+/** The insights of one stock, exactly the shape the server sends (P11c). */
+export type FakeInsights = StockInsights;
+
+const DERIVED_LABELS: [DerivedValue['name'], string][] = [
+  ['debt_to_equity', 'Debt to equity'],
+  ['revenue_growth', 'Revenue growth'],
+  ['profit_growth', 'Profit growth'],
+  ['latest_dividend', 'Latest dividend'],
+];
+
+/** What the server sends for a stock nothing has been extracted from yet. */
+export const emptyInsights = (stock: FakeStock): FakeInsights => ({
+  symbol: stock.symbol,
+  name: stock.name,
+  is_financial: false,
+  key_facts: [],
+  derived: DERIVED_LABELS.map(([name, label]) => ({
+    name,
+    label,
+    status: 'insufficient_data',
+    value: null,
+    reason: 'There are no figures to work from yet.',
+    citations: [],
+  })),
+  sentiment: { status: 'insufficient_data', score: null, label: null, events_counted: 0 },
+  events: [],
+});
+
+/** A fictional DemoCo filing citation; override any field. */
+export const demoCitation = (overrides: Partial<Citation> = {}): Citation => ({
+  source: 'filing',
+  label: 'Annual report · Annual Report 2026 · p.44',
+  url: 'https://www.bseindia.com/xml-data/corpfiling/AttachHis/demo-ar-2026.pdf#page=44',
+  quote: 'Revenue from operations stood at ₹1,23,456 crore.',
+  ...overrides,
+});
+
+/** A fictional screener.in citation for DemoCo; override any field. */
+export const demoScreenerCitation = (overrides: Partial<Citation> = {}): Citation => ({
+  source: 'screener',
+  label: 'screener.in · profit-loss · Net Profit · Mar 2026',
+  url: 'https://www.screener.in/company/DEMOA/consolidated/',
+  quote: null,
+  ...overrides,
+});
+
+/** A fictional DemoCo fact; override any field. */
+export const demoFact = (overrides: Partial<KeyFact> = {}): KeyFact => ({
+  metric: 'revenue_from_operations',
+  label: 'Revenue from operations',
+  period: 'FY2026',
+  basis: 'consolidated',
+  currency: 'INR',
+  unit: 'INR_CRORE',
+  value: '123456.0000',
+  status: 'single',
+  corroborated_by: 0,
+  citation: demoCitation(),
+  disputed_by: [],
+  ...overrides,
+});
+
+/** DemoCo Alpha's invented insights: a few facts, all four derived values, sentiment, events. */
+export const demoInsights = (overrides: Partial<FakeInsights> = {}): FakeInsights => ({
+  symbol: 'DEMOA',
+  name: 'DemoCo Alpha Limited',
+  is_financial: false,
+  key_facts: [
+    demoFact(),
+    demoFact({
+      period: 'FY2025',
+      value: '110000.0000',
+      citation: demoCitation({ label: 'Annual report · Annual Report 2025 · p.40', quote: null }),
+    }),
+    demoFact({
+      metric: 'net_profit',
+      label: 'Net profit',
+      value: '12345.5000',
+      status: 'agreed',
+      corroborated_by: 1,
+      citation: demoScreenerCitation(),
+    }),
+  ],
+  derived: [
+    {
+      name: 'debt_to_equity',
+      label: 'Debt to equity',
+      status: 'ok',
+      value: '0.2500',
+      reason: 'FY2026, consolidated: borrowings ₹2,500 crore / equity ₹10,000 crore.',
+      citations: [demoCitation({ label: 'Annual report · Annual Report 2026 · p.51' })],
+    },
+    {
+      name: 'revenue_growth',
+      label: 'Revenue growth',
+      status: 'ok',
+      value: '12.5',
+      reason: 'FY2026 against FY2025, consolidated.',
+      citations: [demoCitation({ label: 'Annual report · Annual Report 2026 · p.45' })],
+    },
+    {
+      name: 'profit_growth',
+      label: 'Profit growth',
+      status: 'insufficient_data',
+      value: null,
+      reason: 'Net profit is known for one year only.',
+      citations: [],
+    },
+    {
+      name: 'latest_dividend',
+      label: 'Latest dividend',
+      status: 'ok',
+      value: '5.5',
+      reason: 'FY2026 dividend per share.',
+      citations: [demoCitation({ label: 'Announcement · Dividend · p.1' })],
+    },
+  ],
+  sentiment: { status: 'ok', score: 0.42, label: 'positive', events_counted: 5 },
+  events: [
+    {
+      event_type: 'earnings_results',
+      sentiment: 'positive',
+      impact: 'medium',
+      event_date: '2026-07-01',
+      summary: 'DemoCo Alpha reported higher quarterly revenue.',
+      citation: demoCitation({ label: 'Announcement · Results · p.2' }),
+    },
+  ],
+  ...overrides,
+});
+
 export type FakeCheck = {
   enabled: boolean;
   checking: boolean;
@@ -109,6 +242,8 @@ export type Options = {
   searchHits?: FakeHit[];
   /** Search switched off on the server (409). */
   searchOff?: boolean;
+  /** Each stock's insights; a known stock left out gets the empty default. */
+  insights?: Record<string, FakeInsights>;
 };
 
 export type FakeApi = {
@@ -181,6 +316,13 @@ export function installFakeApi(options: Options = {}): FakeApi {
     if (key.startsWith('GET /api/v1/search?')) {
       if (options.searchOff) return envelope(409, 'conflict');
       return json(200, { items: options.searchHits ?? [] });
+    }
+    const insights = /^GET \/api\/v1\/stocks\/([^/?]+)\/insights$/.exec(key);
+    if (insights) {
+      const symbol = decodeURIComponent(insights[1] ?? '');
+      const stock = stocks.find((s) => s.symbol === symbol);
+      if (!stock) return envelope(404, 'not_found');
+      return json(200, options.insights?.[symbol] ?? emptyInsights(stock));
     }
     const checking = /^(GET|POST) \/api\/v1\/stocks\/([^/]+)\/filings\/check$/.exec(key);
     if (checking) {

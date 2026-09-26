@@ -425,3 +425,230 @@ p {
   margin: 0.25rem 0 0;
   line-height: 1.5;
 }
+
+/* Stock page (P11c): key facts, derived values, sentiment and events, each value with its source. */
+:root {
+  --good-bg: #e6f4ea;
+  --good-text: #1e6b34;
+  --mixed-bg: #fdf3dc;
+  --mixed-text: #7a5300;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --good-bg: #173524;
+    --good-text: #9fdcb2;
+    --mixed-bg: #3a2f14;
+    --mixed-text: #f2d08a;
+  }
+}
+
+/* "Key facts" on each stock card and above each stock's documents. */
+.stock-link {
+  display: inline-block;
+  margin-left: 0.75rem;
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.stock-link:hover,
+.stock-link:focus-visible {
+  text-decoration: underline;
+}
+
+.doc-facts {
+  margin: 0 0 0.5rem;
+}
+
+.doc-facts .stock-link {
+  margin-left: 0;
+}
+
+.stock-head {
+  margin-bottom: 1.25rem;
+}
+
+.insight {
+  margin-top: 1.25rem;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.insight h2 {
+  margin-bottom: 0.75rem;
+}
+
+/* A wide table scrolls on its own on a narrow screen; the page does not. */
+.facts-scroll {
+  overflow-x: auto;
+}
+
+.facts {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.facts th,
+.facts td {
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.facts thead th {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.facts tbody th {
+  font-weight: 500;
+  min-width: 10rem;
+}
+
+.fact-cell {
+  min-width: 11rem;
+}
+
+.fact-value {
+  display: block;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.fact-note {
+  display: inline-block;
+  margin-right: 0.4rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.pill.disputed {
+  background: var(--mixed-bg);
+  color: var(--mixed-text);
+}
+
+.fact-dispute {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+}
+
+.fact-dispute summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.fact-dispute ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1rem;
+}
+
+/* A source: small, quiet, and a link when it is safe to be one. */
+.chip {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+a.chip::after {
+  content: ' \2197';
+}
+
+a.chip:hover,
+a.chip:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.derived-list,
+.events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.derived,
+.event {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.derived:last-child,
+.event:last-child {
+  border-bottom: 0;
+}
+
+.derived-name {
+  font-weight: 500;
+}
+
+.derived-value {
+  margin-left: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.derived-reason {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.sentiment-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.sentiment {
+  padding: 0.1rem 0.7rem;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--pill-text);
+  font-weight: 600;
+}
+
+.sentiment.positive {
+  background: var(--good-bg);
+  color: var(--good-text);
+}
+
+.sentiment.mixed {
+  background: var(--mixed-bg);
+  color: var(--mixed-text);
+}
+
+.sentiment.negative {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.event-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.event-head time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.event-type {
+  font-weight: 600;
+}
+
+.event-summary {
+  margin: 0.2rem 0 0;
+}

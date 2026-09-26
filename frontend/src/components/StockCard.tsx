@@ -1,3 +1,4 @@
+import { stockPageHref } from '@/lib/insights';
 import type { Stock } from '@/lib/stocks';
 
 type Props = {
@@ -25,6 +26,13 @@ export function StockCard({ stock, busy, onToggle }: Props) {
       >
         {stock.followed ? 'Following' : 'Follow'}
       </button>
+      <a
+        href={stockPageHref(stock.symbol)}
+        className="stock-link"
+        aria-label={`Key facts for ${stock.symbol}`}
+      >
+        Key facts
+      </a>
     </article>
   );
 }

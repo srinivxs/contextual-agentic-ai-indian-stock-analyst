@@ -37,16 +37,18 @@ _ALL_METRICS = (
         name="revenue_from_operations",
         kind="amount",
         applies_to="non_financial",
+        # The statutory line item only. Found in the first real run: a company's headline
+        # "revenue" can be a different figure (Reliance's Value of Sales and Services is gross of
+        # taxes), and accepting the loose word mixed two definitions into one series.
         synonyms=(
             "revenue from operations",
-            "revenues?",
             "total income from operations",
             "income from operations",
-            "net sales",
-            "sales",
-            "turnover",
         ),
-        description="Revenue from operations (the top line) for the period.",
+        description=(
+            "Revenue from operations, the statutory line item of the profit and loss statement "
+            "(not a headline 'revenue' or 'value of sales' that may include taxes)."
+        ),
     ),
     Metric(
         name="net_interest_income",

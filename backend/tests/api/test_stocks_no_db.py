@@ -115,3 +115,7 @@ async def test_a_foreign_origin_cannot_start_a_filing_check(client: httpx.AsyncC
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "forbidden"
+
+
+async def test_the_insights_need_a_session(client: httpx.AsyncClient) -> None:
+    assert_401(await client.get("/api/v1/stocks/TCS/insights"))

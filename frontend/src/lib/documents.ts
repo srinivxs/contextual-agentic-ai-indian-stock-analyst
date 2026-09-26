@@ -69,6 +69,7 @@ export async function listAllDocuments(symbol: string): Promise<StockDocument[]>
 }
 
 const OFFICIAL_PREFIX = 'https://www.bseindia.com/';
+const SCREENER_PREFIX = 'https://www.screener.in/company/';
 
 /**
  * An address we are willing to link to: an https BSE one (ADR 018). The server already only
@@ -77,6 +78,11 @@ const OFFICIAL_PREFIX = 'https://www.bseindia.com/';
  */
 export function officialUrl(url: string | null): string | null {
   return url !== null && url.startsWith(OFFICIAL_PREFIX) ? url : null;
+}
+
+/** The same check for a screener.in company page, where some key facts come from (ADR 020). */
+export function screenerUrl(url: string | null): string | null {
+  return url !== null && url.startsWith(SCREENER_PREFIX) ? url : null;
 }
 
 /** Where the official filing lives, for a document fetched from BSE. */

@@ -7,6 +7,7 @@ import {
   listAllDocuments,
   officialLink,
   pagesLabel,
+  screenerUrl,
 } from '@/lib/documents';
 import { demoDocument, installFakeApi } from '../helpers/fakeApi';
 
@@ -113,6 +114,24 @@ describe('the link to the official filing', () => {
     '//www.bseindia.com/x.pdf',
   ])('is withheld for anything but an https BSE address: %s', (url) => {
     expect(officialLink(demoDocument({ source_url: url }))).toBeNull();
+  });
+});
+
+describe('the link to a screener.in company page', () => {
+  it('is kept for an https screener.in company page', () => {
+    const url = 'https://www.screener.in/company/DEMOA/consolidated/';
+    expect(screenerUrl(url)).toBe(url);
+  });
+
+  it.each([
+    null,
+    'javascript:alert(1)',
+    'http://www.screener.in/company/DEMOA/',
+    'https://www.screener.in.evil.example/company/DEMOA/',
+    'https://www.screener.in/login/',
+    '//www.screener.in/company/DEMOA/',
+  ])('is withheld for anything else: %s', (url) => {
+    expect(screenerUrl(url)).toBeNull();
   });
 });
 

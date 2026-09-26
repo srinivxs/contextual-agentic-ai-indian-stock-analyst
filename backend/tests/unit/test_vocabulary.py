@@ -145,8 +145,6 @@ def _mentions(metric: Metric, text: str) -> bool:
     [
         ("revenue_from_operations", "revenue from operations 26 4,12,345"),
         ("revenue_from_operations", "total income from operations grew"),
-        ("revenue_from_operations", "revenues rose 8%"),
-        ("revenue_from_operations", "net sales of democo"),
         ("net_interest_income", "net interest income rose"),
         ("net_interest_income", "nii grew 12%"),
         ("net_profit", "net profit stood at 1,234 crore"),
@@ -198,3 +196,17 @@ def test_synonyms_recognise_the_usual_labels(name: str, text: str) -> None:
 )
 def test_synonyms_do_not_fire_on_look_alikes(name: str, text: str) -> None:
     assert not _mentions(METRICS[name], text)
+
+
+def test_revenue_means_the_statutory_line_item_not_any_revenue() -> None:
+    """Found in the first real run: Reliance's headline "Consolidated revenue ... ₹X crore" is its
+    Value of Sales and Services (gross of taxes), not Revenue from Operations; accepting the loose
+    word mixed two definitions and produced a 20% "growth" that was really a definition change."""
+    import re
+
+    synonyms = METRICS["revenue_from_operations"].synonyms
+    label = re.compile(r"\b(?:" + "|".join(synonyms) + r")\b")
+    assert label.search("revenue from operations 26 4,12,345")
+    assert label.search("total income from operations")
+    for loose in ("consolidated revenue grew", "net sales of", "sales", "turnover"):
+        assert not label.search(loose), loose

@@ -78,6 +78,21 @@ describe('the documents page', () => {
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
+  it('links the open stock to its key facts page', async () => {
+    installFakeApi();
+    render(<DocumentsView />);
+
+    const link = await screen.findByRole('link', { name: 'Key facts for DEMOA' });
+    expect(link).toHaveTextContent('Key facts');
+    expect(link).toHaveAttribute('href', '/stock/?symbol=DEMOA');
+
+    await userEvent.click(screen.getByRole('tab', { name: new RegExp(STOCKS[1]?.name ?? '') }));
+    expect(screen.getByRole('link', { name: 'Key facts for DEMOB' })).toHaveAttribute(
+      'href',
+      '/stock/?symbol=DEMOB',
+    );
+  });
+
   it('says 1 page, not 1 pages', async () => {
     installFakeApi({ documents: ALPHA_FILINGS });
     render(<DocumentsView />);

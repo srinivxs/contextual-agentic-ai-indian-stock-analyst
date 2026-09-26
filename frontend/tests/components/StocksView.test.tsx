@@ -42,6 +42,17 @@ describe('the stocks page', () => {
     expect(headings.map((h) => h.textContent)).toEqual(STOCKS.map((s) => s.name));
   });
 
+  it('links each stock to its key facts page', async () => {
+    installFakeApi();
+    render(<StocksView />);
+
+    for (const stock of STOCKS) {
+      const link = await screen.findByRole('link', { name: `Key facts for ${stock.symbol}` });
+      expect(link).toHaveTextContent('Key facts');
+      expect(link).toHaveAttribute('href', `/stock/?symbol=${stock.symbol}`);
+    }
+  });
+
   it('shows who is signed in and the not-advice notice', async () => {
     installFakeApi({ email: 'ada@example.test' });
     render(<StocksView />);

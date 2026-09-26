@@ -25,6 +25,7 @@ import {
   startFilingCheck,
   type FilingCheck,
 } from '@/lib/filingChecks';
+import { stockPageHref } from '@/lib/insights';
 import { signOut, useMe } from '@/lib/session';
 import { listStocks, type Stock } from '@/lib/stocks';
 
@@ -141,6 +142,15 @@ function StockPanel({ shelf, onCheck }: { shelf: Shelf; onCheck: () => void }) {
       aria-label={shelf.stock.name}
       className="doc-panel"
     >
+      <p className="doc-facts">
+        <a
+          href={stockPageHref(shelf.stock.symbol)}
+          className="stock-link"
+          aria-label={`Key facts for ${shelf.stock.symbol}`}
+        >
+          Key facts
+        </a>
+      </p>
       <Freshness check={shelf.check} onCheck={onCheck} />
       {groups.length > 0 && (
         // Keyed by stock, so switching tabs starts a fresh search for the new one.

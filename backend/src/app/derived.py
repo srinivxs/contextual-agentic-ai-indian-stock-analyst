@@ -65,6 +65,14 @@ SOURCE_RANK: dict[Source, int] = {
 }
 BASIS_PREFERENCE: tuple[Basis, ...] = ("consolidated", "standalone", "unspecified")
 CURRENCY_PREFERENCE: tuple[Currency, ...] = ("INR", "USD", None)
+# How a reason names the kind of source a growth pair came from.
+SOURCE_WORDS = {
+    "annual_report": "annual reports",
+    "screener": "screener.in",
+    "presentation": "investor presentations",
+    "transcript": "earnings calls",
+    "announcement": "announcements",
+}
 AGREEMENT = Decimal("0.01")  # two figures within 1% of the winner agree
 
 BORROWINGS = "total_borrowings"
@@ -245,27 +253,31 @@ def debt_to_equity(rows: list[FactRow], *, is_financial: bool) -> Derived:
 
 def growth_yoy(rows: list[FactRow], metric: str) -> Derived:
     words = metric.replace("_", " ")
-    chosen = choose_all([row for row in rows if row.metric == metric])
-    # every comparable (prior, current) pair, with how much we prefer it: a full year over a
-    # quarter, then the latest, then consolidated, then INR
-    pairs: list[tuple[tuple[bool, int, int, int, int], FactRow, FactRow]] = []
-    for later in (winner.fact for winner in chosen.values()):
-        parsed = parse_period(later.period)
-        if parsed is None:
-            continue
-        year, quarter = parsed
-        earlier_key = (metric, format_period(year - 1, quarter), later.basis, later.currency)
-        earlier = chosen.get(earlier_key)
-        if earlier is None or earlier.fact.unit != later.unit:
-            continue
-        preference = (
-            quarter == 0,
-            year,
-            quarter,
-            -BASIS_PREFERENCE.index(later.basis),
-            -CURRENCY_PREFERENCE.index(later.currency),
-        )
-        pairs.append((preference, earlier.fact, later))
+    # Every comparable (prior, current) pair WITHIN ONE KIND OF SOURCE (found in the first real
+    # run: an annual report's figure against screener.in's for the year before measured a change
+    # of definitions, not growth), with how much we prefer it: a full year over a quarter, then
+    # the latest, then the best-ranked source, then consolidated, then INR.
+    pairs: list[tuple[tuple[bool, int, int, int, int, int], FactRow, FactRow]] = []
+    for source, rank in SOURCE_RANK.items():
+        chosen = choose_all([row for row in rows if row.metric == metric and row.source == source])
+        for later in (winner.fact for winner in chosen.values()):
+            parsed = parse_period(later.period)
+            if parsed is None:
+                continue
+            year, quarter = parsed
+            earlier_key = (metric, format_period(year - 1, quarter), later.basis, later.currency)
+            earlier = chosen.get(earlier_key)
+            if earlier is None or earlier.fact.unit != later.unit:
+                continue
+            preference = (
+                quarter == 0,
+                year,
+                quarter,
+                -rank,
+                -BASIS_PREFERENCE.index(later.basis),
+                -CURRENCY_PREFERENCE.index(later.currency),
+            )
+            pairs.append((preference, earlier.fact, later))
     if not pairs:
         reason = (
             f"Not assessable: no two comparable periods of {words} (a year and the year "
@@ -282,7 +294,10 @@ def growth_yoy(rows: list[FactRow], metric: str) -> Derived:
         return Derived(status="not_assessable", value=None, reason=reason, fact_ids=ids)
     change = (current.value - prior.value) / prior.value * 100
     value = change.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-    reason = f"Change in {words} from {prior.period} to {current.period}, {current.basis} figures."
+    reason = (
+        f"Change in {words} from {prior.period} to {current.period}, {current.basis} figures "
+        f"from {SOURCE_WORDS[current.source]}."
+    )
     return Derived(status="ok", value=value, reason=reason, fact_ids=ids)
 
 

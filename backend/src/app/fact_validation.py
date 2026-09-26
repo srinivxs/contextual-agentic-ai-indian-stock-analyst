@@ -448,6 +448,13 @@ _LABELS = {
 }
 
 
+def label_in_quote(metric: str, quote: str) -> bool:
+    """Whether the quote names the metric, by the current synonyms (also used to re-check facts
+    already stored when a rule is tightened: app/recheck_facts.py)."""
+    label = _LABELS.get(metric)
+    return label is not None and label.search(normalise(quote)) is not None
+
+
 @dataclass(frozen=True)
 class Candidate:
     """A fact as the model proposes it: plain strings, exactly as the model returned them."""
