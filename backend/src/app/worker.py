@@ -20,6 +20,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -31,9 +32,11 @@ from app.core.logging import configure_logging
 from app.db.engine import create_db_engine, create_session_factory
 from app.embedding_jobs import embed_document, enqueue_embeddings
 from app.embeddings import BedrockEmbedder, Embedder, bedrock_client
+from app.extraction_jobs import EXTRACTOR_VERSION, enqueue_extractions, extract_document
 from app.ingest import DocumentRejected, JobCannotSucceed, document_id_of, ingest_document
 from app.ingest import mark_document as _mark_document
 from app.jobs import ClaimedJob, claim_next, fail, retry_or_fail, still_mine
+from app.llm import BedrockLlm, StructuredLlm, bedrock_llm_client
 
 logger = logging.getLogger("app.worker")
 
@@ -46,6 +49,8 @@ DISCOVERY_CHECK_SECONDS = 600.0
 # How often an idle-or-busy worker asks "does any ingested document still lack fingerprints?".
 # One cheap query; a new filing is fingerprinted at most this long after it was read.
 EMBED_CHECK_SECONDS = 60.0
+# The same for facts and events: a new filing is read at most this long after it was ingested.
+EXTRACT_CHECK_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -65,6 +70,13 @@ class WorkerContext:
     embedder: Embedder | None = None
     embedding_token_budget: int = 10_000_000
     embedding_concurrency: int = 4
+    # Only when EXTRACTION_ENABLED is on (P11): the LLM that reads filings for facts and events.
+    llm: StructuredLlm | None = None
+    extraction_version: str = EXTRACTOR_VERSION
+    extraction_budget_usd: Decimal = Decimal("2.00")
+    llm_input_usd_per_mtok: Decimal = Decimal("0.35")
+    llm_output_usd_per_mtok: Decimal = Decimal("2.95")
+    extraction_concurrency: int = 2
 
 
 async def mark_job_document(
@@ -103,6 +115,18 @@ async def handle(context: WorkerContext, job: ClaimedJob) -> None:
                 job,
                 limit=context.filings_max_bytes,
                 pause_seconds=context.fetch_pause_seconds,
+            )
+        elif job.kind == "extract_document" and context.llm is None:
+            raise JobCannotSucceed("extraction is switched off (EXTRACTION_ENABLED)")
+        elif job.kind == "extract_document" and context.llm is not None:
+            await extract_document(
+                context.session_factory,
+                context.llm,
+                job,
+                version=context.extraction_version,
+                budget_usd=context.extraction_budget_usd,
+                prices=(context.llm_input_usd_per_mtok, context.llm_output_usd_per_mtok),
+                concurrency=context.extraction_concurrency,
             )
         elif job.kind == "embed_document" and context.embedder is None:
             raise JobCannotSucceed("embeddings are switched off (EMBEDDINGS_ENABLED)")
@@ -174,6 +198,17 @@ async def _queue_embeddings(context: WorkerContext, model: str) -> None:
         logger.exception("embeddings_queue_error")
 
 
+async def _queue_extractions(context: WorkerContext, model: str) -> None:
+    try:
+        async with context.session_factory() as db:
+            queued = await enqueue_extractions(db, version=context.extraction_version, model=model)
+            await db.commit()
+        if queued:
+            logger.info("extractions_queued", extra={"documents": queued})
+    except Exception:
+        logger.exception("extractions_queue_error")
+
+
 async def run_forever(
     context: WorkerContext,
     stop: asyncio.Event,
@@ -182,15 +217,19 @@ async def run_forever(
     discovery_every_hours: int | None = None,
     embed_model: str | None = None,
     embed_check_seconds: float = EMBED_CHECK_SECONDS,
+    extract_check_seconds: float = EXTRACT_CHECK_SECONDS,
 ) -> None:
     """Work through the queue until ``stop`` is set. The worker's small timers (ADR 008):
 
     - with ``discovery_every_hours``, queue a filing discovery per stock that often (ADR 018);
     - with ``embed_model``, every ``embed_check_seconds`` queue fingerprints for any ingested
-      document still missing them under that model (P10).
+      document still missing them under that model (P10);
+    - with an LLM in the context, every ``extract_check_seconds`` queue a reading for facts and
+      events of any ingested document this extractor version and model have not read (P11).
     """
     next_discovery_check = 0.0
     next_embed_check = 0.0
+    next_extract_check = 0.0
     while True:
         if discovery_every_hours and time.monotonic() >= next_discovery_check:
             await _queue_discovery(context, discovery_every_hours)
@@ -198,6 +237,9 @@ async def run_forever(
         if embed_model and time.monotonic() >= next_embed_check:
             await _queue_embeddings(context, embed_model)
             next_embed_check = time.monotonic() + embed_check_seconds
+        if context.llm is not None and time.monotonic() >= next_extract_check:
+            await _queue_extractions(context, context.llm.model)
+            next_extract_check = time.monotonic() + extract_check_seconds
         if stop.is_set():
             break
         try:
@@ -223,6 +265,12 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
         if settings.embeddings_enabled
         else None
     )
+    # And the LLM: without EXTRACTION_ENABLED there is no client, so no filing is read or paid for.
+    llm = (
+        BedrockLlm(model=settings.llm_model, client=bedrock_llm_client(settings.aws_region))
+        if settings.extraction_enabled
+        else None
+    )
     context = WorkerContext(
         session_factory=create_session_factory(engine),
         blob_store=FilesystemBlobStore(settings.blob_root),
@@ -233,6 +281,11 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
         embedder=embedder,
         embedding_token_budget=settings.embedding_token_budget,
         embedding_concurrency=settings.embedding_concurrency,
+        llm=llm,
+        extraction_budget_usd=settings.extraction_budget_usd,
+        llm_input_usd_per_mtok=settings.llm_input_usd_per_mtok,
+        llm_output_usd_per_mtok=settings.llm_output_usd_per_mtok,
+        extraction_concurrency=settings.extraction_concurrency,
     )
     stop = asyncio.Event()
     for signal_number in (signal.SIGINT, signal.SIGTERM):

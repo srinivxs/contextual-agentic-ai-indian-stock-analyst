@@ -7,6 +7,7 @@ are declared; each milestone adds its own (see ``.env.example`` for the full pla
 """
 
 from datetime import timedelta
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -84,6 +85,20 @@ class CommonSettings(BaseSettings):
     embedding_token_budget: int = Field(default=10_000_000, ge=0, le=1_000_000_000)
     # How many Bedrock calls one job makes at the same time (Titan V2 takes one text per call).
     embedding_concurrency: int = Field(default=4, ge=1, le=16)
+
+    # --- facts and events from filings (P11, ADR 020) ------------------------------------------
+    # Off unless switched on: only then does the worker ask the LLM to read filings (and spend).
+    extraction_enabled: bool = False
+    # ADR 010: Amazon Nova 2 Lite through the global inference profile.
+    llm_model: str = Field(default="global.amazon.nova-2-lite-v1:0", pattern=r"\S")
+    # Nova 2 Lite's price in US$ per million tokens (ADR 010). Output costs 8.4 times input, so
+    # the spending cap counts both.
+    llm_input_usd_per_mtok: Decimal = Field(default=Decimal("0.35"), ge=0, le=100)
+    llm_output_usd_per_mtok: Decimal = Field(default=Decimal("2.95"), gt=0, le=100)
+    # The spending cap for extraction, in US$ (the owner approved $2; a full run is about $0.70).
+    extraction_budget_usd: Decimal = Field(default=Decimal("2.00"), ge=0, le=100)
+    # How many LLM calls one job makes at the same time.
+    extraction_concurrency: int = Field(default=2, ge=1, le=8)
 
     @field_validator("database_url")
     @classmethod

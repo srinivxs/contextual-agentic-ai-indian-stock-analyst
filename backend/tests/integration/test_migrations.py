@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.integration.conftest import DbConfig, Migrator, make_alembic_config
 
-HEAD = "0006"
+HEAD = "0007"
 
 STATE_QUERIES = {
     "extension": "SELECT extversion FROM pg_extension WHERE extname = 'vector'",
@@ -23,6 +23,10 @@ STATE_QUERIES = {
         "AND tablename IN ('documents', 'document_pages', 'chunks', 'jobs')"
     ),
     "embeddings_table": "SELECT to_regclass('public.embeddings') IS NOT NULL",
+    "facts_tables": (
+        "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' "
+        "AND tablename IN ('facts', 'events', 'extraction_calls')"
+    ),
     "version_table": "SELECT to_regclass('public.alembic_version') IS NOT NULL",
 }
 
@@ -38,6 +42,7 @@ class State:
     follows_table: bool
     ingestion_tables: int  # documents, document_pages, chunks, jobs (0004)
     embeddings_table: bool  # 0006
+    facts_tables: int  # facts, events, extraction_calls (0007)
     revision: str | None
     stock_rows: tuple[tuple[object, ...], ...]
 
@@ -73,6 +78,7 @@ async def snapshot(admin_engine: AsyncEngine) -> State:
             follows_table=bool(await scalar("follows_table")),
             ingestion_tables=int(str(await scalar("ingestion_tables"))),
             embeddings_table=bool(await scalar("embeddings_table")),
+            facts_tables=int(str(await scalar("facts_tables"))),
             revision=revision,
             stock_rows=rows,
         )
@@ -86,6 +92,7 @@ EMPTY = State(
     follows_table=False,
     ingestion_tables=0,
     embeddings_table=False,
+    facts_tables=0,
     revision=None,
     stock_rows=(),
 )
@@ -106,6 +113,7 @@ async def test_up_down_up_round_trip_verified_at_every_step(
     assert first.follows_table is True
     assert first.ingestion_tables == 4
     assert first.embeddings_table is True
+    assert first.facts_tables == 3
     assert first.revision == HEAD
     assert [row[1] for row in first.stock_rows] == ["RELIANCE", "TCS", "HDFCBANK"]
 
@@ -119,10 +127,16 @@ async def test_up_down_up_round_trip_verified_at_every_step(
 async def test_each_downgrade_step_removes_only_what_its_revision_created(
     migrator: Migrator, admin_engine: AsyncEngine
 ) -> None:
-    """0006 owns embeddings, 0004 the ingestion tables, 0003 user_follows, 0002 users and sessions,
-    0001 stocks."""
+    """0007 owns facts and events, 0006 embeddings, 0004 the ingestion tables, 0003 user_follows,
+    0002 users and sessions, 0001 stocks."""
     await migrator.upgrade("head")
     at_head = await snapshot(admin_engine)
+
+    await migrator.downgrade("-1")
+    no_facts = await snapshot(admin_engine)
+    assert no_facts.revision == "0006"
+    assert no_facts.facts_tables == 0
+    assert no_facts.embeddings_table is True  # everything older is untouched
 
     await migrator.downgrade("-1")
     no_embeddings = await snapshot(admin_engine)

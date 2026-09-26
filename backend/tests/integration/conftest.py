@@ -201,7 +201,10 @@ async def clean_document_tables(admin_engine: AsyncEngine) -> None:
     """Every ingestion test starts with no documents, jobs or fingerprints (rows, not tables)."""
     async with admin_engine.begin() as connection:
         await connection.execute(
-            text("TRUNCATE documents, jobs, embeddings RESTART IDENTITY CASCADE")
+            text(
+                "TRUNCATE documents, jobs, embeddings, facts, events, extraction_calls "
+                "RESTART IDENTITY CASCADE"
+            )
         )
 
 

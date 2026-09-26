@@ -182,6 +182,7 @@ def test_the_worker_gets_the_runtime_role_and_no_login_secrets(
         "PYTHONPATH",
         "PYTHONFAULTHANDLER",
         "EMBEDDINGS_ENABLED",
+        "EXTRACTION_ENABLED",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
@@ -229,6 +230,13 @@ def test_only_the_worker_has_the_folder_for_stored_files(model: dict[str, Any]) 
     assert ("volume", "blobs", "/data/blobs", False) in mounts, mounts
     assert "blobs" in model["volumes"]
     assert "volumes" not in service(model, "api")
+
+
+def test_reading_filings_with_the_llm_is_off_unless_switched_on(model: dict[str, Any]) -> None:
+    """P11: the worker asks the LLM for facts and events (and spends) only when switched on. The
+    api has no such switch: it never calls the LLM in P11."""
+    assert service(model, "worker")["environment"]["EXTRACTION_ENABLED"] == "false"
+    assert "EXTRACTION_ENABLED" not in service(model, "api")["environment"]
 
 
 def test_a_crashed_worker_comes_back_and_says_where_it_crashed(model: dict[str, Any]) -> None:

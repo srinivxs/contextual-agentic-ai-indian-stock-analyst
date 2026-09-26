@@ -43,6 +43,7 @@ from app.documents import PDF_SIGNATURE, PdfFile, record_document, stock_id
 from app.ingest import JobCannotSucceed
 from app.jobs import ClaimedJob, complete, still_mine
 from app.polite_fetch import FetchRefused, FetchTooLarge, polite_get
+from app.screener_facts import store_screener_facts
 
 SCREENER_URL = "https://www.screener.in/company/{symbol}/consolidated/"
 PAGE_LIMIT = 3 * 1024 * 1024  # a company page is a few hundred kilobytes
@@ -195,8 +196,11 @@ class _DocumentsParser(HTMLParser):
 
 def parse_documents(html: str) -> list[FilingLink]:
     parser = _DocumentsParser()
-    parser.feed(html)
-    parser.close()
+    try:
+        parser.feed(html)
+        parser.close()
+    except AssertionError:  # html.parser's reaction to some broken markup, e.g. "<![foo["
+        return []
     return parser.links
 
 
@@ -343,6 +347,8 @@ async def filing_check(db: AsyncSession, symbol: str) -> FilingCheck:
 
 _KNOWN = text("SELECT 1 FROM documents WHERE source_url = ANY(:urls)")
 
+_STOCK = text("SELECT id, is_financial FROM stocks WHERE symbol = :symbol")
+
 _ENQUEUE_FETCH = text(
     "INSERT INTO jobs (kind, payload, dedupe_key) "
     "SELECT 'fetch_filing', jsonb_build_object('symbol', CAST(:symbol AS text), "
@@ -372,20 +378,23 @@ async def discover(
 ) -> None:
     [symbol] = _payload(job, "symbol")
     async with session_factory() as db:
-        stock = await stock_id(db, symbol)
+        stock = (await db.execute(_STOCK, {"symbol": symbol})).one_or_none()
     if stock is None:
         raise JobCannotSucceed(f"no such stock: {symbol[:20]}")
 
-    page = await polite_get(
-        http, SCREENER_URL.format(symbol=symbol), allowed=is_screener_page(symbol), limit=PAGE_LIMIT
+    url = SCREENER_URL.format(symbol=symbol)
+    page = (await polite_get(http, url, allowed=is_screener_page(symbol), limit=PAGE_LIMIT)).decode(
+        "utf-8", errors="replace"
     )
-    links = select_filings(
-        parse_documents(page.decode("utf-8", errors="replace")), today=today, years=years
-    )
+    links = select_filings(parse_documents(page), today=today, years=years)
 
     async with session_factory() as db:
         if not await still_mine(db, job):
             return
+        # The same page's fundamentals table, as cited facts (ADR 020): no second request.
+        await store_screener_facts(
+            db, stock_id=stock.id, is_financial=stock.is_financial, page=page, url=url
+        )
         for link in links:
             await db.execute(
                 _ENQUEUE_FETCH,

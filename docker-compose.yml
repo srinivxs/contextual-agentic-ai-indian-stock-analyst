@@ -141,6 +141,9 @@ services:
       # (aws configure export-credentials); empty otherwise. Never in .env, never in an image, and
       # only this container gets it. In AWS the ECS task role takes its place (GL).
       EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}
+      # Facts and events read from filings by the LLM (P11, ADR 020): off unless switched on; the
+      # same temporary pass. Spending is capped by EXTRACTION_BUDGET_USD (default $2).
+      EXTRACTION_ENABLED: ${EXTRACTION_ENABLED:-false}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
