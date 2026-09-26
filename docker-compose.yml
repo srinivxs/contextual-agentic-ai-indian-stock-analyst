@@ -124,6 +124,14 @@ services:
       DATABASE_URL: postgresql+asyncpg://${APP_DB_USER:-stock_app}:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@db:5432/${POSTGRES_DB:-stock_analyst}
       BLOB_ROOT: /data/blobs
       FILINGS_DISCOVERY: ${FILINGS_DISCOVERY:-false}
+      # Meaning fingerprints on Bedrock (P10, ADR 019): off unless switched on. The AWS pass is a
+      # TEMPORARY one copied from the owner's `aws login` into the shell that runs `compose up`
+      # (aws configure export-credentials); empty otherwise. Never in .env, never in an image, and
+      # only this container gets it. In AWS the ECS task role takes its place (GL).
+      EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     volumes:
       - blobs:/data/blobs
     # The image's HEALTHCHECK calls the api's /api/healthz, which the worker does not serve.

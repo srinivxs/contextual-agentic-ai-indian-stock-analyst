@@ -48,12 +48,15 @@ async def test_a_1024_dimension_vector_is_accepted_and_other_sizes_are_rejected(
             )
 
 
-async def test_no_vector_columns_exist_yet(admin_engine: AsyncEngine) -> None:
-    """Scope guard: the embedding column arrives with `chunks` in P10, not in P3."""
+async def test_the_only_vector_column_is_the_fingerprint(admin_engine: AsyncEngine) -> None:
+    """Scope guard: P10 adds exactly one vector column, embeddings.embedding (1,024 numbers)."""
     async with admin_engine.connect() as connection:
-        count = (
+        columns = (
             await connection.execute(
-                text("SELECT count(*) FROM information_schema.columns WHERE udt_name = 'vector'")
+                text(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                    "WHERE udt_name = 'vector' ORDER BY 1, 2"
+                )
             )
-        ).scalar_one()
-    assert count == 0
+        ).all()
+    assert [tuple(column) for column in columns] == [("embeddings", "embedding")]

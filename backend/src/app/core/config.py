@@ -73,6 +73,18 @@ class CommonSettings(BaseSettings):
     # The largest filing fetched. It is read into memory; annual reports run to tens of megabytes.
     filings_max_bytes: int = Field(default=60 * 1024 * 1024, ge=1024, le=200 * 1024 * 1024)
 
+    # --- embeddings: meaning fingerprints for search (P10, ADR 019) ----------------------------
+    # Off unless switched on: only then do the api and the worker call Bedrock (and spend money).
+    embeddings_enabled: bool = False
+    # ADR 010. boto3 reads the same AWS_REGION variable; ECS sets it in every task.
+    aws_region: str = Field(default="ap-south-1", pattern=r"^[a-z]{2}(-[a-z]+)+-\d$")
+    embedding_model: str = Field(default="amazon.titan-embed-text-v2:0", pattern=r"\S")
+    # The spending cap: the worker stops making fingerprints once the tokens stored for this model
+    # reach it. 10 million is about $0.20 at Titan V2's price; the first full run needs about 3.5M.
+    embedding_token_budget: int = Field(default=10_000_000, ge=0, le=1_000_000_000)
+    # How many Bedrock calls one job makes at the same time (Titan V2 takes one text per call).
+    embedding_concurrency: int = Field(default=4, ge=1, le=16)
+
     @field_validator("database_url")
     @classmethod
     def _require_the_asyncpg_driver(cls, value: SecretStr) -> SecretStr:

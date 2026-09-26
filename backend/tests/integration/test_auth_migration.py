@@ -39,7 +39,7 @@ async def test_the_migration_is_at_head(admin_engine: AsyncEngine) -> None:
         version = (
             await connection.execute(text("SELECT version_num FROM alembic_version"))
         ).scalar()
-    assert version == "0005"  # the head moves on as later phases add migrations
+    assert version == "0006"  # the head moves on as later phases add migrations
 
 
 async def test_users_has_the_agreed_columns_and_only_those(admin_engine: AsyncEngine) -> None:
@@ -189,7 +189,8 @@ async def test_the_runtime_role_can_use_the_tables_but_not_change_them(
 
 
 async def test_no_other_application_tables_exist_yet(admin_engine: AsyncEngine) -> None:
-    """Scope guard: profiles and conversations belong to later phases (documents arrived in P9)."""
+    """Scope guard: profiles and conversations belong to later phases (documents arrived in P9,
+    embeddings in P10)."""
     async with admin_engine.connect() as connection:
         tables = (
             (
@@ -201,6 +202,6 @@ async def test_no_other_application_tables_exist_yet(admin_engine: AsyncEngine) 
             .all()
         )
     assert tables == [
-        "alembic_version", "chunks", "document_pages", "documents", "jobs", "sessions", "stocks",
-        "user_follows", "users",
+        "alembic_version", "chunks", "document_pages", "documents", "embeddings", "jobs",
+        "sessions", "stocks", "user_follows", "users",
     ]  # fmt: skip

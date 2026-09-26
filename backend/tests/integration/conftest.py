@@ -198,9 +198,11 @@ async def clean_auth_tables(admin_engine: AsyncEngine) -> None:
 
 @pytest.fixture
 async def clean_document_tables(admin_engine: AsyncEngine) -> None:
-    """Every ingestion test starts with no documents and no jobs (the rows, not the tables)."""
+    """Every ingestion test starts with no documents, jobs or fingerprints (rows, not tables)."""
     async with admin_engine.begin() as connection:
-        await connection.execute(text("TRUNCATE documents, jobs RESTART IDENTITY CASCADE"))
+        await connection.execute(
+            text("TRUNCATE documents, jobs, embeddings RESTART IDENTITY CASCADE")
+        )
 
 
 MakeUser = Callable[..., Awaitable[UUID]]

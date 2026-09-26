@@ -29,6 +29,8 @@ from app.blobs import BlobStore, FilesystemBlobStore
 from app.core.config import get_worker_settings
 from app.core.logging import configure_logging
 from app.db.engine import create_db_engine, create_session_factory
+from app.embedding_jobs import embed_document, enqueue_embeddings
+from app.embeddings import BedrockEmbedder, Embedder, bedrock_client
 from app.ingest import DocumentRejected, JobCannotSucceed, document_id_of, ingest_document
 from app.ingest import mark_document as _mark_document
 from app.jobs import ClaimedJob, claim_next, fail, retry_or_fail, still_mine
@@ -41,6 +43,9 @@ GAVE_UP_REASON = "This document could not be processed after several attempts."
 # How often the loop asks "is a filing discovery due?". The answer comes from the jobs table
 # (enqueue_discovery), so this only bounds how late a due discovery can start.
 DISCOVERY_CHECK_SECONDS = 600.0
+# How often an idle-or-busy worker asks "does any ingested document still lack fingerprints?".
+# One cheap query; a new filing is fingerprinted at most this long after it was read.
+EMBED_CHECK_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -56,6 +61,10 @@ class WorkerContext:
     # How many years of filings to fetch (FILINGS_YEARS), and what "today" is (tests fix it).
     filings_years: int = 3
     today: Callable[[], date] = date.today
+    # Only when EMBEDDINGS_ENABLED is on (P10): the one thing here that calls Bedrock.
+    embedder: Embedder | None = None
+    embedding_token_budget: int = 10_000_000
+    embedding_concurrency: int = 4
 
 
 async def mark_job_document(
@@ -94,6 +103,16 @@ async def handle(context: WorkerContext, job: ClaimedJob) -> None:
                 job,
                 limit=context.filings_max_bytes,
                 pause_seconds=context.fetch_pause_seconds,
+            )
+        elif job.kind == "embed_document" and context.embedder is None:
+            raise JobCannotSucceed("embeddings are switched off (EMBEDDINGS_ENABLED)")
+        elif job.kind == "embed_document" and context.embedder is not None:
+            await embed_document(
+                context.session_factory,
+                context.embedder,
+                job,
+                budget_tokens=context.embedding_token_budget,
+                concurrency=context.embedding_concurrency,
             )
         else:
             raise JobCannotSucceed(f"this worker has no handler for {job.kind!r} jobs yet")
@@ -144,20 +163,41 @@ async def _queue_discovery(context: WorkerContext, every_hours: int) -> None:
         logger.exception("filing_discovery_queue_error")
 
 
+async def _queue_embeddings(context: WorkerContext, model: str) -> None:
+    try:
+        async with context.session_factory() as db:
+            queued = await enqueue_embeddings(db, model=model)
+            await db.commit()
+        if queued:
+            logger.info("embeddings_queued", extra={"documents": queued})
+    except Exception:
+        logger.exception("embeddings_queue_error")
+
+
 async def run_forever(
     context: WorkerContext,
     stop: asyncio.Event,
     *,
     poll_seconds: float,
     discovery_every_hours: int | None = None,
+    embed_model: str | None = None,
+    embed_check_seconds: float = EMBED_CHECK_SECONDS,
 ) -> None:
-    """Work through the queue until ``stop`` is set. With ``discovery_every_hours``, also queue a
-    filing discovery per stock that often: the worker's small timer (ADR 008, ADR 018)."""
+    """Work through the queue until ``stop`` is set. The worker's small timers (ADR 008):
+
+    - with ``discovery_every_hours``, queue a filing discovery per stock that often (ADR 018);
+    - with ``embed_model``, every ``embed_check_seconds`` queue fingerprints for any ingested
+      document still missing them under that model (P10).
+    """
     next_discovery_check = 0.0
+    next_embed_check = 0.0
     while True:
         if discovery_every_hours and time.monotonic() >= next_discovery_check:
             await _queue_discovery(context, discovery_every_hours)
             next_discovery_check = time.monotonic() + DISCOVERY_CHECK_SECONDS
+        if embed_model and time.monotonic() >= next_embed_check:
+            await _queue_embeddings(context, embed_model)
+            next_embed_check = time.monotonic() + embed_check_seconds
         if stop.is_set():
             break
         try:
@@ -177,6 +217,12 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
     engine = create_db_engine(settings)
     # Created only when discovery is switched on, so a worker with it off cannot reach the internet.
     http = httpx.AsyncClient(timeout=30.0) if settings.filings_discovery else None
+    # Likewise Bedrock: without the switch there is no client, and nothing can spend money.
+    embedder = (
+        BedrockEmbedder(model=settings.embedding_model, client=bedrock_client(settings.aws_region))
+        if settings.embeddings_enabled
+        else None
+    )
     context = WorkerContext(
         session_factory=create_session_factory(engine),
         blob_store=FilesystemBlobStore(settings.blob_root),
@@ -184,6 +230,9 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
         http=http,
         filings_max_bytes=settings.filings_max_bytes,
         filings_years=settings.filings_years,
+        embedder=embedder,
+        embedding_token_budget=settings.embedding_token_budget,
+        embedding_concurrency=settings.embedding_concurrency,
     )
     stop = asyncio.Event()
     for signal_number in (signal.SIGINT, signal.SIGTERM):
@@ -195,6 +244,7 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
             stop,
             poll_seconds=settings.worker_poll_seconds,
             discovery_every_hours=settings.filings_refresh_hours if http else None,
+            embed_model=embedder.model if embedder else None,
         )
     finally:
         if http is not None:

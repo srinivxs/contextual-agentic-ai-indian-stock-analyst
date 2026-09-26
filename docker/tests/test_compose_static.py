@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from helpers import BACKEND, FRONTEND, local_secret_values
-from stack import COMPOSE_FILE, Stack
+from stack import COMPOSE_FILE, COMPOSE_VARIABLES, Stack
 
 APP_SERVICES = {"db", "migrate", "api", "worker", "web"}
 
@@ -82,6 +82,16 @@ def test_only_the_database_and_web_publish_ports_and_only_on_loopback(
     (web_port,) = service(model, "web")["ports"]
     assert web_port["target"] == 8080
     assert int(web_port["published"]) == stack.web_port, "the host port must come from WEB_PORT"
+
+
+def test_every_variable_the_compose_file_reads_is_scrubbed_from_test_stacks() -> None:
+    """Otherwise a value exported in the developer's shell (an AWS pass, a switch turned on) would
+    silently reach the isolated test stack. FILINGS_DISCOVERY was missing until P10 caught it."""
+    lines = COMPOSE_FILE.read_text(encoding="utf-8").splitlines()
+    code = " ".join(line for line in lines if not line.lstrip().startswith("#"))
+    used = set(re.findall(r"\$\{([A-Z_][A-Z0-9_]*)", code))
+    assert used, "the pattern found nothing: the test would pass vacuously"
+    assert used <= set(COMPOSE_VARIABLES), sorted(used - set(COMPOSE_VARIABLES))
 
 
 def test_no_service_pins_a_container_name(model: dict[str, Any]) -> None:
@@ -166,6 +176,10 @@ def test_the_worker_gets_the_runtime_role_and_no_login_secrets(
         "APP_ENV",
         "LOG_LEVEL",
         "PYTHONPATH",
+        "EMBEDDINGS_ENABLED",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
     }
     assert set(env) <= allowed, f"unexpected worker environment: {sorted(set(env) - allowed)}"
     assert worker["command"] == ["python", "-m", "app.worker"]
@@ -179,6 +193,20 @@ def test_filing_discovery_is_off_unless_the_developer_switches_it_on(model: dict
     api reads the same switch: it must never queue a check the worker is not able to run."""
     assert service(model, "worker")["environment"]["FILINGS_DISCOVERY"] == "false"
     assert service(model, "api")["environment"]["FILINGS_DISCOVERY"] == "false"
+
+
+def test_embeddings_are_off_and_only_the_worker_may_get_an_aws_pass(
+    model: dict[str, Any],
+) -> None:
+    """P10: nothing calls Bedrock (or spends money) unless switched on. The temporary AWS pass is
+    interpolated from the developer's shell and is empty by default; no other container gets it."""
+    worker = service(model, "worker")["environment"]
+    assert worker["EMBEDDINGS_ENABLED"] == "false"
+    for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+        assert worker[name] == "", name
+    for other in ("db", "migrate", "api", "web"):
+        environment = service(model, other).get("environment") or {}
+        assert not any(key.startswith("AWS_") for key in environment), other
 
 
 def test_only_the_worker_has_the_folder_for_stored_files(model: dict[str, Any]) -> None:

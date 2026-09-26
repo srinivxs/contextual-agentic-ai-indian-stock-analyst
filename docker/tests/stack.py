@@ -49,6 +49,12 @@ COMPOSE_VARIABLES = (
     "APP_ENV",
     "COOKIE_SECURE",
     "LOG_LEVEL",
+    "FILINGS_DISCOVERY",
+    "EMBEDDINGS_ENABLED",
+    # A developer's temporary AWS pass (P10) must never reach a test stack, let alone Bedrock.
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
 )
 
 
