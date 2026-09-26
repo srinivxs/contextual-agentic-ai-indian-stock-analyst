@@ -65,6 +65,11 @@ Bedrock in ap-south-1, 1,024 numbers per text, normalised.
   `ExpiredTokenException`, keep what they made, and are queued again 10 minutes later; the owner
   re-exports and recreates the worker (and api). Only the first full run is long enough to notice;
   a new filing or a search needs seconds. In AWS the task role renews itself, so GL is unaffected.
+- **Also found in that run: the worker died of a segmentation fault** (exit 139, 3 seconds into a
+  job, no trace) and, with no restart rule in Compose, stayed down. It could not be reproduced (480
+  threaded calls through the same client with refused keys ran clean). Compose now restarts the
+  worker (`restart: unless-stopped`, as ECS does in AWS) and sets `PYTHONFAULTHANDLER=1`, so a
+  repeat prints every thread's stack. Interrupted jobs are safe: leases and idempotent writes.
 
 ## Search (P10b)
 

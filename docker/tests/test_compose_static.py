@@ -180,6 +180,7 @@ def test_the_worker_gets_the_runtime_role_and_no_login_secrets(
         "APP_ENV",
         "LOG_LEVEL",
         "PYTHONPATH",
+        "PYTHONFAULTHANDLER",
         "EMBEDDINGS_ENABLED",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
@@ -228,6 +229,16 @@ def test_only_the_worker_has_the_folder_for_stored_files(model: dict[str, Any]) 
     assert ("volume", "blobs", "/data/blobs", False) in mounts, mounts
     assert "blobs" in model["volumes"]
     assert "volumes" not in service(model, "api")
+
+
+def test_a_crashed_worker_comes_back_and_says_where_it_crashed(model: dict[str, Any]) -> None:
+    """Found in P10's first real run: the worker died of a segmentation fault (exit 139) with no
+    trace, and stayed down, so the fingerprint run silently stopped. ECS restarts a stopped
+    container in AWS; locally Compose must do the same. PYTHONFAULTHANDLER makes Python print the
+    stack of every thread if native code ever crashes it again."""
+    worker = service(model, "worker")
+    assert worker.get("restart") == "unless-stopped"
+    assert worker["environment"]["PYTHONFAULTHANDLER"] == "1"
 
 
 def test_the_worker_has_its_own_health_check_not_the_apis(model: dict[str, Any]) -> None:
