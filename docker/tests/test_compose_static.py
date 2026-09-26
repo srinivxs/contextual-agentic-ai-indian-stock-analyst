@@ -152,6 +152,10 @@ def test_the_api_gets_the_runtime_role_and_exactly_the_settings_it_needs(
         "COOKIE_SECURE",
         "LOG_LEVEL",
         "FILINGS_DISCOVERY",
+        "EMBEDDINGS_ENABLED",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
     }
     assert set(env) <= allowed, f"unexpected api environment: {sorted(set(env) - allowed)}"
 
@@ -195,16 +199,19 @@ def test_filing_discovery_is_off_unless_the_developer_switches_it_on(model: dict
     assert service(model, "api")["environment"]["FILINGS_DISCOVERY"] == "false"
 
 
-def test_embeddings_are_off_and_only_the_worker_may_get_an_aws_pass(
+def test_embeddings_are_off_and_only_the_worker_and_api_may_get_an_aws_pass(
     model: dict[str, Any],
 ) -> None:
     """P10: nothing calls Bedrock (or spends money) unless switched on. The temporary AWS pass is
-    interpolated from the developer's shell and is empty by default; no other container gets it."""
-    worker = service(model, "worker")["environment"]
-    assert worker["EMBEDDINGS_ENABLED"] == "false"
-    for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
-        assert worker[name] == "", name
-    for other in ("db", "migrate", "api", "web"):
+    interpolated from the developer's shell and is empty by default. The worker makes the
+    fingerprints, the api one per search question; nothing else gets it, least of all migrate
+    (admin credentials) or web."""
+    for name in ("worker", "api"):
+        environment = service(model, name)["environment"]
+        assert environment["EMBEDDINGS_ENABLED"] == "false", name
+        for key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+            assert environment[key] == "", (name, key)
+    for other in ("db", "migrate", "web"):
         environment = service(model, other).get("environment") or {}
         assert not any(key.startswith("AWS_") for key in environment), other
 

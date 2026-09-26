@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
 import { AppShell } from '@/components/AppShell';
+import { SearchBox } from '@/components/SearchBox';
 import { ApiError } from '@/lib/api';
 import {
   documentLabel,
@@ -67,7 +68,10 @@ async function readShelves(): Promise<Loaded> {
     );
     return { ok: true, shelves };
   } catch (error) {
-    return { ok: false, unauthorized: error instanceof ApiError && error.status === 401 };
+    return {
+      ok: false,
+      unauthorized: error instanceof ApiError && error.status === 401,
+    };
   }
 }
 
@@ -138,6 +142,14 @@ function StockPanel({ shelf, onCheck }: { shelf: Shelf; onCheck: () => void }) {
       className="doc-panel"
     >
       <Freshness check={shelf.check} onCheck={onCheck} />
+      {groups.length > 0 && (
+        // Keyed by stock, so switching tabs starts a fresh search for the new one.
+        <SearchBox
+          key={shelf.stock.symbol}
+          symbol={shelf.stock.symbol}
+          stockName={shelf.stock.name}
+        />
+      )}
       {groups.length === 0 ? (
         <p className="muted empty">No documents yet.</p>
       ) : (

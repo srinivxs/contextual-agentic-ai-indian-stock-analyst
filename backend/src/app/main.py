@@ -12,13 +12,14 @@ import httpx
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import auth, documents, filing_checks, health, stocks
+from app.api import auth, documents, filing_checks, health, search, stocks
 from app.api.middleware import NoStoreMiddleware, RequestContextMiddleware
 from app.auth.jwks import JwksCache
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.db.engine import create_db_engine, create_session_factory
+from app.embeddings import BedrockEmbedder, bedrock_client
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -52,6 +53,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = create_session_factory(engine)
     app.state.http_client = http_client
     app.state.jwks = JwksCache(client=http_client)
+    # Search turns each question into a fingerprint on Bedrock (P10b). Without the switch there is
+    # no client at all, so nothing here can call AWS or spend money. Building it makes no request.
+    app.state.embedder = (
+        BedrockEmbedder(model=settings.embedding_model, client=bedrock_client(settings.aws_region))
+        if settings.embeddings_enabled
+        else None
+    )
 
     app.add_middleware(NoStoreMiddleware)
     app.add_middleware(RequestContextMiddleware)
@@ -61,4 +69,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(stocks.router)
     app.include_router(documents.router)
     app.include_router(filing_checks.router)
+    app.include_router(search.router)
     return app

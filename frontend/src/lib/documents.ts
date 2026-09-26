@@ -71,13 +71,17 @@ export async function listAllDocuments(symbol: string): Promise<StockDocument[]>
 const OFFICIAL_PREFIX = 'https://www.bseindia.com/';
 
 /**
- * Where the official filing lives, for a document fetched from BSE (ADR 018). The server already
- * only records BSE addresses; checking again here means a bad value can never become a
- * `javascript:` or look-alike link in the page.
+ * An address we are willing to link to: an https BSE one (ADR 018). The server already only
+ * records BSE addresses; checking again here means a bad value can never become a `javascript:`
+ * or look-alike link in the page.
  */
-export function officialLink(document: StockDocument): string | null {
-  const url = document.source_url;
+export function officialUrl(url: string | null): string | null {
   return url !== null && url.startsWith(OFFICIAL_PREFIX) ? url : null;
+}
+
+/** Where the official filing lives, for a document fetched from BSE. */
+export function officialLink(document: StockDocument): string | null {
+  return officialUrl(document.source_url);
 }
 
 /** True while the worker still has something to do, which is when the page keeps refreshing. */

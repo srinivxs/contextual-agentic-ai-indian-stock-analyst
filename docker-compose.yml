@@ -101,6 +101,12 @@ services:
       # The same switch as the worker's: with it on, a follow or the "Check for new filings" button
       # queues a check; with it off, the api queues nothing the worker could not run (ADR 018).
       FILINGS_DISCOVERY: ${FILINGS_DISCOVERY:-false}
+      # Search turns each question into a fingerprint on Bedrock (P10b): the same switch and the same
+      # temporary pass as the worker (see there). Empty by default.
+      EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     # No file storage: the api only reads document metadata from the database. The worker alone
     # writes and reads the stored PDFs (uploads were removed in P9d).
     depends_on:

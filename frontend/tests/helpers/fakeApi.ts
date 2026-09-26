@@ -55,6 +55,32 @@ export const demoDocument = (overrides: Partial<FakeDocument> = {}): FakeDocumen
   ...overrides,
 });
 
+export type FakeHit = {
+  symbol: string;
+  document_id: number;
+  title: string;
+  kind: 'transcript' | 'presentation' | 'annual_report' | 'announcement' | null;
+  period: string | null;
+  page: number;
+  excerpt: string;
+  source_url: string | null;
+  score: number;
+};
+
+/** A fictional DemoCo search result; override any field. */
+export const demoHit = (overrides: Partial<FakeHit> = {}): FakeHit => ({
+  symbol: 'DEMOA',
+  document_id: 1,
+  title: 'DEMOA earnings call transcript, Jul 2026',
+  kind: 'transcript',
+  period: 'Jul 2026',
+  page: 7,
+  excerpt: 'Employee attrition at DemoCo fell this quarter.',
+  source_url: 'https://www.bseindia.com/xml-data/corpfiling/AttachHis/0000.pdf',
+  score: 0.61,
+  ...overrides,
+});
+
 export type FakeCheck = {
   enabled: boolean;
   checking: boolean;
@@ -79,6 +105,10 @@ export type Options = {
   pageSize?: number;
   /** Each stock's filing-check status; anything left out is enabled, idle, never checked. */
   checks?: Record<string, Partial<FakeCheck>>;
+  /** What every search returns (the fake does not rank anything). */
+  searchHits?: FakeHit[];
+  /** Search switched off on the server (409). */
+  searchOff?: boolean;
 };
 
 export type FakeApi = {
@@ -147,6 +177,10 @@ export function installFakeApi(options: Options = {}): FakeApi {
       const items = all.slice(0, limit);
       const more = all.length > limit;
       return json(200, { items, next_cursor: more ? (items.at(-1)?.id ?? null) : null });
+    }
+    if (key.startsWith('GET /api/v1/search?')) {
+      if (options.searchOff) return envelope(409, 'conflict');
+      return json(200, { items: options.searchHits ?? [] });
     }
     const checking = /^(GET|POST) \/api\/v1\/stocks\/([^/]+)\/filings\/check$/.exec(key);
     if (checking) {

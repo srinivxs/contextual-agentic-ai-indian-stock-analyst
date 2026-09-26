@@ -45,3 +45,10 @@ async def test_there_is_no_way_to_add_change_or_remove_a_document(
 
     assert response.status_code == 405
     assert "error" in response.json()
+
+
+async def test_searching_needs_a_session(client: httpx.AsyncClient) -> None:
+    response = await client.get("/api/v1/search", params={"q": "revenue"})
+
+    assert response.status_code == 401
+    assert response.headers["cache-control"] == "no-store"

@@ -84,12 +84,36 @@ describe('the documents page', () => {
     expect(await screen.findByText('1 page')).toBeInTheDocument();
   });
 
+  it('offers a search of the open stock’s filings, and a fresh one after switching', async () => {
+    const beta = demoDocument({ id: 9, symbol: 'DEMOB', period: 'Jan 2026' });
+    installFakeApi({ documents: [...ALPHA_FILINGS, beta] });
+    render(<DocumentsView />);
+
+    const alpha = await screen.findByRole('searchbox', {
+      name: `Search ${STOCKS[0]?.name}’s filings`,
+    });
+    await userEvent.type(alpha, 'attrition');
+    await userEvent.click(screen.getByRole('tab', { name: new RegExp(STOCKS[1]?.name ?? '') }));
+
+    const second = screen.getByRole('searchbox', { name: `Search ${STOCKS[1]?.name}’s filings` });
+    expect(second).toHaveValue('');
+  });
+
+  it('offers no search for a stock with no documents yet', async () => {
+    installFakeApi();
+    render(<DocumentsView />);
+    await screen.findByText(/no documents yet/i);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+  });
+
   it('switches to another stock', async () => {
     const beta = demoDocument({ id: 9, symbol: 'DEMOB', period: 'Jan 2026' });
     installFakeApi({ documents: [...ALPHA_FILINGS, beta] });
     render(<DocumentsView />);
 
-    await userEvent.click(await screen.findByRole('tab', { name: new RegExp(STOCKS[1]?.name ?? '') }));
+    await userEvent.click(
+      await screen.findByRole('tab', { name: new RegExp(STOCKS[1]?.name ?? '') }),
+    );
 
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName(STOCKS[1]?.name ?? '');
     expect(screen.getByRole('link', { name: 'Jan 2026' })).toBeInTheDocument();
@@ -106,7 +130,12 @@ describe('the documents page', () => {
     installFakeApi({
       documents: [
         demoDocument({ id: 1, status: 'processing', period: 'Jul 2026' }),
-        demoDocument({ id: 2, status: 'failed', period: 'Apr 2026', failure_reason: 'No text found.' }),
+        demoDocument({
+          id: 2,
+          status: 'failed',
+          period: 'Apr 2026',
+          failure_reason: 'No text found.',
+        }),
       ],
     });
     render(<DocumentsView />);
@@ -118,7 +147,9 @@ describe('the documents page', () => {
 
   it('shows a document with no kind or address under its title, as plain text', async () => {
     installFakeApi({
-      documents: [demoDocument({ title: 'DemoCo filing', kind: null, period: null, source_url: null })],
+      documents: [
+        demoDocument({ title: 'DemoCo filing', kind: null, period: null, source_url: null }),
+      ],
     });
     render(<DocumentsView />);
 

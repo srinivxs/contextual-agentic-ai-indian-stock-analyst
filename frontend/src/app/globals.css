@@ -384,3 +384,44 @@ p {
     text-align: left;
   }
 }
+
+/* "Search the filings" (P10b): the box, then the passages found, each under its filing and page. */
+.search {
+  margin-bottom: 1rem;
+}
+
+.search-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.search-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.search-form input:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: 1px;
+}
+
+.hits {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.hit {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hit-excerpt {
+  margin: 0.25rem 0 0;
+  line-height: 1.5;
+}

@@ -60,3 +60,21 @@ Bedrock in ap-south-1, 1,024 numbers per text, normalised.
   **adaptive** retry mode (a client-side rate limiter that slows down on throttling, 10 attempts),
   and a batch now **keeps the fingerprints it already paid for** when one call in it is refused;
   the job is retried for the rest. At that quota the first full run takes at least 12 minutes.
+- **Found in the same run: the local pass lasts about 15 minutes.** `aws login` renews its own
+  credentials, but the copy exported into Compose is a snapshot. When it expires, jobs fail with
+  `ExpiredTokenException`, keep what they made, and are queued again 10 minutes later; the owner
+  re-exports and recreates the worker (and api). Only the first full run is long enough to notice;
+  a new filing or a search needs seconds. In AWS the task role renews itself, so GL is unaffected.
+
+## Search (P10b)
+
+`GET /api/v1/search?q=<question>[&symbol=TCS]`, signed in only. Checks before anything costs money:
+the question (3 to 300 characters) and symbol (422), the switch (409), the stock exists (404).
+Then one Bedrock call for the question's fingerprint, then SQL: completed filings, this model's
+fingerprints, the 50 closest by cosine distance (`<=>`, exact). `app/retrieval.py` reorders them
+with three plain rules: a recency bonus of at most 0.02 (a filing from the last year +0.02, the
+year before +0.01; announcements have no date and get none), at most two passages per filing, and
+a paragraph found in two filings shown once. The top 5 come back as about 300-character excerpts
+with the filing, page and official BSE link (the UI opens it at `#page=N`). Bedrock failing gives a
+plain 503; the AWS error text and the question are never logged or returned.
+
