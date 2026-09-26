@@ -101,15 +101,18 @@ def _budget_error(budget: int) -> JobCannotSucceed:
     )
 
 
-async def _embed_all(embedder: Embedder, texts: Sequence[str], concurrency: int) -> list[Embedding]:
-    """A batch of texts, at most ``concurrency`` calls at a time. Any failure fails the batch."""
+async def _embed_all(
+    embedder: Embedder, texts: Sequence[str], concurrency: int
+) -> list[Embedding | BaseException]:
+    """A batch of texts, at most ``concurrency`` calls at a time. Each result is a fingerprint or
+    the error for that text: one refused call must not throw away the others, already paid for."""
     gate = asyncio.Semaphore(concurrency)
 
     async def one(value: str) -> Embedding:
         async with gate:
             return await embedder.embed(value)
 
-    return list(await asyncio.gather(*(one(value) for value in texts)))
+    return list(await asyncio.gather(*(one(value) for value in texts), return_exceptions=True))
 
 
 async def embed_document(
@@ -134,11 +137,16 @@ async def embed_document(
         if spent >= budget_tokens:
             raise _budget_error(budget_tokens)
         batch = missing[start : start + EMBED_BATCH]
-        embeddings = await _embed_all(embedder, [row.text for row in batch], concurrency)
+        results = await _embed_all(embedder, [row.text for row in batch], concurrency)
+        made = [
+            (row, result)
+            for row, result in zip(batch, results, strict=True)
+            if isinstance(result, Embedding)
+        ]
         async with session_factory() as db:
             if not await still_mine(db, job):
                 return  # another worker has this job now; it will do the rest
-            for row, embedding in zip(batch, embeddings, strict=True):
+            for row, embedding in made:
                 await db.execute(
                     _INSERT,
                     {
@@ -149,7 +157,10 @@ async def embed_document(
                     },
                 )
             await db.commit()
-        spent += sum(embedding.tokens for embedding in embeddings)
+        spent += sum(embedding.tokens for _, embedding in made)
+        errors = [result for result in results if isinstance(result, BaseException)]
+        if errors:
+            raise errors[0]  # kept what worked; the queue retries the rest later
 
     async with session_factory() as db:
         if await still_mine(db, job):

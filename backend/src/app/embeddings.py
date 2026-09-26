@@ -46,8 +46,10 @@ def bedrock_client(region: str) -> Any:
     config = Config(
         connect_timeout=5,
         read_timeout=30,
-        # boto3's own retries absorb brief throttling; the job queue retries anything longer.
-        retries={"max_attempts": 3, "mode": "standard"},
+        # "adaptive": on "too many requests" boto3 slows its own sending rate as well as retrying.
+        # Found in the first real run: this account's Titan quota is about 300,000 tokens a
+        # minute, and 3 quick retries were not enough. The job queue retries anything longer.
+        retries={"total_max_attempts": 10, "mode": "adaptive"},
     )
     return boto3.client("bedrock-runtime", region_name=region, config=config)
 

@@ -55,3 +55,8 @@ Bedrock in ap-south-1, 1,024 numbers per text, normalised.
   re-embedding per `demo-up` (cents) and restoring from a snapshot.
 - Titan V2 takes one text per call, so the first run makes about 16,000 calls: roughly 10 to 20
   minutes at 4 at a time.
+- **Found in the first real run (2026-09-27):** this account's Titan quota is about 300,000 tokens
+  a minute, and AWS answered `ThrottlingException` after the first minute. Two changes: boto3's
+  **adaptive** retry mode (a client-side rate limiter that slows down on throttling, 10 attempts),
+  and a batch now **keeps the fingerprints it already paid for** when one call in it is refused;
+  the job is retried for the rest. At that quota the first full run takes at least 12 minutes.

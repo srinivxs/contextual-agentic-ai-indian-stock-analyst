@@ -288,18 +288,28 @@ async def test_reaching_the_cap_midway_keeps_what_was_done_and_stops(
 async def test_a_transient_failure_is_retried_and_later_finishes(
     session_factory: Factory, admin_engine: AsyncEngine, tmp_path: Path
 ) -> None:
-    """Throttling or an expired pass: the job goes back in the queue with a backoff."""
+    """Throttling or an expired pass: the job goes back in the queue with a backoff. What the
+    batch already paid for is kept (found in the first real run: AWS throttled one call in 32 and
+    the other 31 fingerprints were thrown away)."""
     await add_document(admin_engine, 1, ["DemoCo revenue grew", "a throttled paragraph"])
     await queue(session_factory)
+    first = FakeEmbedder(fail_on="throttled")
 
-    await run_once(context_for(session_factory, tmp_path, FakeEmbedder(fail_on="throttled")))
+    await run_once(context_for(session_factory, tmp_path, first))
     [(status, error)] = await rows(admin_engine, "SELECT status, last_error FROM jobs")
     assert status == "pending"
     assert "RuntimeError" in error
+    assert len(first.calls) == 2
+    assert await rows(admin_engine, "SELECT content_hash FROM embeddings") == [
+        (sha("DemoCo revenue grew"),)
+    ]  # the paid-for fingerprint is kept
+
+    again = FakeEmbedder()
 
     async with admin_engine.begin() as connection:  # the backoff has passed
         await connection.execute(text("UPDATE jobs SET run_after = now()"))
-    await drain(context_for(session_factory, tmp_path, FakeEmbedder()))
+    await drain(context_for(session_factory, tmp_path, again))
+    assert again.calls == ["a throttled paragraph"]  # only what is still missing
     assert await rows(admin_engine, "SELECT status FROM jobs") == [("completed",)]
     assert await rows(admin_engine, "SELECT count(*) FROM embeddings") == [(2,)]
 

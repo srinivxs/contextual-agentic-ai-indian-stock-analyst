@@ -90,6 +90,15 @@ def test_the_client_is_for_bedrock_runtime_in_the_chosen_region() -> None:
     assert client.meta.service_model.service_name == "bedrock-runtime"
 
 
+def test_the_client_slows_itself_down_when_aws_says_too_many_requests() -> None:
+    """Found in the first real run: this account's Titan quota is about 300,000 tokens a minute,
+    and 3 quick retries were not enough. "adaptive" mode adds a client-side rate limiter that
+    backs off on throttling, with more attempts before it gives up."""
+    retries = bedrock_client("ap-south-1").meta.config.retries
+    assert retries["mode"] == "adaptive"
+    assert retries["total_max_attempts"] >= 8
+
+
 def test_a_vector_is_written_the_way_pgvector_reads_it() -> None:
     assert vector_literal([0.5, -1.0, 2.25e-05]) == "[0.5,-1.0,2.25e-05]"
 
