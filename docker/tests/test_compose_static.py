@@ -183,6 +183,7 @@ def test_the_worker_gets_the_runtime_role_and_no_login_secrets(
         "PYTHONFAULTHANDLER",
         "EMBEDDINGS_ENABLED",
         "EXTRACTION_ENABLED",
+        "EXTRACTION_BUDGET_USD",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
@@ -237,6 +238,8 @@ def test_reading_filings_with_the_llm_is_off_unless_switched_on(model: dict[str,
     api has no such switch: it never calls the LLM in P11."""
     assert service(model, "worker")["environment"]["EXTRACTION_ENABLED"] == "false"
     assert "EXTRACTION_ENABLED" not in service(model, "api")["environment"]
+    # The owner's approved cap unless set lower for a first test run (a cent, say).
+    assert service(model, "worker")["environment"]["EXTRACTION_BUDGET_USD"] == "2.00"
 
 
 def test_a_crashed_worker_comes_back_and_says_where_it_crashed(model: dict[str, Any]) -> None:
