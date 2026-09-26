@@ -256,7 +256,9 @@ def growth_yoy(rows: list[FactRow], metric: str) -> Derived:
     # Every comparable (prior, current) pair WITHIN ONE KIND OF SOURCE (found in the first real
     # run: an annual report's figure against screener.in's for the year before measured a change
     # of definitions, not growth), with how much we prefer it: a full year over a quarter, then
-    # the latest, then the best-ranked source, then consolidated, then INR.
+    # the latest, then the whole group (consolidated) over the parent alone, then the best-ranked
+    # source, then INR. Basis before source: on the real data Reliance's annual reports gave only
+    # a standalone pair (-1.6%), screener.in a consolidated one (+9.7%); a reader means the group.
     pairs: list[tuple[tuple[bool, int, int, int, int, int], FactRow, FactRow]] = []
     for source, rank in SOURCE_RANK.items():
         chosen = choose_all([row for row in rows if row.metric == metric and row.source == source])
@@ -273,8 +275,8 @@ def growth_yoy(rows: list[FactRow], metric: str) -> Derived:
                 quarter == 0,
                 year,
                 quarter,
-                -rank,
                 -BASIS_PREFERENCE.index(later.basis),
+                -rank,
                 -CURRENCY_PREFERENCE.index(later.currency),
             )
             pairs.append((preference, earlier.fact, later))

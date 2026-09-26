@@ -350,6 +350,20 @@ def test_growth_prefers_the_best_ranked_source_that_has_a_pair() -> None:
     assert "annual reports" in result.reason
 
 
+def test_growth_prefers_the_whole_group_over_a_better_ranked_source() -> None:
+    """Found on the real data: Reliance's annual reports gave a standalone pair (the parent alone,
+    -1.6%) and screener.in a consolidated one (the group, +9.7%); a reader means the group."""
+    rows = [
+        fact(1, "532", period="FY2025", basis="standalone", source="annual_report"),
+        fact(2, "524", period="FY2026", basis="standalone", source="annual_report"),
+        fact(3, "963", period="FY2025", basis="consolidated", source="screener"),
+        fact(4, "1056", period="FY2026", basis="consolidated", source="screener"),
+    ]
+    result = growth_yoy(rows, "revenue")
+    assert (result.value, result.fact_ids) == (Decimal("9.7"), (3, 4))
+    assert "consolidated figures from screener.in" in result.reason
+
+
 def test_growth_is_rounded_to_one_decimal_and_can_be_negative() -> None:
     up = growth_yoy([fact(1, "1000", period="FY2025"), fact(2, "1234.56")], "revenue")
     assert up.value == Decimal("23.5")  # 23.456
