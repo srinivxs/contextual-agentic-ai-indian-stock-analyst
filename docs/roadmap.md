@@ -33,7 +33,7 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | P7 | Terraform (cost table first) | ✅ done (ADR 015): P7a bootstrap + state bucket; P7b network; P7c database, secrets, registry, IAM; P7d load balancer and ECS; P7e1 the persistent edge; P7e2 production mode and the live drill |
 | P8 | CI/CD → **Gate A: login and follow live on AWS** | ✅ done (ADRs 016, 017): P8a registry + GitHub OIDC; P8b checks + image; P8c deploy job; demo scripts; **Gate A passed 2026-09-23** |
 | P9 | Document ingestion core | ✅ done locally (ADR 018): P9a store + dedupe; P9b worker, PDF text, chunks; P9c automatic BSE filings; P9d Documents page, three years, follow/check trigger, uploads removed. AWS part moved to GL |
-| P10 | Embeddings and retrieval | |
+| P10 | Embeddings and retrieval | ✅ done locally (ADR 019): P10a fingerprints + token cap; P10b search API and box; first real run about $0.07 |
 | P11 | Fact and event extraction, derived values | |
 | P12 | Grounded chat (LangGraph) → **Gate B: cited RAG chat working** (locally; live at GL) | |
 | P13 | Investor memory | |
@@ -260,6 +260,8 @@ leaves a real product.
   locally, then go live once: one itemised cost approval, one set of applies, one live test.
   Terraform for each piece may be written and tested offline in its own phase, but nothing is
   applied until GL.
+- **Build (from P10):** Bedrock permissions (`bedrock:InvokeModel` on Titan V2) for the ECS task
+  role, `EMBEDDINGS_ENABLED` on for api and worker, and the re-fingerprinting after `demo-up`.
 - **Build (from P9):** the S3 `BlobStore` and a private documents bucket; the `worker` container in
   the ECS task (ADR 008) with the runtime database role, no Google or session secrets, and access to
   that bucket only; a larger task (planned 0.5 vCPU / 1 GB, cost approved at GL); `FILINGS_DISCOVERY`
