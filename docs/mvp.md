@@ -72,7 +72,8 @@ The dataset is intentionally small and **real**.
 7. They ask something the data cannot support and get **"I don't have that in the data"**, not a guess.
 8. "Match me" returns, per stock, *match / partial / no match / not enough data*, each reason citing a
    fact. It says "not assessable" where that is true (debt for a bank; value and momentum: no prices).
-9. All money is in INR (₹); an answer containing another currency is rejected.
+9. Money is shown in the currency the filing reports, labelled and never converted (₹ for almost
+   everything; a figure the company states only in US$ is shown as reported, ADR 020).
 
 **Engineering**
 
