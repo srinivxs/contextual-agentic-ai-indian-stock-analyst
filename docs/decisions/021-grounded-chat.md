@@ -34,7 +34,8 @@ passages it reads are untrusted text (a filing could contain instructions).
    citation, cites an ID that does not exist, contains a number that is not in the evidence it
    cites (so any computed, rounded or converted number fails), shows an amount in a currency its
    evidence does not use, contains a web address, is over 600 characters, cites more than 5 IDs,
-   or cites facts or computed values with numbers but shows none of them (`figure_missing`, P12b).
+   cites facts or computed values with numbers but shows none of them (`figure_missing`, P12b),
+   or cites one measure for two periods from different sources (`mixed_sources`, P12c).
    A refused answer gets **one retry**, told only the problem codes; a second refusal abstains.
 6. **Render is code.** Claims become text with `[n]` markers; each marker resolves to a stored row
    (filing and page with its official BSE link, screener.in section/row/column, or the derived value
@@ -76,6 +77,14 @@ yet showed four faults, all fixed in P12b:
   ₹48,553 crore (an annual-report passage, the shareholders' share), with no word on why. Both
   are true. Fix: a prompt rule (prefer the fact; if both, say they measure different things).
   Code cannot check this one.
+
+The second run (same questions plus two more) was grounded throughout: every judgment showed its
+figures, HDFC Bank's leverage was not compared, the news and its sentiment were used, and TCS's
+FY2025 profit came back once. One subtle fault remained, fixed in P12c: Reliance's revenue "rise"
+paired the annual report's FY2025 figure (₹9,80,136 crore) with screener.in's FY2026 (₹10,55,780
+crore), although screener.in's own FY2025 is ₹9,62,820 crore: the two count revenue differently.
+Fix: each fact line names its source, and a claim citing one measure for two periods from
+different sources is refused (`mixed_sources`); the growth value compares like with like.
 
 ## What it does not prove (the known limits)
 

@@ -4,6 +4,9 @@ Every number in a claim must appear in the evidence the claim cites, in the same
 cited ID must exist; every claim must cite something; no claim may write an address.
 """
 
+from dataclasses import replace
+from typing import Literal
+
 import pytest
 
 from app.chat.answer_check import (
@@ -128,6 +131,41 @@ def test_a_judgment_resting_on_figures_must_show_one_of_them() -> None:
 def test_a_figure_from_a_passage_does_not_stand_in_for_the_cited_facts() -> None:
     claim = Claim("DemoCo has 1,800 offices and stable profits.", ("N2", "F1"))
     assert codes(claim) == ["figure_missing"]
+
+
+def fact(
+    item_id: str, text: str, period: str, source: Literal["filing", "screener"]
+) -> EvidenceItem:
+    return replace(
+        item(item_id, text), source=source, metric="revenue_from_operations", period=period
+    )
+
+
+REVENUE = [
+    fact("F11", "RELIANCE · Revenue · FY2025 · consolidated · ₹9,80,136 crore", "FY2025", "filing"),
+    fact(
+        "F12", "RELIANCE · Revenue · FY2026 · consolidated · ₹10,55,780 crore", "FY2026", "screener"
+    ),
+    fact("F13", "RELIANCE · Revenue · FY2024 · consolidated · ₹9,14,472 crore", "FY2024", "filing"),
+]
+
+
+def test_one_measure_over_time_must_come_from_one_source() -> None:
+    """P12b: a real answer paired an annual report's FY2025 revenue with screener.in's FY2026
+    figure, and the two count revenue differently (screener.in's own FY2025 was 1.8% lower), so
+    the rise it implied was not like with like. The growth value (D#) compares like with like."""
+    mixed = Claim("Revenue rose from ₹9,80,136 crore to ₹10,55,780 crore.", ("F11", "F12"))
+    assert check_answer([mixed], REVENUE) == [
+        Problem(
+            "mixed_sources",
+            0,
+            "revenue_from_operations over time from different sources; cite the growth value",
+        )
+    ]
+    same = Claim("Revenue rose from ₹9,14,472 crore to ₹9,80,136 crore.", ("F13", "F11"))
+    assert check_answer([same], REVENUE) == []
+    one_year = Claim("Revenue was ₹10,55,780 crore.", ("F12",))
+    assert check_answer([one_year], REVENUE) == []
 
 
 def test_at_most_five_citations_per_claim() -> None:

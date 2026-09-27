@@ -14,6 +14,10 @@ Nothing it writes is trusted. This code decides, and an empty list of problems i
                             not give in dollars; or written as rupees (₹, Rs, INR, crore, lakh)
                             that the cited evidence gives only in dollars
     too_many_citations      more than MAX_CITATIONS IDs on one claim (the form allows 1 to 5)
+    mixed_sources           a claim that cites one measure for two periods from different
+                            sources (an annual report's FY2025 revenue and screener.in's FY2026):
+                            they may count it differently, so the change is not like with like;
+                            the growth value (D#) compares like with like (ADR 020)
     figure_missing          a claim that cites facts or computed values with numbers but shows
                             none of those numbers ("TCS has low leverage" citing ten figures):
                             a judgment must show the figure it rests on, or there is nothing
@@ -168,10 +172,24 @@ def _claim_problems(index: int, claim: Claim, evidence: dict[str, EvidenceItem])
         detail = f"{len(cited_ids)} citations; at most {MAX_CITATIONS}"
         problems.append(Problem("too_many_citations", index, detail))
     problems += _number_problems(index, claim.text, cited)
+    for metric in _mixed_metrics(cited):
+        detail = f"{metric} over time from different sources; cite the growth value"
+        problems.append(Problem("mixed_sources", index, detail))
     if not problems and _figure_missing(claim.text, cited):  # only once nothing else is wrong
         detail = "show at least one figure from the cited facts or values"
         problems.append(Problem("figure_missing", index, detail))
     return problems
+
+
+def _mixed_metrics(cited: list[EvidenceItem]) -> list[str]:
+    """The measures the claim cites for more than one period from more than one source."""
+    periods: dict[str, set[str]] = {}
+    sources: dict[str, set[str]] = {}
+    for item in cited:
+        if item.kind == "fact" and item.metric and item.period:
+            periods.setdefault(item.metric, set()).add(item.period)
+            sources.setdefault(item.metric, set()).add(item.source)
+    return [m for m in periods if len(periods[m]) > 1 and len(sources[m]) > 1]
 
 
 def _figure_missing(text: str, cited: list[EvidenceItem]) -> bool:

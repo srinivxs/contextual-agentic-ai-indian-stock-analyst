@@ -61,6 +61,8 @@ class EvidenceItem:
     label: str
     url: str | None
     quote: str | None
+    metric: str | None = None  # facts only: what and when, for the mixed-sources check
+    period: str | None = None
 
 
 # --- writing numbers ------------------------------------------------------------------------------
@@ -140,6 +142,7 @@ def _derived_wanted(question: Question) -> set[str]:
 def _fact_item(number: int, symbol: str, fact: KeyFact) -> EvidenceItem:
     text = f"{symbol} · {fact.label} · {fact.period} · {fact.basis} · "
     text += format_amount(fact.value, fact.unit)
+    text += f" · {fact.citation.label.split(' · ')[0]}"  # "Annual report", "screener.in"
     if fact.status == "disputed":
         text += " (disputed: another source differs)"
     return EvidenceItem(
@@ -151,6 +154,8 @@ def _fact_item(number: int, symbol: str, fact: KeyFact) -> EvidenceItem:
         label=fact.citation.label,
         url=fact.citation.url,
         quote=fact.citation.quote,
+        metric=fact.metric,
+        period=fact.period,
     )
 
 
@@ -180,7 +185,7 @@ def _derived_item(
         symbol=symbol,
         text=f"{symbol} · {view.label} · {shown} · {view.reason}",
         source="derived",
-        label=f"Computed: {view.label}",
+        label=view.label,  # the page marks it "Computed"
         url=None,
         quote=view.reason,
     )
@@ -213,7 +218,7 @@ def _sentiment_item(number: int, symbol: str, sentiment: Sentiment) -> EvidenceI
         symbol=symbol,
         text=f"{symbol} · News sentiment · {shown}",
         source="derived",
-        label="Computed: News sentiment",
+        label="News sentiment",
         url=None,
         quote="Events of the last year, weighted by impact and halved every 90 days.",
     )

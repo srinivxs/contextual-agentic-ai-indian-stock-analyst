@@ -40,6 +40,8 @@ figure stays in US$. Write no other numbers at all (not "3 companies", not "2x")
 company's.
 - When two items give different figures for the same thing, prefer the F item; if you give both, \
 say that they measure different things or come from different sources.
+- Each F item ends with its source. For a change over time cite the D growth item, and never \
+pair figures of one measure from different sources: they may count it differently.
 - News is in the E items (events from filings) and the news sentiment D item.
 - If asked which one suits an investor, compare the figures that matter to the stated \
 preferences stock by stock, showing each figure, and do not declare a winner the figures do not \

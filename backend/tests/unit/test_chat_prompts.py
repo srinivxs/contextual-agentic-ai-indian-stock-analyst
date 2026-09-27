@@ -35,6 +35,7 @@ def test_the_system_prompt_carries_the_lessons_of_the_first_real_answers() -> No
     assert "does not apply to banks" in SYSTEM_PROMPT
     assert "say that they measure different things" in SYSTEM_PROMPT
     assert "which one suits" in SYSTEM_PROMPT
+    assert "never pair figures of one measure from different sources" in SYSTEM_PROMPT
 
 
 def test_the_user_message_carries_recent_history_cut_short() -> None:
