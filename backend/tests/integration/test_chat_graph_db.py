@@ -32,9 +32,9 @@ INJECTION = (
 )
 
 
-async def seed(engine: AsyncEngine, *, passages: list[str] | None = None) -> None:
+async def seed(engine: AsyncEngine, *, passages: list[str] | None = None, events: int = 0) -> None:
     """TCS: an annual report stating FY2026 net profit (a filing fact), screener's FY2025 figure,
-    and optionally passages with their fake fingerprints."""
+    optionally passages with their fake fingerprints, and optionally events from that report."""
     fake = FakeEmbedder()
     async with engine.begin() as connection:
         document = (
@@ -69,6 +69,21 @@ async def seed(engine: AsyncEngine, *, passages: list[str] | None = None) -> Non
                 "WHERE symbol = 'TCS'"
             )
         )
+        for n, event_type in enumerate(("earnings_results", "dividend", "credit_rating")[:events]):
+            await connection.execute(
+                text(
+                    "INSERT INTO events (stock_id, document_id, page_number, event_type, "
+                    "sentiment, impact, event_date, date_source, summary, quote) SELECT "
+                    "stock_id, id, 3, :type, 'positive', 'high', :day, 'document', :summary, "
+                    "'DemoCo reported.' FROM documents WHERE id = :id"
+                ),
+                {
+                    "id": document,
+                    "type": event_type,
+                    "day": date(2026, 9, 1 + n),
+                    "summary": f"DemoCo {event_type.replace('_', ' ')} news.",
+                },
+            )
         for ordinal, passage in enumerate(passages or []):
             digest = hashlib.sha256(passage.encode()).hexdigest()
             await connection.execute(
@@ -92,7 +107,7 @@ def evidence_id(user: str, *needles: str) -> str:
     """The ID of the evidence line that contains every needle, read from the prompt as the
     model would."""
     for line in user.splitlines():
-        match = re.match(r"\[([FDN]\d+)\]", line)
+        match = re.match(r"\[([FDNE]\d+)\]", line)
         if match and all(needle in line for needle in needles):
             return match.group(1)
     raise AssertionError(f"no evidence line with {needles}")
@@ -324,3 +339,49 @@ async def test_with_search_switched_off_it_answers_from_the_facts_alone(
 
     assert reply.status == "answered"
     assert "[N1]" not in llm.calls[0][1]
+
+
+async def test_news_questions_get_the_events_and_their_sentiment(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    """P12b: "recent news" once reached the model with no events at all. Now a question about
+    news sees the stock's events (untrusted, inside <document>) and its news sentiment."""
+    await seed(admin_engine, events=3)
+    seen: list[str] = []
+
+    def about_news(system: str, user: str, tool: ToolSpec) -> dict[str, Any]:
+        seen.append(user)
+        eid = evidence_id(user, "credit rating")
+        return {
+            "outcome": "answer",
+            "claims": [{"text": "TCS reported a credit rating event.", "citations": [eid]}],
+        }
+
+    reply = await ask(session_factory, FakeLlm(about_news), "What is the recent news on TCS?")
+    assert reply.status == "answered"
+    assert "TCS · 03 Sep 2026 · credit rating · positive · high impact" in seen[0]
+    assert "TCS · News sentiment · positive (score 1.0, from 3 events in the last year)" in seen[0]
+    document_part = seen[0].split("<document>", 1)[1]
+    assert "credit rating" in document_part  # events travel as untrusted data
+    assert reply.sources[0].url == f"{BSE}#page=3"
+
+
+async def test_a_judgment_without_its_figures_is_retried_then_refused(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    """P12b: "TCS shows stable growth" citing figures but showing none has nothing the number
+    check can test, so it is refused like an invented number."""
+    await seed(admin_engine)
+
+    def vague(system: str, user: str, tool: ToolSpec) -> dict[str, Any]:
+        fid = evidence_id(user, "Net profit", "FY2026")
+        return {
+            "outcome": "answer",
+            "claims": [{"text": "TCS has stable, strong profits.", "citations": [fid]}],
+        }
+
+    llm = FakeLlm(vague)
+    reply = await ask(session_factory, llm, "How stable is TCS's net profit?")
+    assert reply.status == "abstained"
+    assert len(llm.calls) == 2
+    assert "figure_missing" in llm.calls[1][1]

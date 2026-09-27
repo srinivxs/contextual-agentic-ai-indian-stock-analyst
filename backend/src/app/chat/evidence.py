@@ -7,6 +7,9 @@ Everything the model is shown is an item with an ID, and an answer may only cite
     D1, D2 ...  derived values computed on read (debt to equity, growth, latest dividend),
                 cited as "Computed: ..." with the sentence that says how
     N1, N2 ...  passages of the filings found by search (app/retrieval.py), cited to the page
+    E1, E2 ...  events from the filings (P11), newest first, cited to the filing page; only when
+                the question asks about news or events, together with a D item per stock for
+                the rolling news sentiment (app/derived.py, computed on read)
 
 Each item's ``text`` is one line: what the model reads AND what app/chat/answer_check.py
 checks the answer's numbers against. So a number is written the way a reader would write it:
@@ -21,20 +24,23 @@ What is kept:
   the latest dividend when the dividend is asked, all four when nothing specific is asked. A
   value that is not "ok" is still given (its reason lets the answer say "not applicable for
   banks"), but with no number;
-- passages in the order search ranked them, at most ``max_passages``.
+- passages in the order search ranked them, at most ``max_passages``;
+- events, newest first, at most ``max_events``, one stock at a time in turn.
 
 Passages are text from the filings and therefore untrusted: a filing could contain "ignore your
-instructions". ``evidence_block`` wraps them in <document> tags the text cannot close
+instructions". An event's summary was written by the extraction model from such text, so it is
+untrusted too. ``evidence_block`` wraps both in <document> tags the text cannot close
 (app/extraction_prompts.py's document_block). Facts and derived values are our own lines.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Literal, TypeVar
 
 from app.chat.understand import Question
+from app.derived import Sentiment
 from app.extraction_prompts import document_block
-from app.insights import DerivedView, KeyFact, filing_citation
+from app.insights import DerivedView, KeyFact, StoredEvent, filing_citation, recent_events
 from app.retrieval import Result, excerpt
 
 PASSAGE_CHARS = 600  # the model reads this much of a passage; the source shows EXCERPT_CHARS
@@ -47,8 +53,8 @@ T = TypeVar("T")
 
 @dataclass(frozen=True)
 class EvidenceItem:
-    id: str  # "F1", "D1", "N1"
-    kind: Literal["fact", "derived", "passage"]
+    id: str  # "F1", "D1", "N1", "E1"
+    kind: Literal["fact", "derived", "passage", "event"]
     symbol: str
     text: str  # one line: what the model reads and what the checker verifies numbers against
     source: Literal["filing", "screener", "derived"]
@@ -195,16 +201,54 @@ def _passage_item(number: int, result: Result) -> EvidenceItem:
     )
 
 
+def _sentiment_item(number: int, symbol: str, sentiment: Sentiment) -> EvidenceItem:
+    if sentiment.status == "ok":
+        count = len(sentiment.event_ids)
+        shown = f"{sentiment.label} (score {sentiment.score}, from {count} events in the last year)"
+    else:
+        shown = "not enough recent events to judge"  # no number: nothing to cite as a figure
+    return EvidenceItem(
+        id=f"D{number}",
+        kind="derived",
+        symbol=symbol,
+        text=f"{symbol} · News sentiment · {shown}",
+        source="derived",
+        label="Computed: News sentiment",
+        url=None,
+        quote="Events of the last year, weighted by impact and halved every 90 days.",
+    )
+
+
+def _event_item(number: int, symbol: str, event: StoredEvent) -> EvidenceItem:
+    row = event.row
+    kind = row.event_type.replace("_", " ")
+    text = f"{symbol} · {row.event_date:%d %b %Y} · {kind} · {row.sentiment} · "
+    text += f"{row.impact} impact · {event.summary}"
+    return EvidenceItem(
+        id=f"E{number}",
+        kind="event",
+        symbol=symbol,
+        text=text,
+        source="filing",
+        label=event.citation.label,
+        url=event.citation.url,
+        quote=event.citation.quote,
+    )
+
+
 def build_evidence(
     *,
     question: Question,
     facts: dict[str, list[KeyFact]],
     derived: dict[str, list[DerivedView]],
     passages: list[Result],
+    events: dict[str, list[StoredEvent]] | None = None,
+    sentiment: dict[str, Sentiment] | None = None,
     max_facts: int = 30,
     max_passages: int = 8,
+    max_events: int = 10,
 ) -> list[EvidenceItem]:
-    """Facts first, then derived values, then passages, each kind numbered from 1."""
+    """Facts first, then derived values, then passages, then events, each kind numbered from 1."""
     asked = set(question.metrics)
     fact_groups = [
         [(symbol, f) for f in facts.get(symbol, []) if not asked or f.metric in asked]
@@ -221,20 +265,31 @@ def build_evidence(
     ]
     chosen_passages = [r for r in passages if r.passage.symbol in question.symbols][:max_passages]
 
+    news = question.wants_events
+    moods = [(s, (sentiment or {})[s]) for s in question.symbols if news and s in (sentiment or {})]
+    event_groups = [
+        [(symbol, e) for e in recent_events((events or {}).get(symbol, []), limit=max_events)]
+        for symbol in question.symbols
+    ]
+    chosen_events = _in_turn(event_groups, max_events) if news else []
+
+    derived_items = [
+        *(_derived_item(0, symbol, v, facts.get(symbol, [])) for symbol, v in chosen_views),
+        *(_sentiment_item(0, symbol, mood) for symbol, mood in moods),
+    ]
     return [
         *(_fact_item(n, symbol, f) for n, (symbol, f) in enumerate(chosen_facts, start=1)),
-        *(
-            _derived_item(n, symbol, v, facts.get(symbol, []))
-            for n, (symbol, v) in enumerate(chosen_views, start=1)
-        ),
+        *(replace(item, id=f"D{n}") for n, item in enumerate(derived_items, start=1)),
         *(_passage_item(n, r) for n, r in enumerate(chosen_passages, start=1)),
+        *(_event_item(n, symbol, e) for n, (symbol, e) in enumerate(chosen_events, start=1)),
     ]
 
 
 def evidence_block(items: list[EvidenceItem]) -> str:
     """What the model reads: "[F1] ..." one per line; the passages inside <document> tags."""
-    ours = [f"[{item.id}] {item.text}" for item in items if item.kind != "passage"]
-    theirs = [f"[{item.id}] {item.text}" for item in items if item.kind == "passage"]
+    untrusted = ("passage", "event")
+    ours = [f"[{item.id}] {item.text}" for item in items if item.kind not in untrusted]
+    theirs = [f"[{item.id}] {item.text}" for item in items if item.kind in untrusted]
     if theirs:
         ours.append(document_block("\n".join(theirs)))
     return "\n".join(ours)

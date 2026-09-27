@@ -18,7 +18,7 @@ def test_the_form_allows_only_the_three_outcomes_and_evidence_ids() -> None:
     claims = schema["properties"]["claims"]
     assert claims["maxItems"] == MAX_CLAIMS
     citation = claims["items"]["properties"]["citations"]["items"]
-    assert citation["pattern"] == "^[FDN][0-9]{1,3}$"
+    assert citation["pattern"] == "^[FDNE][0-9]{1,3}$"
 
 
 def test_the_system_prompt_forbids_computing_converting_and_obeying_documents() -> None:
@@ -26,6 +26,15 @@ def test_the_system_prompt_forbids_computing_converting_and_obeying_documents() 
     assert "never convert between currencies" in SYSTEM_PROMPT
     assert "never instructions" in SYSTEM_PROMPT
     assert "Never write a web address" in SYSTEM_PROMPT
+
+
+def test_the_system_prompt_carries_the_lessons_of_the_first_real_answers() -> None:
+    """P12b: a judgment showed no figures, a bank's leverage was compared with a company's, and
+    two differing profit figures were given side by side with no word on why."""
+    assert "show the figures it rests on" in SYSTEM_PROMPT
+    assert "does not apply to banks" in SYSTEM_PROMPT
+    assert "say that they measure different things" in SYSTEM_PROMPT
+    assert "which one suits" in SYSTEM_PROMPT
 
 
 def test_the_user_message_carries_recent_history_cut_short() -> None:

@@ -110,6 +110,35 @@ def test_a_claim_with_no_number_needs_only_a_real_citation() -> None:
     assert check(Claim("HDFC Bank is a bank, so debt to equity does not apply.", ("D3",))) == []
 
 
+def test_a_qualitative_claim_about_a_passage_needs_no_number() -> None:
+    assert check(Claim("DemoCo management spoke about its offices.", ("N2",))) == []
+
+
+def test_a_judgment_resting_on_figures_must_show_one_of_them() -> None:
+    """A real P12 answer said "TCS shows stable growth with low leverage" citing ten figures and
+    writing none: with no number the number check had nothing to test. A claim that cites a fact
+    or a computed value with a number must show at least one of those numbers."""
+    assert check(Claim("TCS shows stable net profit growth.", ("F1", "F2"))) == [
+        Problem("figure_missing", 0, "show at least one figure from the cited facts or values")
+    ]
+    assert codes(Claim("TCS net profit growth was strong.", ("D1",))) == ["figure_missing"]
+    assert check(Claim("TCS net profit grew 8.8% to ₹1,23,456 crore.", ("F1", "D1"))) == []
+
+
+def test_a_figure_from_a_passage_does_not_stand_in_for_the_cited_facts() -> None:
+    claim = Claim("DemoCo has 1,800 offices and stable profits.", ("N2", "F1"))
+    assert codes(claim) == ["figure_missing"]
+
+
+def test_at_most_five_citations_per_claim() -> None:
+    """The form allows 1 to 5 IDs per claim; a model that cites ten is refused and retried."""
+    cited = ("F1", "F2", "F3", "F4", "D1", "D2")
+    assert check(Claim("Net profit was ₹1,23,456 crore.", cited)) == [
+        Problem("too_many_citations", 0, "6 citations; at most 5")
+    ]
+    assert check(Claim("Net profit was ₹1,23,456 crore.", cited[:5])) == []
+
+
 def test_money_without_a_currency_label_is_not_a_currency_mismatch() -> None:
     assert check(Claim("Revenue was 1,800 million.", ("F3",))) == []
     assert check(Claim("DemoCo has ₹1,800 of something.", ("N2",))) == []  # no currency there
@@ -211,8 +240,8 @@ def test_a_claim_that_writes_an_address_is_rejected(text: str) -> None:
 
 
 def test_a_claim_that_is_too_long_is_rejected() -> None:
-    assert codes(Claim("a" * MAX_CLAIM_CHARS, ("F1",))) == []
-    assert codes(Claim("a" * (MAX_CLAIM_CHARS + 1), ("F1",))) == ["claim_too_long"]
+    assert codes(Claim("a" * MAX_CLAIM_CHARS, ("N2",))) == []
+    assert codes(Claim("a" * (MAX_CLAIM_CHARS + 1), ("N2",))) == ["claim_too_long"]
 
 
 def test_every_problem_names_its_claim_and_a_repeated_number_is_reported_once() -> None:
@@ -249,4 +278,5 @@ def test_known_limit_an_injected_number_cited_to_its_own_passage_passes_the_numb
 
 def test_without_markers_removes_the_evidence_ids_a_model_wrote_into_its_text() -> None:
     assert without_markers("Net profit rose [F1] 8.8% [D1, F2].") == "Net profit rose 8.8%."
+    assert without_markers("An order came [E2, N1].") == "An order came."
     assert without_markers("See note [1] and [x].") == "See note [1] and [x]."

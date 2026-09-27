@@ -13,6 +13,11 @@ Nothing it writes is trusted. This code decides, and an empty list of problems i
     currency_mismatch       a number written as dollars (US$, USD, $) that the cited evidence does
                             not give in dollars; or written as rupees (₹, Rs, INR, crore, lakh)
                             that the cited evidence gives only in dollars
+    too_many_citations      more than MAX_CITATIONS IDs on one claim (the form allows 1 to 5)
+    figure_missing          a claim that cites facts or computed values with numbers but shows
+                            none of those numbers ("TCS has low leverage" citing ten figures):
+                            a judgment must show the figure it rests on, or there is nothing
+                            for the number check to test
 
 Numbers are compared as values, with app/fact_validation.py's ``numbers_in``: "1,23,456",
 "123,456", "123456" and "123456.0" are one number, "8.8%" matches "8.8%". They are compared by
@@ -40,9 +45,10 @@ from app.chat.understand import PERIOD_TEXT
 from app.fact_validation import numbers_in, parse_number
 
 MAX_CLAIM_CHARS = 600
+MAX_CITATIONS = 5
 ID_IN_DETAIL = 20  # an unknown ID is the model's text: only this much of it goes in a detail
 
-_MARKERS = re.compile(r"\s*\[[FDN]\d+(?:\s*,\s*[FDN]\d+)*\]")
+_MARKERS = re.compile(r"\s*\[[FDNE]\d+(?:\s*,\s*[FDNE]\d+)*\]")
 _URL = re.compile(r"https?://|www\.", re.IGNORECASE)
 _BARE_PERIOD = re.compile(r"(?<![a-z0-9])(?:q[1-4]|[1-4]q|h[12]|9m)(?![a-z0-9])", re.IGNORECASE)
 _YEAR = re.compile(r"(?<![\d,.])(?:199\d|20\d\d)(?![\d%]|[.,]\d)")
@@ -64,7 +70,7 @@ _RUPEES_AFTER = re.compile(
 @dataclass(frozen=True)
 class Claim:
     text: str
-    citations: tuple[str, ...]  # evidence IDs: "F1", "D2", "N3"
+    citations: tuple[str, ...]  # evidence IDs: "F1", "D2", "N3", "E4"
 
 
 @dataclass(frozen=True)
@@ -158,7 +164,23 @@ def _claim_problems(index: int, claim: Claim, evidence: dict[str, EvidenceItem])
         detail = f"unknown id {unknown[:ID_IN_DETAIL]!r}"
         problems.append(Problem("unknown_citation", index, detail))
     cited = [evidence[cid] for cid in cited_ids if cid in evidence]
-    return problems + _number_problems(index, claim.text, cited)
+    if len(cited_ids) > MAX_CITATIONS:
+        detail = f"{len(cited_ids)} citations; at most {MAX_CITATIONS}"
+        problems.append(Problem("too_many_citations", index, detail))
+    problems += _number_problems(index, claim.text, cited)
+    if not problems and _figure_missing(claim.text, cited):  # only once nothing else is wrong
+        detail = "show at least one figure from the cited facts or values"
+        problems.append(Problem("figure_missing", index, detail))
+    return problems
+
+
+def _figure_missing(text: str, cited: list[EvidenceItem]) -> bool:
+    """True when the cited facts and computed values have numbers and the claim shows none."""
+    figures: set[Decimal] = set()
+    for item in cited:
+        if item.kind in ("fact", "derived"):
+            figures |= _sizes(_checkable(item.text, [item]))
+    return bool(figures) and not (figures & _sizes(_checkable(text, cited)))
 
 
 def check_answer(claims: list[Claim], evidence: list[EvidenceItem]) -> list[Problem]:

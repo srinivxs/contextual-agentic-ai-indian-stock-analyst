@@ -7,8 +7,9 @@
 
 - analyze (code): which stocks, metrics, periods (app/chat/understand.py). No LLM: rule 8.
 - update_memory: a placeholder until P13 (investor memory).
-- retrieve (code): the stocks' chosen facts and derived values (app/insights.py) and the passages
-  closest in meaning (app/retrieval.py), numbered F#, D#, N# (app/chat/evidence.py).
+- retrieve (code): the stocks' chosen facts and derived values (app/insights.py), the passages
+  closest in meaning (app/retrieval.py) and, for news questions, the events and the rolling news
+  sentiment, numbered F#, D#, N#, E# (app/chat/evidence.py).
 - grade (code): no evidence at all means "I don't have that in the data", without an LLM call.
 - generate (LLM): one call, a forced tool filling a fixed form (app/chat/prompts.py).
 - validate (code): every claim cites real evidence and every number is in what it cites
@@ -34,8 +35,9 @@ from app.chat.evidence import EvidenceItem, build_evidence, evidence_block
 from app.chat.prompts import SYSTEM_PROMPT, Outcome, answer_tool, parse_answer, user_message
 from app.chat.render import render
 from app.chat.understand import Question, understand
+from app.derived import Sentiment, rolling_sentiment
 from app.embeddings import Embedder
-from app.insights import DerivedView, KeyFact, derived_views, key_facts
+from app.insights import DerivedView, KeyFact, StoredEvent, derived_views, key_facts
 from app.insights_store import load_stock
 from app.llm import LlmError, StructuredLlm
 from app.retrieval import Result, search
@@ -139,15 +141,25 @@ class GraphChatEngine:
         question = state["understood"]
         facts: dict[str, list[KeyFact]] = {}
         derived: dict[str, list[DerivedView]] = {}
+        events: dict[str, list[StoredEvent]] = {}
+        sentiment: dict[str, Sentiment] = {}
         async with self._session_factory() as db:
             for symbol in question.symbols:
                 stock = await load_stock(db, symbol)
                 if stock is not None:  # pragma: no branch - understand() names only seeded stocks
                     facts[symbol] = key_facts(stock.facts)
                     derived[symbol] = derived_views(stock.facts, is_financial=stock.is_financial)
+                    events[symbol] = stock.events
+                    rows = [event.row for event in stock.events]
+                    sentiment[symbol] = rolling_sentiment(rows, as_of=self._today())
         passages = await self._passages(state["question"], question)
         evidence = build_evidence(
-            question=question, facts=facts, derived=derived, passages=passages
+            question=question,
+            facts=facts,
+            derived=derived,
+            passages=passages,
+            events=events,
+            sentiment=sentiment,
         )
         return {"evidence": evidence}
 
