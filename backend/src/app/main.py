@@ -12,14 +12,16 @@ import httpx
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import auth, documents, filing_checks, health, insights, search, stocks
+from app.api import auth, chat, documents, filing_checks, health, insights, search, stocks
 from app.api.middleware import NoStoreMiddleware, RequestContextMiddleware
 from app.auth.jwks import JwksCache
+from app.chat.graph import GraphChatEngine
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.db.engine import create_db_engine, create_session_factory
 from app.embeddings import BedrockEmbedder, bedrock_client
+from app.llm import BedrockLlm, bedrock_llm_client
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -60,6 +62,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.embeddings_enabled
         else None
     )
+    # The grounded chat (P12): the LangGraph workflow, only when CHAT_ENABLED is on. Without it,
+    # asking answers 409 "Chat is switched off" and nothing can call an LLM or spend. It searches
+    # with the embedder above when search is on, and answers from the facts alone when it is not.
+    # Tests put a fake engine here (tests/fake_chat.py).
+    app.state.chat_engine = (
+        GraphChatEngine(
+            session_factory=app.state.session_factory,
+            embedder=app.state.embedder,
+            llm=BedrockLlm(
+                model=settings.llm_model, client=bedrock_llm_client(settings.aws_region)
+            ),
+        )
+        if settings.chat_enabled
+        else None
+    )
 
     app.add_middleware(NoStoreMiddleware)
     app.add_middleware(RequestContextMiddleware)
@@ -71,4 +88,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(filing_checks.router)
     app.include_router(search.router)
     app.include_router(insights.router)
+    app.include_router(chat.router)
     return app

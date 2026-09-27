@@ -38,6 +38,7 @@ describe('the documents page', () => {
       'href',
       '/documents/',
     );
+    expect(within(main).getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat/');
   });
 
   it('has one tab per stock, with how many documents it has, the first one open', async () => {

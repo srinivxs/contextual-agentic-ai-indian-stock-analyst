@@ -104,6 +104,10 @@ services:
       # Search turns each question into a fingerprint on Bedrock (P10b): the same switch and the same
       # temporary pass as the worker (see there). Empty by default.
       EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}
+      # The grounded chat (P12) asks Nova 2 Lite once or twice per question, with the same
+      # temporary pass, and stops at the owner's approved cap. Off by default.
+      CHAT_ENABLED: ${CHAT_ENABLED:-false}
+      CHAT_BUDGET_USD: ${CHAT_BUDGET_USD:-1.00}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}

@@ -2,10 +2,10 @@
   "backend": {
     "measured_on": "2026-09-27",
     "measure": "sum of the image's unpacked layer sizes (docker history), in MB (10^6 bytes)",
-    "baseline_mb": 277,
-    "compressed_mb_informational": 92,
-    "ceiling_mb": 332,
-    "justification": "Re-measured in P10 when boto3 joined the runtime dependencies (ADR 019): about 277 MB unpacked, about 92 MB compressed (docker save | gzip). Roughly 148 MB is the Debian and Python base image and about 128 MB the locked production virtual environment. Of that, the AWS SDK is about 26 MB (botocore 22 MB of service descriptions, boto3, s3transfer, jmespath, dateutil), SQLAlchemy 23 MB, cryptography 16 MB, asyncpg 11 MB, pypdfium2 (P9) about 6 MB with its PDFium library, plus precompiled bytecode because the runtime filesystem is read-only. The first baseline (2026-09-21, 229 MB) predates pypdfium2 and boto3. The application code, migrations and alembic.ini are under 1 MB. The ceiling is the baseline plus about 20%: enough for ordinary dependency patch updates, tight enough to catch accidental bloat such as a forgotten cache, a dev dependency or a copied directory. Deliberately not optimised further. LangGraph (P12) will grow the image again: raise the ceiling in the same change, re-measure, and rewrite this justification (the test refuses a ceiling more than 25% above the recorded baseline)."
+    "baseline_mb": 336,
+    "compressed_mb_informational": 106,
+    "ceiling_mb": 403,
+    "justification": "Re-measured in P12 when LangGraph joined the runtime dependencies (ADR 021): about 336 MB unpacked, about 106 MB compressed (docker save | gzip). Roughly 148 MB is the Debian and Python base image and the rest the locked production virtual environment. P12 added about 59 MB: langgraph and its checkpoint, prebuilt and sdk packages, langchain-core, langsmith (installed as a langchain-core dependency; tracing stays off because no LANGSMITH variable is ever set), and their native helpers (orjson, ormsgpack, xxhash, zstandard, uuid-utils), plus precompiled bytecode for all of it because the runtime filesystem is read-only. Before that: the AWS SDK about 26 MB (P10), SQLAlchemy 23 MB, cryptography 16 MB, asyncpg 11 MB, pypdfium2 about 6 MB (P9). Earlier baselines: 229 MB (2026-09-21), 277 MB (P10). The application code, migrations and alembic.ini are under 1 MB. The ceiling is the baseline plus 20%: enough for ordinary dependency patch updates, tight enough to catch accidental bloat such as a forgotten cache, a dev dependency or a copied directory. Deliberately not optimised further. The test refuses a ceiling more than 25% above the recorded baseline."
   },
   "frontend": {
     "measured_on": "2026-09-21",

@@ -8,52 +8,27 @@ show and attaches the citations. Amounts travel as strings, so a float never rou
 Nothing here calls an LLM: the page is computed on read from what the worker already verified.
 """
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
-from sqlalchemy import Row, text
 
 from app.api.stocks import Symbol
 from app.auth.deps import current_user
 from app.auth.sessions import CurrentUser
 from app.core.errors import AppError
-from app.derived import EventRow, FactRow, Source, rolling_sentiment
+from app.derived import rolling_sentiment
 from app.insights import (
     Citation,
-    StoredEvent,
-    StoredFact,
     derived_views,
-    filing_citation,
     key_facts,
     recent_events,
-    screener_citation,
 )
-from app.retrieval import filing_date
+from app.insights_store import load_stock
 
 router = APIRouter(prefix="/api/v1", tags=["insights"])
-
-_STOCK = text("SELECT id, symbol, name, is_financial FROM stocks WHERE symbol = :symbol")
-_FACTS = text(
-    """
-    SELECT f.id, f.metric, f.period, f.period_end, f.basis, f.currency, f.unit, f.value,
-           f.source, f.page_number, f.quote, f.source_url, f.source_section, f.source_row,
-           f.source_column, f.updated_at, d.kind, d.period AS document_period, d.title,
-           d.source_url AS document_url
-    FROM facts f LEFT JOIN documents d ON d.id = f.document_id
-    WHERE f.stock_id = :stock AND (f.source = 'screener' OR d.status = 'completed')
-    """
-)
-_EVENTS = text(
-    """
-    SELECT e.id, e.event_type, e.sentiment, e.impact, e.event_date, e.summary, e.quote,
-           e.page_number, d.kind, d.period AS document_period, d.title, d.source_url
-    FROM events e JOIN documents d ON d.id = e.document_id
-    WHERE e.stock_id = :stock AND d.status = 'completed'
-    """
-)
 
 
 class CitationOut(BaseModel):
@@ -116,45 +91,6 @@ def _citation_out(citation: Citation) -> CitationOut:
     return CitationOut(**vars(citation))
 
 
-def _stored_fact(row: Row[Any]) -> StoredFact:
-    source: Source
-    source_date: date | None
-    if row.source == "screener":
-        updated: datetime = row.updated_at
-        source, source_date = "screener", updated.date()
-        citation = screener_citation(
-            row.source_url, row.source_section, row.source_row, row.source_column
-        )
-    else:
-        source, source_date = row.kind or "announcement", filing_date(row.document_period)
-        citation = filing_citation(
-            row.kind, row.document_period, row.title, row.document_url, row.page_number, row.quote
-        )
-    fact = FactRow(
-        id=row.id,
-        metric=row.metric,
-        period=row.period,
-        period_end=row.period_end,
-        basis=row.basis,
-        currency=row.currency,
-        unit=row.unit,
-        value=row.value,
-        source=source,
-        source_date=source_date,
-    )
-    return StoredFact(row=fact, citation=citation)
-
-
-def _stored_event(row: Row[Any]) -> StoredEvent:
-    return StoredEvent(
-        row=EventRow(row.id, row.event_type, row.sentiment, row.impact, row.event_date),
-        summary=row.summary,
-        citation=filing_citation(
-            row.kind, row.document_period, row.title, row.source_url, row.page_number, row.quote
-        ),
-    )
-
-
 def _amount(value: Decimal | None) -> str | None:
     """Plain digits, never scientific notation ("1E+2"): the page accepts only -?digits[.digits]."""
     return None if value is None else format(value, "f")
@@ -165,12 +101,11 @@ async def insights(
     symbol: Symbol, request: Request, user: Annotated[CurrentUser, Depends(current_user)]
 ) -> InsightsOut:
     async with request.app.state.session_factory() as db:
-        stock = (await db.execute(_STOCK, {"symbol": symbol})).one_or_none()
-        if stock is None:
-            # Deliberately does not repeat the symbol the caller sent.
-            raise AppError(status_code=404, code="not_found", message="No such stock")
-        facts = [_stored_fact(row) for row in await db.execute(_FACTS, {"stock": stock.id})]
-        events = [_stored_event(row) for row in await db.execute(_EVENTS, {"stock": stock.id})]
+        stock = await load_stock(db, symbol)
+    if stock is None:
+        # Deliberately does not repeat the symbol the caller sent.
+        raise AppError(status_code=404, code="not_found", message="No such stock")
+    facts, events = stock.facts, stock.events
 
     sentiment = rolling_sentiment([event.row for event in events], as_of=date.today())
     return InsightsOut(

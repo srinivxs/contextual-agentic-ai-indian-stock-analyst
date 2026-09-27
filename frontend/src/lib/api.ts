@@ -55,13 +55,25 @@ async function errorFrom(response: Response): Promise<ApiError> {
   return new ApiError(response.status, 'unexpected_response');
 }
 
-/** Returns the parsed JSON body, or undefined for 204. Throws ApiError on any failure. */
-export async function apiFetch(path: string, init: { method?: Method } = {}): Promise<unknown> {
+/**
+ * Returns the parsed JSON body, or undefined for 204. Throws ApiError on any failure.
+ * A `body`, when given, is sent as JSON; the path rules above apply exactly the same.
+ */
+export async function apiFetch(
+  path: string,
+  init: { method?: Method; body?: unknown } = {},
+): Promise<unknown> {
   assertOurOwnApiPath(path);
+
+  const request: RequestInit = { method: init.method ?? 'GET', credentials: 'same-origin' };
+  if (init.body !== undefined) {
+    request.body = JSON.stringify(init.body);
+    request.headers = { 'content-type': 'application/json' };
+  }
 
   let response: Response;
   try {
-    response = await fetch(path, { method: init.method ?? 'GET', credentials: 'same-origin' });
+    response = await fetch(path, request);
   } catch {
     throw new ApiError(0, 'network_error'); // never pass the original message on
   }

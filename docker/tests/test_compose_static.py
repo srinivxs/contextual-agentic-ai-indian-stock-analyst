@@ -153,6 +153,8 @@ def test_the_api_gets_the_runtime_role_and_exactly_the_settings_it_needs(
         "LOG_LEVEL",
         "FILINGS_DISCOVERY",
         "EMBEDDINGS_ENABLED",
+        "CHAT_ENABLED",
+        "CHAT_BUDGET_USD",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
@@ -240,6 +242,17 @@ def test_reading_filings_with_the_llm_is_off_unless_switched_on(model: dict[str,
     assert "EXTRACTION_ENABLED" not in service(model, "api")["environment"]
     # The owner's approved cap unless set lower for a first test run (a cent, say).
     assert service(model, "worker")["environment"]["EXTRACTION_BUDGET_USD"] == "2.00"
+
+
+def test_the_chat_is_off_unless_switched_on(model: dict[str, Any]) -> None:
+    """P12: the api answers questions with the LLM (and spends) only when switched on, under the
+    owner's approved cap. The worker never chats, so it has no such switch."""
+    api = service(model, "api")["environment"]
+    assert api["CHAT_ENABLED"] == "false"
+    assert api["CHAT_BUDGET_USD"] == "1.00"
+    worker = service(model, "worker")["environment"]
+    assert "CHAT_ENABLED" not in worker
+    assert "CHAT_BUDGET_USD" not in worker
 
 
 def test_a_crashed_worker_comes_back_and_says_where_it_crashed(model: dict[str, Any]) -> None:

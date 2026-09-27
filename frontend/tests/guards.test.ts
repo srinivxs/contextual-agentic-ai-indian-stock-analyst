@@ -33,6 +33,7 @@ describe('the source tree', () => {
     expect(pages).toContain('src/app/page.tsx');
     expect(pages).toContain('src/app/stocks/page.tsx');
     expect(pages).toContain('src/app/stock/page.tsx'); // one page for every stock, via ?symbol=
+    expect(pages).toContain('src/app/chat/page.tsx');
   });
 
   it('has no route handlers, middleware or proxy files (ADR 006)', () => {

@@ -230,6 +230,11 @@ leaves a real product.
   invented number being rejected.
 - **Gate B:** cited RAG chat live on AWS.
 - **You should be able to answer:** what does the validator prove and not prove?
+- **Built (locally, 2026-09-27; ADR 021):** the workflow in `app/chat/graph.py`, numbered evidence
+  (F#, D#, N#), one forced tool call, the checker with one retry, migration `0008`
+  (conversations, messages), `/api/v1/chat/*`, and the Chat page with numbered sources.
+  `CHAT_ENABLED` off by default; `CHAT_BUDGET_USD` $1. Money as reported (US$ stays US$), the three
+  stocks only. Gate B passes locally after the real run; live at GL.
 
 ## P13 — Investor memory
 

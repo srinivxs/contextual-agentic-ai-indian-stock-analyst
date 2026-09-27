@@ -652,3 +652,211 @@ a.chip:focus-visible {
 .event-summary {
   margin: 0.2rem 0 0;
 }
+
+/* Chat (P12): conversations on the left, the open one on the right; one column on a phone. */
+:root {
+  --bubble-bg: #e8effc;
+  --highlight-bg: #fdf3dc;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bubble-bg: #1e2a44;
+    --highlight-bg: #3a2f14;
+  }
+}
+
+.chat-head {
+  margin-bottom: 1rem;
+}
+
+.chat {
+  display: grid;
+  grid-template-columns: 14rem 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.chat-list ul {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.chat-list .button {
+  width: 100%;
+}
+
+.chat-item {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 0.3rem;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.chat-item:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+.chat-item[aria-current='true'] {
+  border-left-color: var(--accent);
+  background: var(--row-hover);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.chat-item:disabled {
+  cursor: progress;
+}
+
+.chat-item:focus-visible,
+.marker:focus-visible,
+.chat-form textarea:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chat-main {
+  min-width: 0;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.chat-thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chat-message {
+  margin: 0.75rem 0;
+}
+
+/* The user's questions sit on the right, as bubbles; a question still waiting is faded. */
+.chat-message.user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.bubble {
+  max-width: 85%;
+  margin: 0;
+  padding: 0.5rem 0.8rem;
+  border-radius: 0.75rem;
+  background: var(--bubble-bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-message.pending .bubble {
+  opacity: 0.6;
+}
+
+.chat-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-notice {
+  margin: 0;
+  padding: 0.5rem 0.8rem;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+  font-style: italic;
+}
+
+.marker {
+  padding: 0 0.1rem;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.marker:hover {
+  text-decoration: underline;
+}
+
+.chat-sources {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.chat-source {
+  padding: 0.25rem 0.4rem;
+  border-radius: 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.chat-source.highlighted {
+  background: var(--highlight-bg);
+}
+
+.chat-source:focus {
+  outline: 2px solid var(--accent);
+}
+
+.chat-source-marker {
+  margin-right: 0.4rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-quote summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-quote blockquote {
+  margin: 0.25rem 0 0.25rem 1rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.chat-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  margin-top: 1rem;
+}
+
+.chat-form textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+@media (max-width: 40rem) {
+  .chat {
+    grid-template-columns: 1fr;
+  }
+
+  .bubble {
+    max-width: 100%;
+  }
+}

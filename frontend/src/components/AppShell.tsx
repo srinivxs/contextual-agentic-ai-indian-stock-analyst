@@ -15,6 +15,7 @@ export function AppShell({ email, onSignOut, children }: Props) {
         <nav aria-label="Main" className="nav">
           <a href="/stocks/">Stocks</a>
           <a href="/documents/">Documents</a>
+          <a href="/chat/">Chat</a>
         </nav>
         <span className="who">
           <span>{email}</span>

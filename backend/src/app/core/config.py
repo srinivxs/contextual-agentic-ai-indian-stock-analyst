@@ -100,6 +100,14 @@ class CommonSettings(BaseSettings):
     # How many LLM calls one job makes at the same time.
     extraction_concurrency: int = Field(default=2, ge=1, le=8)
 
+    # --- the grounded chat (P12, ADR 003) -----------------------------------------------------
+    # Off unless switched on: only then does the api answer chat questions (with the LLM above and
+    # the embedder for search, so EMBEDDINGS_ENABLED must be on too).
+    chat_enabled: bool = False
+    # The chat's spending cap in US$ (the owner approved $1): the tokens stored with every answer,
+    # priced with LLM_*_USD_PER_MTOK. At the cap the chat says it is unavailable.
+    chat_budget_usd: Decimal = Field(default=Decimal("1.00"), ge=0, le=100)
+
     @field_validator("database_url")
     @classmethod
     def _require_the_asyncpg_driver(cls, value: SecretStr) -> SecretStr:

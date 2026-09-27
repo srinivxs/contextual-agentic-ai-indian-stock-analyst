@@ -56,3 +56,15 @@ def test_two_calls_at_a_time() -> None:
 def test_a_bad_value_is_refused_at_startup(overrides: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         build_settings(**overrides)
+
+
+def test_the_chat_is_off_unless_switched_on_with_the_owners_one_dollar_cap() -> None:
+    settings = build_settings()
+    assert settings.chat_enabled is False
+    assert settings.chat_budget_usd == Decimal("1.00")
+
+
+@pytest.mark.parametrize("value", [-1, 101])
+def test_an_unreasonable_chat_cap_is_refused(value: int) -> None:
+    with pytest.raises(ValidationError):
+        build_settings(chat_budget_usd=value)

@@ -4,6 +4,7 @@
  */
 import { vi } from 'vitest';
 
+import type { ChatMessage, ChatSource, Conversation } from '@/lib/chat';
 import type { Citation, DerivedValue, KeyFact, StockInsights } from '@/lib/insights';
 
 export type FakeStock = { symbol: string; name: string; bse_code: string; sector: string };
@@ -214,6 +215,68 @@ export const demoInsights = (overrides: Partial<FakeInsights> = {}): FakeInsight
   ...overrides,
 });
 
+/** A UUID made from a number, so fake ids are valid, unique and easy to read in a test. */
+export const demoId = (n: number): string =>
+  `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+/** A fictional filing source of a chat answer; override any field. */
+export const demoChatSource = (overrides: Partial<ChatSource> = {}): ChatSource => ({
+  marker: 1,
+  source: 'filing',
+  label: 'Annual report · Annual Report 2026 · p.44',
+  url: 'https://www.bseindia.com/xml-data/corpfiling/AttachHis/demo-ar-2026.pdf#page=44',
+  quote: 'Revenue from operations stood at ₹1,23,456 crore.',
+  ...overrides,
+});
+
+/** A question as the server stores it; override any field. */
+export const demoQuestion = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
+  id: demoId(101),
+  role: 'user',
+  text: 'How much revenue did DemoCo Alpha report?',
+  status: null,
+  sources: [],
+  created_at: '2026-09-27T10:00:00+00:00',
+  ...overrides,
+});
+
+/** DemoCo Alpha's invented answer, citing a filing [1], a screener.in figure [2], a computation [3]. */
+export const demoAnswer = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
+  id: demoId(102),
+  role: 'assistant',
+  text: 'DemoCo Alpha reported revenue of ₹1,23,456 crore [1], net profit of ₹12,345.5 crore [2], and growth of 12.2% [3].',
+  status: 'answered',
+  sources: [
+    demoChatSource(),
+    demoChatSource({
+      marker: 2,
+      source: 'screener',
+      label: 'screener.in · profit-loss · Net Profit · Mar 2026',
+      url: 'https://www.screener.in/company/DEMOA/consolidated/',
+      quote: null,
+    }),
+    demoChatSource({
+      marker: 3,
+      source: 'derived',
+      label: 'Revenue growth, FY2026 against FY2025',
+      url: null,
+      quote: null,
+    }),
+  ],
+  created_at: '2026-09-27T10:00:05+00:00',
+  ...overrides,
+});
+
+/** A stored conversation holding one question and its answer; override any field. */
+export const demoConversation = (overrides: Partial<Conversation> = {}): Conversation => ({
+  id: demoId(1),
+  title: 'How much revenue did DemoCo Alpha report?',
+  created_at: '2026-09-27T10:00:00+00:00',
+  updated_at: '2026-09-27T10:00:05+00:00',
+  messages: [demoQuestion(), demoAnswer()],
+  ...overrides,
+});
+
 export type FakeCheck = {
   enabled: boolean;
   checking: boolean;
@@ -244,11 +307,23 @@ export type Options = {
   searchOff?: boolean;
   /** Each stock's insights; a known stock left out gets the empty default. */
   insights?: Record<string, FakeInsights>;
+  /** The user's stored conversations, in any order (the fake sorts them newest first). */
+  conversations?: Conversation[];
+  /** What the chat answers to a question; the fake gives it a fresh id. Default: demoAnswer(). */
+  chatAnswer?: (question: string) => ChatMessage;
+  /** The chat switched off on the server (409). */
+  chatOff?: boolean;
+  /** The model failed or the chat's spending cap is used up (503). */
+  chatUnavailable?: boolean;
 };
 
 export type FakeApi = {
   /** Every request made, as "METHOD /path". */
   requests: string[];
+  /** Every request body sent, parsed from JSON, with its "METHOD /path". */
+  bodies: { key: string; body: unknown }[];
+  /** The conversations as the fake holds them now, by id. */
+  conversations: Map<string, Conversation>;
   follows: Set<string>;
   /** Make the next matching request fail with this status. */
   failWith: (key: string, status: number) => void;
@@ -276,11 +351,74 @@ export function installFakeApi(options: Options = {}): FakeApi {
     ...options.checks?.[symbol],
     ...checks.get(symbol),
   });
+  const bodies: { key: string; body: unknown }[] = [];
+  const conversations = new Map((options.conversations ?? []).map((c) => [c.id, c]));
+  let counter = 1000; // fresh ids and times for what the fake creates, after any demo ones
+  const next = (): { id: string; at: string } => {
+    counter += 1;
+    const at = new Date(Date.parse('2026-09-27T11:00:00Z') + counter * 1000).toISOString();
+    return { id: demoId(counter), at };
+  };
+
+  const chat = (key: string, body: unknown): Response | null => {
+    if (key === 'GET /api/v1/chat/conversations') {
+      const items = [...conversations.values()]
+        .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+        .slice(0, 20)
+        .map(({ id, title, created_at, updated_at }) => ({ id, title, created_at, updated_at }));
+      return json(200, { items });
+    }
+    const one = /^GET \/api\/v1\/chat\/conversations\/([^/?]+)$/.exec(key);
+    if (one) {
+      const found = conversations.get(decodeURIComponent(one[1] ?? ''));
+      return found ? json(200, found) : envelope(404, 'not_found');
+    }
+    if (key !== 'POST /api/v1/chat/messages') return null;
+    // The real order: switched off, then the question, then the conversation, then the model.
+    if (options.chatOff) return envelope(409, 'conflict');
+    const { question, conversation_id: id } = (body ?? {}) as {
+      question?: unknown;
+      conversation_id?: unknown;
+    };
+    if (typeof question !== 'string' || question.trim().length < 3 || question.length > 1000) {
+      return envelope(422, 'validation_error');
+    }
+    const existing = typeof id === 'string' ? conversations.get(id) : undefined;
+    if (id !== null && existing === undefined) return envelope(404, 'not_found');
+    if (options.chatUnavailable) return envelope(503, 'unavailable');
+    const asked = next();
+    const answered = next();
+    const userMessage: ChatMessage = demoQuestion({
+      id: asked.id,
+      text: question,
+      created_at: asked.at,
+    });
+    const answer: ChatMessage = {
+      ...(options.chatAnswer ?? (() => demoAnswer()))(question),
+      id: answered.id,
+      created_at: answered.at,
+    };
+    const conversation: Conversation = existing ?? {
+      id: next().id,
+      title: question.slice(0, 60),
+      created_at: asked.at,
+      updated_at: asked.at,
+      messages: [],
+    };
+    conversations.set(conversation.id, {
+      ...conversation,
+      updated_at: answered.at,
+      messages: [...conversation.messages, userMessage, answer],
+    });
+    return json(200, { conversation_id: conversation.id, question: userMessage, answer });
+  };
 
   const handler = async (input: string, init?: RequestInit): Promise<Response> => {
     const method = init?.method ?? 'GET';
     const key = `${method} ${input}`;
     requests.push(key);
+    const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+    if (body !== undefined) bodies.push({ key, body });
     const gate = gates.get(key);
     if (gate) await gate;
     const forced = failures.get(key);
@@ -324,6 +462,8 @@ export function installFakeApi(options: Options = {}): FakeApi {
       if (!stock) return envelope(404, 'not_found');
       return json(200, options.insights?.[symbol] ?? emptyInsights(stock));
     }
+    const chatted = chat(key, body);
+    if (chatted) return chatted;
     const checking = /^(GET|POST) \/api\/v1\/stocks\/([^/]+)\/filings\/check$/.exec(key);
     if (checking) {
       const symbol = decodeURIComponent(checking[2] ?? '');
@@ -354,6 +494,8 @@ export function installFakeApi(options: Options = {}): FakeApi {
   vi.stubGlobal('fetch', vi.fn(handler));
   return {
     requests,
+    bodies,
+    conversations,
     follows,
     failWith: (key, status) => void failures.set(key, status),
     hold: (key) => {
