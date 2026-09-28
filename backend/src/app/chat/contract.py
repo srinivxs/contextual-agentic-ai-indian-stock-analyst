@@ -14,7 +14,8 @@ from uuid import UUID
 # answered:     a cited answer that passed the checker
 # abstained:    too little evidence, or no answer passed the checker: ABSTAIN_TEXT
 # out_of_scope: not about RELIANCE, TCS or HDFC Bank
-ReplyStatus = Literal["answered", "abstained", "out_of_scope"]
+# remembered:   the message only stated preferences (P13): saved, and confirmed with no LLM call
+ReplyStatus = Literal["answered", "abstained", "out_of_scope", "remembered"]
 
 ABSTAIN_TEXT = "I don't have that in the data."
 OUT_OF_SCOPE_TEXT = "I can only answer about RELIANCE, TCS and HDFC Bank."

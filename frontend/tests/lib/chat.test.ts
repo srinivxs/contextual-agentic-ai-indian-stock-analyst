@@ -136,6 +136,21 @@ describe('sendQuestion', () => {
       answer: { status: 'out_of_scope' },
     });
   });
+
+  it('accepts a "remembered" answer, with no sources', async () => {
+    serve(
+      reply({
+        answer: demoAnswer({
+          status: 'remembered',
+          text: "Noted. I'll remember: Risk: Conservative; Debt: Avoid high debt.",
+          sources: [],
+        }),
+      }),
+    );
+    await expect(
+      sendQuestion("I'm conservative and avoid high debt.", null),
+    ).resolves.toMatchObject({ answer: { status: 'remembered' } });
+  });
 });
 
 describe('listConversations', () => {

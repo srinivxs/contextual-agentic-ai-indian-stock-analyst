@@ -33,7 +33,12 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
   line-height: 1.5;
 }
 
@@ -672,7 +677,7 @@ a.chip:focus-visible {
 
 .chat {
   display: grid;
-  grid-template-columns: 14rem 1fr;
+  grid-template-columns: 14rem minmax(0, 1fr) 18rem;
   gap: 1.25rem;
   align-items: start;
 }
@@ -859,4 +864,95 @@ a.chip:focus-visible {
   .bubble {
     max-width: 100%;
   }
+}
+
+.chat-disclaimer {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+
+/* The investor memory (P13): what the chat remembers, beside the conversation. */
+.memory-panel {
+  min-width: 0;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.memory-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.memory-item {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.memory-item:last-child {
+  border-bottom: 0;
+}
+
+.memory-field-label {
+  font-weight: 600;
+}
+
+.memory-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.35rem 0;
+}
+
+.memory-chip {
+  display: inline-block;
+  padding: 0.05rem 0.55rem;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--pill-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.memory-source,
+.memory-date {
+  font-size: 0.85rem;
+}
+
+.memory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.memory-actions .button {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.memory-editor {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.memory-editor legend {
+  font-weight: 600;
+  padding: 0;
+}
+
+.memory-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.memory-confirm {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
 }

@@ -1,12 +1,15 @@
 """The grounded chat as a small, explicit LangGraph workflow (P12, ADR 003).
 
-    analyze ─> update_memory ─> retrieve ─> grade ─┬─> generate ─> validate ─┬─> respond
-                                                   │                         ├─> generate (retry)
-                                                   └─> abstain <─────────────┼─> abstain
-                                                                             └─> out_of_scope
+    analyze ─> update_memory ─┬─> retrieve ─> grade ─┬─> generate ─> validate ─┬─> respond
+                              │                      │                         ├─> generate (retry)
+                              │                      └─> abstain <─────────────┼─> abstain
+                              └─> remembered                                   └─> out_of_scope
 
 - analyze (code): which stocks, metrics, periods (app/chat/understand.py). No LLM: rule 8.
-- update_memory: a placeholder until P13 (investor memory).
+- update_memory (code, P13): the preferences the user's own message states (app/memory/extract.py)
+  are saved, and the profile is loaded. It reads state["question"] and nothing else: never the
+  history, the evidence or a reply, so no document can write memory (ADR 022). A message that
+  only states preferences ends at remembered: "Noted. I'll remember: ...", with no LLM call.
 - retrieve (code): the stocks' chosen facts and derived values (app/insights.py), the passages
   closest in meaning (app/retrieval.py) and, for news questions, the events and the rolling news
   sentiment, numbered F#, D#, N#, E# (app/chat/evidence.py).
@@ -21,6 +24,7 @@ plain code, so the grounding path cannot be skipped, and each node is tested on 
 """
 
 import logging
+import re
 from collections.abc import Callable
 from datetime import date
 from typing import Any, Literal, TypedDict
@@ -34,15 +38,25 @@ from app.chat.contract import ABSTAIN_TEXT, OUT_OF_SCOPE_TEXT, Reply, Turn
 from app.chat.evidence import EvidenceItem, build_evidence, evidence_block
 from app.chat.prompts import SYSTEM_PROMPT, Outcome, answer_tool, parse_answer, user_message
 from app.chat.render import render
-from app.chat.understand import Question, understand
+from app.chat.understand import Question, symbols_in, understand
 from app.derived import Sentiment, rolling_sentiment
 from app.embeddings import Embedder
 from app.insights import DerivedView, KeyFact, StoredEvent, derived_views, key_facts
 from app.insights_store import load_stock
 from app.llm import LlmError, StructuredLlm
+from app.memory.extract import describe, extract_preferences, preferences_text, profile_summary
+from app.memory.store import get_profile, remember
+from app.memory.vocabulary import Preference, StoredPreference
 from app.retrieval import Result, search
 
 logger = logging.getLogger("app.chat")
+
+# A sentence opening with one of these asks for something, even without a "?" (P13).
+_ASKS = re.compile(
+    r"(?:^|[.!;\n]\s*)(?:what|which|how|why|when|who|is|are|does|do|can|should|tell|show|"
+    r"compare|explain|list|give|find)\b",
+    re.IGNORECASE,
+)
 
 MAX_ATTEMPTS = 2  # the first answer and one retry
 MIN_SIMILARITY = 0.35  # a passage less similar than this to the question is not evidence
@@ -56,6 +70,8 @@ class ChatState(TypedDict, total=False):
     history: list[Turn]
     user_id: UUID
     understood: Question
+    stated: list[Preference]  # what this message says about the investor (P13)
+    profile: list[StoredPreference]  # the investor's profile after this message
     evidence: list[EvidenceItem]
     outcome: Outcome
     claims: list[Claim]
@@ -94,9 +110,14 @@ class GraphChatEngine:
         graph.add_node("respond", self.respond)
         graph.add_node("abstain", self.abstain)
         graph.add_node("out_of_scope", self.out_of_scope)
+        graph.add_node("remembered", self.remembered)
         graph.add_edge(START, "analyze")
         graph.add_edge("analyze", "update_memory")
-        graph.add_edge("update_memory", "retrieve")
+        graph.add_conditional_edges(
+            "update_memory",
+            self.only_preferences,
+            {"remembered": "remembered", "retrieve": "retrieve"},
+        )
         graph.add_conditional_edges(
             "retrieve", self.grade, {"generate": "generate", "abstain": "abstain"}
         )
@@ -111,7 +132,7 @@ class GraphChatEngine:
                 "out_of_scope": "out_of_scope",
             },
         )
-        for last in ("respond", "abstain", "out_of_scope"):
+        for last in ("respond", "abstain", "out_of_scope", "remembered"):
             graph.add_edge(last, END)
         return graph.compile()
 
@@ -135,7 +156,21 @@ class GraphChatEngine:
         return {"understood": understand(state["question"], history=state["history"])}
 
     async def update_memory(self, state: ChatState) -> ChatState:
-        return {}  # P13: the investor profile, written only from the user's own words
+        stated = extract_preferences(state["question"])  # the user's own words, nothing else
+        async with self._session_factory() as db:
+            if stated:
+                await remember(db, state["user_id"], stated)
+                await db.commit()
+            profile = await get_profile(db, state["user_id"])
+        return {"stated": stated, "profile": profile}
+
+    def only_preferences(self, state: ChatState) -> Literal["remembered", "retrieve"]:
+        """A message that states preferences and asks nothing (no "?", no stock named, no
+        sentence opening with a question or request word) is only confirmed; anything else is
+        answered, with the profile as context."""
+        question = state["question"]
+        asks = "?" in question or symbols_in(question) or _ASKS.search(question)
+        return "remembered" if state["stated"] and not asks else "retrieve"
 
     async def retrieve(self, state: ChatState) -> ChatState:
         question = state["understood"]
@@ -152,7 +187,9 @@ class GraphChatEngine:
                     events[symbol] = stock.events
                     rows = [event.row for event in stock.events]
                     sentiment[symbol] = rolling_sentiment(rows, as_of=self._today())
-        passages = await self._passages(state["question"], question)
+        passages = await self._passages(
+            state["question"], question, profile_summary(state["profile"])
+        )
         evidence = build_evidence(
             question=question,
             facts=facts,
@@ -163,7 +200,7 @@ class GraphChatEngine:
         )
         return {"evidence": evidence}
 
-    async def _passages(self, text: str, question: Question) -> list[Result]:
+    async def _passages(self, text: str, question: Question, profile: str) -> list[Result]:
         """The closest passages of the question's stocks, or none if search is switched off or
         unavailable (the facts can still answer; a failed search must not fail the question)."""
         if self._embedder is None:
@@ -177,6 +214,7 @@ class GraphChatEngine:
                 symbol=only,
                 today=self._today(),
                 k=PASSAGES,
+                profile=profile,
             )
         except Exception as error:
             logger.warning("chat_search_unavailable", extra={"error": type(error).__name__})
@@ -200,6 +238,7 @@ class GraphChatEngine:
                     state["history"],
                     evidence_block(state["evidence"]),
                     state["problems"],
+                    preferences_text(state["profile"]),
                 ),
                 tool=answer_tool(),
             )
@@ -241,6 +280,9 @@ class GraphChatEngine:
 
     async def abstain(self, state: ChatState) -> ChatState:
         return {"reply": self._reply(state, ABSTAIN_TEXT, "abstained", ())}
+
+    async def remembered(self, state: ChatState) -> ChatState:
+        return {"reply": self._reply(state, describe(state["stated"]), "remembered", ())}
 
     async def out_of_scope(self, state: ChatState) -> ChatState:
         return {"reply": self._reply(state, OUT_OF_SCOPE_TEXT, "out_of_scope", ())}

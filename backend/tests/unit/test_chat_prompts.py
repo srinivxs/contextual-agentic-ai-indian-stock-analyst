@@ -51,6 +51,17 @@ def test_the_user_message_carries_recent_history_cut_short() -> None:
     assert "failed these checks" not in message
 
 
+def test_the_investor_s_preferences_come_as_context_never_as_evidence() -> None:
+    """P13: the model sees the remembered profile (labels only) so it can relate the figures to
+    it; the prompt says it is not evidence and must never be cited."""
+    message = user_message("Which suits me?", [], "[F1] DEMO fact", [], "- Risk: Conservative")
+    assert "The investor's stated preferences" in message
+    assert "- Risk: Conservative" in message
+    assert message.index("preferences") < message.index("Evidence:")
+    assert "not evidence" in message
+    assert "preferences" not in user_message("q", [], "[F1] DEMO fact", [])
+
+
 def test_a_retry_is_told_what_failed_and_nothing_else() -> None:
     problems = [Problem(code="number_not_in_evidence", claim=0, detail="42")]
     message = user_message("q", [], "[F1] DEMO fact", problems)

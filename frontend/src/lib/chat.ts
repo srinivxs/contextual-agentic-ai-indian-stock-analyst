@@ -10,7 +10,7 @@
 import { ApiError, apiFetch } from '@/lib/api';
 import { officialUrl, screenerUrl } from '@/lib/documents';
 
-const STATUSES = ['answered', 'abstained', 'out_of_scope'] as const;
+const STATUSES = ['answered', 'abstained', 'out_of_scope', 'remembered'] as const;
 const SOURCE_KINDS = ['filing', 'screener', 'derived'] as const;
 
 /** Where one numbered claim of an answer comes from. The answer's text refers to it as "[1]". */

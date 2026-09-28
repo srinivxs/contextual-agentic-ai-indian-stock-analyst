@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.integration.conftest import DbConfig, Migrator, make_alembic_config
 
-HEAD = "0008"
+HEAD = "0009"
 
 STATE_QUERIES = {
     "extension": "SELECT extversion FROM pg_extension WHERE extname = 'vector'",
@@ -31,6 +31,7 @@ STATE_QUERIES = {
         "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' "
         "AND tablename IN ('conversations', 'messages')"
     ),
+    "investor_profiles_table": "SELECT to_regclass('public.investor_profiles') IS NOT NULL",
     "version_table": "SELECT to_regclass('public.alembic_version') IS NOT NULL",
 }
 
@@ -48,6 +49,7 @@ class State:
     embeddings_table: bool  # 0006
     facts_tables: int  # facts, events, extraction_calls (0007)
     chat_tables: int  # conversations, messages (0008)
+    investor_profiles_table: bool  # 0009
     revision: str | None
     stock_rows: tuple[tuple[object, ...], ...]
 
@@ -85,6 +87,7 @@ async def snapshot(admin_engine: AsyncEngine) -> State:
             embeddings_table=bool(await scalar("embeddings_table")),
             facts_tables=int(str(await scalar("facts_tables"))),
             chat_tables=int(str(await scalar("chat_tables"))),
+            investor_profiles_table=bool(await scalar("investor_profiles_table")),
             revision=revision,
             stock_rows=rows,
         )
@@ -100,6 +103,7 @@ EMPTY = State(
     embeddings_table=False,
     facts_tables=0,
     chat_tables=0,
+    investor_profiles_table=False,
     revision=None,
     stock_rows=(),
 )
@@ -122,6 +126,7 @@ async def test_up_down_up_round_trip_verified_at_every_step(
     assert first.embeddings_table is True
     assert first.facts_tables == 3
     assert first.chat_tables == 2
+    assert first.investor_profiles_table is True
     assert first.revision == HEAD
     assert [row[1] for row in first.stock_rows] == ["RELIANCE", "TCS", "HDFCBANK"]
 
@@ -135,10 +140,17 @@ async def test_up_down_up_round_trip_verified_at_every_step(
 async def test_each_downgrade_step_removes_only_what_its_revision_created(
     migrator: Migrator, admin_engine: AsyncEngine
 ) -> None:
-    """0008 owns conversations and messages, 0007 facts and events, 0006 embeddings, 0004 the
-    ingestion tables, 0003 user_follows, 0002 users and sessions, 0001 stocks."""
+    """0009 owns investor_profiles, 0008 conversations and messages, 0007 facts and events, 0006
+    embeddings, 0004 the ingestion tables, 0003 user_follows, 0002 users and sessions, 0001
+    stocks."""
     await migrator.upgrade("head")
     at_head = await snapshot(admin_engine)
+
+    await migrator.downgrade("-1")
+    no_profiles = await snapshot(admin_engine)
+    assert no_profiles.revision == "0008"
+    assert no_profiles.investor_profiles_table is False
+    assert no_profiles.chat_tables == 2  # everything older is untouched
 
     await migrator.downgrade("-1")
     no_chat = await snapshot(admin_engine)

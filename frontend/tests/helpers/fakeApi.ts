@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 
 import type { ChatMessage, ChatSource, Conversation } from '@/lib/chat';
 import type { Citation, DerivedValue, KeyFact, StockInsights } from '@/lib/insights';
+import type { Profile, ProfileChoice, ProfileFieldEntry } from '@/lib/profile';
 
 export type FakeStock = { symbol: string; name: string; bse_code: string; sector: string };
 
@@ -277,6 +278,64 @@ export const demoConversation = (overrides: Partial<Conversation> = {}): Convers
   ...overrides,
 });
 
+/** The fixed choices the server offers for editing the profile by hand (P13). */
+export const PROFILE_CHOICES: ProfileChoice[] = [
+  {
+    field: 'risk_preference',
+    label: 'Risk',
+    single: true,
+    options: [
+      { value: 'conservative', label: 'Conservative' },
+      { value: 'moderate', label: 'Moderate' },
+      { value: 'aggressive', label: 'Aggressive' },
+    ],
+  },
+  {
+    field: 'debt_preference',
+    label: 'Debt',
+    single: true,
+    options: [
+      { value: 'avoid_high_debt', label: 'Avoid high debt' },
+      { value: 'debt_ok', label: 'Debt is fine' },
+    ],
+  },
+  {
+    field: 'investment_style',
+    label: 'Style',
+    single: false,
+    options: [
+      { value: 'income', label: 'Dividends / income' },
+      { value: 'growth', label: 'Growth' },
+      { value: 'quality', label: 'Quality' },
+      { value: 'value', label: 'Value' },
+      { value: 'momentum', label: 'Momentum' },
+    ],
+  },
+  {
+    field: 'other_preferences',
+    label: 'Other',
+    single: false,
+    options: [
+      { value: 'long_term', label: 'Long-term horizon' },
+      { value: 'short_term', label: 'Short-term horizon' },
+      { value: 'stability', label: 'Stable, steady results' },
+    ],
+  },
+];
+
+/** A fictional remembered field for DemoCo's user; override any field. */
+export const demoProfileField = (
+  overrides: Partial<ProfileFieldEntry> = {},
+): ProfileFieldEntry => ({
+  field: 'risk_preference',
+  values: ['conservative'],
+  labels: ['Conservative'],
+  quote: "I'm conservative, dividend-focused, and I avoid high debt.",
+  source: 'chat',
+  updated_at: '2026-09-28T10:00:00Z',
+  ...overrides,
+});
+
 export type FakeCheck = {
   enabled: boolean;
   checking: boolean;
@@ -315,6 +374,8 @@ export type Options = {
   chatOff?: boolean;
   /** The model failed or the chat's spending cap is used up (503). */
   chatUnavailable?: boolean;
+  /** What is remembered about the user at the start (P13); the fake edits and forgets in place. */
+  profileFields?: ProfileFieldEntry[];
 };
 
 export type FakeApi = {
@@ -353,6 +414,7 @@ export function installFakeApi(options: Options = {}): FakeApi {
   });
   const bodies: { key: string; body: unknown }[] = [];
   const conversations = new Map((options.conversations ?? []).map((c) => [c.id, c]));
+  const profileFields = new Map((options.profileFields ?? []).map((f) => [f.field, f] as const));
   let counter = 1000; // fresh ids and times for what the fake creates, after any demo ones
   const next = (): { id: string; at: string } => {
     counter += 1;
@@ -413,6 +475,51 @@ export function installFakeApi(options: Options = {}): FakeApi {
     return json(200, { conversation_id: conversation.id, question: userMessage, answer });
   };
 
+  const profile = (key: string, body: unknown): Response | null => {
+    if (key === 'GET /api/v1/profile') {
+      const result: Profile = { fields: [...profileFields.values()], choices: PROFILE_CHOICES };
+      return json(200, result);
+    }
+    const put = /^PUT \/api\/v1\/profile\/([^/?]+)$/.exec(key);
+    if (put) {
+      const field = decodeURIComponent(put[1] ?? '');
+      const choice = PROFILE_CHOICES.find((c) => c.field === field);
+      if (!choice) return envelope(404, 'not_found');
+      const { values } = (body ?? {}) as { values?: unknown };
+      const validValues =
+        Array.isArray(values) &&
+        values.length > 0 &&
+        values.every((v) => typeof v === 'string' && choice.options.some((o) => o.value === v)) &&
+        (!choice.single || values.length === 1);
+      if (!validValues) return envelope(422, 'validation_error');
+      const chosen = values as string[];
+      const labels = chosen.map((v) => choice.options.find((o) => o.value === v)?.label ?? v);
+      const entry: ProfileFieldEntry = {
+        field: choice.field,
+        values: chosen,
+        labels,
+        quote: null,
+        source: 'edited',
+        updated_at: next().at,
+      };
+      profileFields.set(choice.field, entry);
+      return json(200, entry);
+    }
+    const del = /^DELETE \/api\/v1\/profile\/([^/?]+)$/.exec(key);
+    if (del) {
+      const field = decodeURIComponent(del[1] ?? '');
+      const choice = PROFILE_CHOICES.find((c) => c.field === field);
+      if (!choice) return envelope(404, 'not_found');
+      profileFields.delete(choice.field);
+      return json(204);
+    }
+    if (key === 'DELETE /api/v1/profile') {
+      profileFields.clear();
+      return json(204);
+    }
+    return null;
+  };
+
   const handler = async (input: string, init?: RequestInit): Promise<Response> => {
     const method = init?.method ?? 'GET';
     const key = `${method} ${input}`;
@@ -464,6 +571,8 @@ export function installFakeApi(options: Options = {}): FakeApi {
     }
     const chatted = chat(key, body);
     if (chatted) return chatted;
+    const profiled = profile(key, body);
+    if (profiled) return profiled;
     const checking = /^(GET|POST) \/api\/v1\/stocks\/([^/]+)\/filings\/check$/.exec(key);
     if (checking) {
       const symbol = decodeURIComponent(checking[2] ?? '');

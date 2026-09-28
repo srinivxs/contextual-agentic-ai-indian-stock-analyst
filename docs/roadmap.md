@@ -36,7 +36,7 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | P10 | Embeddings and retrieval | ✅ done locally (ADR 019): P10a fingerprints + token cap; P10b search API and box; first real run about $0.07 |
 | P11 | Fact and event extraction, derived values | ✅ done locally (ADR 020): P11a/b facts and events (Nova 2 Lite + validator, screener.in table by code); P11c stock page with citations; real run $0.49; definition guards after the hand check |
 | P12 | Grounded chat (LangGraph) → **Gate B: cited RAG chat working** (locally; live at GL) | ✅ done locally (ADR 021): Gate B passed locally 2026-09-28; P12b/c fixes from the owner's real questions; Nova 2 Lite kept for chat |
-| P13 | Investor memory | |
+| P13 | Investor memory | ✅ done locally (ADR 022): code-read fixed vocabulary, profile API and panel, injection test; GL comes next (owner, 2026-09-28) |
 | P14 | Deterministic matching → **Gate C: full MVP working** | |
 | P15 | Scheduled RBI feed | |
 | GL | Go-live on AWS: everything AWS deferred from P9 onward, one cost approval, one live test | |
@@ -249,6 +249,12 @@ leaves a real product.
 - **Explain first:** trust boundaries; why memory is never written from retrieved text.
 - **Done when:** a prompt-injection fixture inside a document leaves the profile unchanged.
 - **You should be able to answer:** how do you prevent memory poisoning?
+- **Done (locally, 2026-09-28; ADR 022):** preferences are read by code from a fixed vocabulary
+  (`app/memory/extract.py`), only from first-person statements in the user's current message;
+  migration `0009` (`investor_profiles`, the `remembered` reply status); `/api/v1/profile`; the
+  "What I remember" panel with edit, forget and forget everything; the profile as uncited context
+  for answers and a small search nudge. The injection test passes, and fails when memory is
+  deliberately allowed to read the history. The owner moved GL to right after P13.
 
 ## P14 — Deterministic matching → Gate C
 

@@ -33,7 +33,7 @@ from app.chat.store import (
     list_conversations,
     owns_conversation,
 )
-from tests.fake_chat import DEMO_SOURCE, FakeChatEngine, abstained, answered
+from tests.fake_chat import DEMO_SOURCE, FakeChatEngine, abstained, answered, remembered
 from tests.helpers import running_app
 from tests.integration.auth_helpers import open_session
 from tests.integration.conftest import DbConfig, MakeUser
@@ -178,6 +178,33 @@ async def test_an_abstention_is_stored_as_one(
 
     assert (answer["text"], answer["status"], answer["sources"]) == (ABSTAIN_TEXT, "abstained", [])
     assert await scalar(admin_engine, "SELECT model IS NULL FROM messages WHERE role = 'assistant'")
+
+
+async def test_a_remembered_reply_is_stored_and_listed(
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    """P13: a message that only states a preference is saved with no LLM call, and the reply's
+    status ("remembered") is stored and comes back exactly like any other reply status."""
+    _, headers = await sign_in(make_user, session_factory)
+    reply = remembered("Got it, noted as conservative.")
+    async with chat_app(db_config, FakeChatEngine([reply])) as client:
+        response = await ask(client, headers, "I'm a conservative investor.")
+        conversation_id = response.json()["conversation_id"]
+        read = await client.get(f"{CONVERSATIONS}/{conversation_id}", headers=headers)
+
+    answer = response.json()["answer"]
+    assert (answer["text"], answer["status"], answer["sources"]) == (
+        "Got it, noted as conservative.",
+        "remembered",
+        [],
+    )
+    stored_status = await scalar(
+        admin_engine, "SELECT status FROM messages WHERE role = 'assistant'"
+    )
+    assert stored_status == "remembered"
+    assert [m["status"] for m in read.json()["messages"] if m["role"] == "assistant"] == [
+        "remembered"
+    ]
 
 
 async def test_the_question_is_trimmed_and_the_title_is_its_first_80_characters(

@@ -8,6 +8,7 @@ import {
   demoChatSource,
   demoConversation,
   demoId,
+  demoProfileField,
   demoQuestion,
   installFakeApi,
 } from '../helpers/fakeApi';
@@ -62,6 +63,19 @@ describe('the chat page', () => {
     installFakeApi();
     render(<ChatView />);
     expect(await screen.findByText('No conversations yet.')).toBeInTheDocument();
+  });
+
+  it('shows what is remembered beside the thread, and the short disclaimer under the input', async () => {
+    installFakeApi({ profileFields: [demoProfileField()] });
+    render(<ChatView />);
+
+    const memory = await screen.findByRole('region', { name: 'What I remember' });
+    expect(await within(memory).findByText('Conservative')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Not investment advice. Answers come only from stored filings and screener.in figures.',
+      ),
+    ).toBeInTheDocument();
   });
 });
 
@@ -248,6 +262,7 @@ describe('answers that are not answers', () => {
   it.each([
     ['abstained', "I don't have that in the data."],
     ['out_of_scope', 'I can only answer about RELIANCE, TCS and HDFC Bank.'],
+    ['remembered', "Noted. I'll remember: Risk: Conservative; Debt: Avoid high debt."],
   ] as const)('shows %s as a quiet notice, not an error', async (status, text) => {
     installFakeApi({ chatAnswer: () => demoAnswer({ status, text, sources: [] }) });
     render(<ChatView />);
@@ -257,6 +272,28 @@ describe('answers that are not answers', () => {
     expect(notice).toHaveClass('chat-notice');
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByRole('list', { name: 'Sources' })).toBeNull();
+  });
+
+  it('refetches what is remembered after a reply that stated a preference', async () => {
+    const api = installFakeApi({
+      chatAnswer: () =>
+        demoAnswer({
+          status: 'remembered',
+          text: "Noted. I'll remember: Risk: Conservative.",
+          sources: [],
+        }),
+    });
+    render(<ChatView />);
+    const before = api.requests.filter((r) => r === 'GET /api/v1/profile').length;
+
+    await ask("I'm conservative and dividend-focused.");
+    await screen.findByText("Noted. I'll remember: Risk: Conservative.");
+
+    await waitFor(() =>
+      expect(api.requests.filter((r) => r === 'GET /api/v1/profile').length).toBeGreaterThan(
+        before,
+      ),
+    );
   });
 });
 

@@ -10,6 +10,9 @@ The database does the heavy part (which passages mean something close to the que
 here only reorder the few dozen closest, and they are plain enough to test one by one:
 
 - a small bonus for recent filings (RECENCY_WEIGHT): it decides near-ties, never a clear gap;
+- for the chat, a small bonus for passages close in meaning to the investor's remembered profile
+  (PROFILE_WEIGHT, P13): the same size of nudge, so it too decides only near-ties, and only among
+  passages the question already found;
 - at most MAX_PER_DOCUMENT passages from one filing, so one long annual report cannot take
   every slot;
 - the same paragraph appearing in two filings (a standard disclaimer, say) is shown once.
@@ -29,6 +32,7 @@ from app.embeddings import Embedder, vector_literal
 CANDIDATES = 50  # how many of the closest passages the rules choose from
 MAX_PER_DOCUMENT = 2
 RECENCY_WEIGHT = 0.02  # at most this much is added to a similarity between 0 and 1
+PROFILE_WEIGHT = 0.02  # at most this much, times the passage's similarity to the profile
 EXCERPT_CHARS = 300  # the project notes: the UI shows short excerpts and a link, never the whole text
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -50,12 +54,13 @@ class Passage:
     text: str
     source_url: str | None
     similarity: float  # 1 - cosine distance: 1 means the same direction
+    profile_similarity: float = 0.0  # the same, to the investor's profile; 0 without one
 
 
 @dataclass(frozen=True)
 class Result:
     passage: Passage
-    score: float  # similarity plus the recency bonus
+    score: float  # similarity plus the recency and profile bonuses
 
 
 def filing_date(period: str | None) -> date | None:
@@ -81,8 +86,13 @@ def recency(period: str | None, today: date) -> float:
     return 0.5 if age <= 730 else 0.0
 
 
+def _score(p: Passage, today: date) -> float:
+    profile = max(p.profile_similarity, 0.0)  # an opposite profile takes nothing away
+    return p.similarity + RECENCY_WEIGHT * recency(p.period, today) + PROFILE_WEIGHT * profile
+
+
 def rerank(passages: list[Passage], *, today: date, k: int) -> list[Result]:
-    scored = [Result(p, p.similarity + RECENCY_WEIGHT * recency(p.period, today)) for p in passages]
+    scored = [Result(p, _score(p, today)) for p in passages]
     scored.sort(key=lambda r: (-r.score, r.passage.chunk_id))  # ties: the same order every time
     chosen: list[Result] = []
     seen_texts: set[str] = set()
@@ -114,7 +124,8 @@ _CLOSEST = text(
     """
     SELECT c.id AS chunk_id, c.content_hash, s.symbol, d.id AS document_id, d.title, d.kind,
            d.period, c.page_number AS page, c.text, d.source_url,
-           1 - (e.embedding <=> CAST(:vector AS vector)) AS similarity
+           1 - (e.embedding <=> CAST(:vector AS vector)) AS similarity,
+           COALESCE(1 - (e.embedding <=> CAST(:profile AS vector)), 0) AS profile_similarity
     FROM chunks c
     JOIN documents d ON d.id = c.document_id
     JOIN stocks s ON s.id = d.stock_id
@@ -135,15 +146,28 @@ async def search(
     symbol: str | None,
     today: date,
     k: int = 5,
+    profile: str = "",
 ) -> list[Result]:
+    """``profile``: the investor's profile summary (P13); empty for none, and then no bonus."""
     embedding = await embedder.embed(question)  # before any transaction: no I/O inside one
+    profile_vector = (await embedder.embed(profile)).vector if profile else None
     params = {
         "vector": vector_literal(embedding.vector),
+        "profile": vector_literal(profile_vector) if profile_vector else None,
         "model": embedder.model,
         "symbol": symbol,
         "limit": CANDIDATES,
     }
     async with session_factory() as db:
         rows = (await db.execute(_CLOSEST, params)).all()
-    passages = [Passage(**{**row._mapping, "similarity": float(row.similarity)}) for row in rows]
+    passages = [
+        Passage(
+            **{
+                **row._mapping,
+                "similarity": float(row.similarity),
+                "profile_similarity": float(row.profile_similarity),
+            }
+        )
+        for row in rows
+    ]
     return rerank(passages, today=today, k=k)

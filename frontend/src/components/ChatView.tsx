@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 
 import { AppShell } from '@/components/AppShell';
 import { ChatThread } from '@/components/ChatThread';
+import { MemoryPanel } from '@/components/MemoryPanel';
 import { ApiError } from '@/lib/api';
 import {
   getConversation,
@@ -20,6 +21,8 @@ const MAX_CHARS = 1000; // and longer ones
 
 const NOTE =
   'Answers come only from the stored filings and screener.in figures, each with its source. Not investment advice.';
+const DISCLAIMER =
+  'Not investment advice. Answers come only from stored filings and screener.in figures.';
 const HINT =
   'Ask about RELIANCE, TCS or HDFC Bank: their results, borrowings, dividends, or what was said on a call.';
 const LOAD_FAILED = "We couldn't load the page. Reload the page to try again.";
@@ -64,6 +67,7 @@ export function ChatView() {
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<string | null>(null); // the question being answered
   const [problem, setProblem] = useState<string | null>(null);
+  const [memoryRefresh, setMemoryRefresh] = useState(0); // bumped to refetch what is remembered
   // The conversation asked for last, so an older one that arrives late is ignored.
   const opening = useRef<string | null>(null);
 
@@ -135,6 +139,7 @@ export function ChatView() {
         phase: 'ready',
       }));
       setListVersion((version) => version + 1); // a new conversation, or a newer one
+      setMemoryRefresh((version) => version + 1); // the reply may have changed what is remembered
     } catch (error) {
       if (isStatus(error, 401)) {
         router.replace('/');
@@ -255,7 +260,9 @@ export function ChatView() {
               Send
             </button>
           </form>
+          <p className="chat-disclaimer muted">{DISCLAIMER}</p>
         </section>
+        <MemoryPanel refreshSignal={memoryRefresh} />
       </div>
     </AppShell>
   );

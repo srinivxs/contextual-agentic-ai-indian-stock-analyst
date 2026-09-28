@@ -88,15 +88,25 @@ def answer_tool() -> ToolSpec:
 
 
 def user_message(
-    question: str, history: list[Turn], evidence_text: str, problems: list[Problem]
+    question: str,
+    history: list[Turn],
+    evidence_text: str,
+    problems: list[Problem],
+    preferences: str = "",
 ) -> str:
-    """The user turn: recent history, the question, the evidence, and after a failed check what
-    to fix. Problems carry codes and short details only, never evidence text."""
+    """The user turn: recent history, the investor's remembered preferences (P13), the question,
+    the evidence, and after a failed check what to fix. Problems carry codes and short details
+    only, never evidence text. Preferences are labels from the fixed vocabulary, never quotes."""
     parts: list[str] = []
     recent = history[-HISTORY_TURNS:]
     if recent:
         lines = [f"{turn.role}: {turn.text[:HISTORY_CHARS]}" for turn in recent]
         parts.append("Earlier in this conversation:\n" + "\n".join(lines))
+    if preferences:
+        parts.append(
+            "The investor's stated preferences (context for relating the figures to them; not "
+            "evidence, never cite them):\n" + preferences
+        )
     parts.append(f"Question: {question}")
     parts.append("Evidence:\n" + evidence_text)
     if problems:

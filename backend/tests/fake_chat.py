@@ -48,6 +48,13 @@ def abstained() -> Reply:
     )
 
 
+def remembered(text: str = "Got it, I'll remember you're conservative.") -> Reply:
+    """A message that only stated preferences (P13): saved, and confirmed with no LLM call."""
+    return Reply(
+        text=text, status="remembered", sources=(), model=None, input_tokens=0, output_tokens=0
+    )
+
+
 class FakeChatEngine:
     """``replies``: a list returned in order (the last one repeats), or a function of
     (question, history). With neither, every reply is ``answered()``. ``error``: raised instead of

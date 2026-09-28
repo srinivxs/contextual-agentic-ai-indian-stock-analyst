@@ -11,6 +11,7 @@ import pytest
 
 from app.retrieval import (
     MAX_PER_DOCUMENT,
+    PROFILE_WEIGHT,
     RECENCY_WEIGHT,
     Passage,
     excerpt,
@@ -89,6 +90,25 @@ def test_a_recent_filing_wins_a_near_tie_but_not_a_clear_gap() -> None:
 
     assert [r.passage.chunk_id for r in results] == [3, 2, 1]
     assert results[1].score == pytest.approx(0.590 + RECENCY_WEIGHT)
+
+
+def test_a_passage_close_to_the_investor_s_profile_wins_a_near_tie_but_not_a_clear_gap() -> None:
+    """P13: the profile's fingerprint nudges the order among passages already close to the
+    question, as recency does; it never brings in a passage the question did not."""
+    plain = passage(1, 0.600)
+    near_profile = passage(2, 0.590, profile_similarity=0.9)
+    clearly_closer = passage(3, 0.700)
+
+    results = rerank([plain, near_profile, clearly_closer], today=TODAY, k=5)
+
+    assert [r.passage.chunk_id for r in results] == [3, 2, 1]
+    assert results[1].score == pytest.approx(0.590 + PROFILE_WEIGHT * 0.9)
+
+
+def test_without_a_profile_or_with_an_opposite_one_there_is_no_bonus() -> None:
+    assert passage(1, 0.5).profile_similarity == 0.0
+    [result] = rerank([passage(1, 0.5, profile_similarity=-0.4)], today=TODAY, k=5)
+    assert result.score == pytest.approx(0.5)
 
 
 def test_one_document_cannot_fill_every_slot() -> None:

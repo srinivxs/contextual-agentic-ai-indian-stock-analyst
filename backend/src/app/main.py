@@ -12,7 +12,7 @@ import httpx
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import auth, chat, documents, filing_checks, health, insights, search, stocks
+from app.api import auth, chat, documents, filing_checks, health, insights, profile, search, stocks
 from app.api.middleware import NoStoreMiddleware, RequestContextMiddleware
 from app.auth.jwks import JwksCache
 from app.chat.graph import GraphChatEngine
@@ -89,4 +89,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(search.router)
     app.include_router(insights.router)
     app.include_router(chat.router)
+    app.include_router(profile.router)
     return app
