@@ -1,7 +1,8 @@
 # 021 — The grounded chat: a fixed LangGraph workflow, numbered evidence, a code checker
 
 - **Status:** Accepted (P12, 2026-09-27; the owner approved LangGraph, a $1 chat cap, US$ shown
-  as reported, and the three stocks only).
+  as reported, and the three stocks only). Gate B passed locally on 2026-09-28; Nova 2 Lite kept
+  for chat.
 - **Date:** 2026-09-27
 
 ## Context

@@ -35,7 +35,7 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | P9 | Document ingestion core | ✅ done locally (ADR 018): P9a store + dedupe; P9b worker, PDF text, chunks; P9c automatic BSE filings; P9d Documents page, three years, follow/check trigger, uploads removed. AWS part moved to GL |
 | P10 | Embeddings and retrieval | ✅ done locally (ADR 019): P10a fingerprints + token cap; P10b search API and box; first real run about $0.07 |
 | P11 | Fact and event extraction, derived values | ✅ done locally (ADR 020): P11a/b facts and events (Nova 2 Lite + validator, screener.in table by code); P11c stock page with citations; real run $0.49; definition guards after the hand check |
-| P12 | Grounded chat (LangGraph) → **Gate B: cited RAG chat working** (locally; live at GL) | |
+| P12 | Grounded chat (LangGraph) → **Gate B: cited RAG chat working** (locally; live at GL) | ✅ done locally (ADR 021): Gate B passed locally 2026-09-28; P12b/c fixes from the owner's real questions; Nova 2 Lite kept for chat |
 | P13 | Investor memory | |
 | P14 | Deterministic matching → **Gate C: full MVP working** | |
 | P15 | Scheduled RBI feed | |
@@ -234,7 +234,12 @@ leaves a real product.
   (F#, D#, N#), one forced tool call, the checker with one retry, migration `0008`
   (conversations, messages), `/api/v1/chat/*`, and the Chat page with numbered sources.
   `CHAT_ENABLED` off by default; `CHAT_BUDGET_USD` $1. Money as reported (US$ stays US$), the three
-  stocks only. Gate B passes locally after the real run; live at GL.
+  stocks only.
+- **Done (locally, 2026-09-28): Gate B passed locally.** The owner's real questions (about $0.007
+  in all) found four faults in the first answers (P12b) and one in the second (P12c: one measure
+  over time from two sources), each now refused by code or ruled out by the prompt. The second run
+  was grounded and cited throughout; the P12c rule is covered by tests and gets its first real try
+  at GL. Nova 2 Lite is kept for chat.
 
 ## P13 — Investor memory
 
