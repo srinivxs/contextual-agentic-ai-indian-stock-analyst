@@ -2903,3 +2903,17 @@ a.chat-source-chip:hover {
     transition: none;
   }
 }
+
+/* The three companies' logos (owner-supplied): the image fills the circle. */
+.monogram.has-logo {
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.monogram.has-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

@@ -112,8 +112,22 @@ describe('the stock monogram', () => {
     expect(monogramLetters('HDFCBANK')).toBe('HD');
     expect(monogramLetters('M&M')).toBe('MM');
     expect(monogramLetters('&')).toBe('?');
-    expect(monogramTint('TCS')).toBe(monogramTint('TCS'));
-    render(<Monogram symbol="TCS" size="lg" />);
-    expect(screen.getByText('TC')).toHaveClass('monogram', 'lg');
+    expect(monogramTint('DEMO')).toBe(monogramTint('DEMO'));
+    render(<Monogram symbol="DEMO" size="lg" />);
+    expect(screen.getByText('DE')).toHaveClass('monogram', 'lg');
+  });
+
+  it.each([
+    ['TCS', '/logos/TCS.png'],
+    ['RELIANCE', '/logos/RELIANCE.png'],
+    ['HDFCBANK', '/logos/HDFCBANK.png'],
+  ])('shows the owner-supplied logo for %s instead of letters', (symbol, src) => {
+    const { container } = render(<Monogram symbol={symbol} size="md" />);
+    const mark = container.querySelector('.monogram');
+    expect(mark).toHaveClass('monogram', 'md', 'has-logo');
+    const logo = mark?.querySelector('img');
+    expect(logo).toHaveAttribute('src', src);
+    expect(logo).toHaveAttribute('alt', ''); // decorative: the name is always written next to it
+    expect(mark).not.toHaveTextContent(/\w/);
   });
 });

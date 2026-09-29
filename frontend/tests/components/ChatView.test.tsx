@@ -628,7 +628,10 @@ describe('safety and sessions', () => {
     await ask(evil);
     await screen.findByRole('list', { name: 'Sources' });
     expect(within(thread()).getAllByText(evil).length).toBeGreaterThan(0);
-    expect(container.querySelector('img')).toBeNull();
+    // The only images on the page are the three company logos in the side panel: nothing the
+    // text contained ever became an element.
+    expect(thread().querySelector('img')).toBeNull();
+    expect(container.querySelector('img[src="x"], img[onerror]')).toBeNull();
   });
 
   it('sends a signed-out visitor to the sign-in page, asking nothing of the chat', async () => {
