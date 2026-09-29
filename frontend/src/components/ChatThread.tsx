@@ -2,19 +2,47 @@
 
 import { useState } from 'react';
 
-import { LeafIcon } from '@/components/Icons';
-import { sourceLink, splitMarkers, type ChatMessage, type ChatSource } from '@/lib/chat';
+import { ExternalIcon, LeafIcon } from '@/components/Icons';
+import {
+  boldFigures,
+  changeTone,
+  clockLabel,
+  sourceLink,
+  splitMarkers,
+  tableLink,
+  type ChatMessage,
+  type ChatSource,
+  type ChatTable,
+} from '@/lib/chat';
 
 /**
- * The messages of one conversation: the user's questions, and each answer with its numbered
- * sources. React renders every value as text, so nothing from the server is ever HTML.
+ * The messages of one conversation: the user's questions, and each answer in a card with its
+ * figures in bold, an optional table, and its numbered sources. React renders every value as
+ * text, so nothing from the server is ever HTML.
  */
 
 /** The page-wide id of one source of one answer, so a marker can point at it. */
 const sourceId = (messageId: string, marker: number): string => `source-${messageId}-${marker}`;
 
-/** A source's label: a link that opens it in a new tab, plain text if unsafe, or "Computed". */
-function SourceLabel({ source }: { source: ChatSource }) {
+const KIND_DETAIL: Record<ChatSource['source'], string> = {
+  filing: 'Official filing (BSE)',
+  screener: 'screener.in figure',
+  rbi: 'RBI press release',
+  derived: 'Computed from stored figures',
+};
+
+/** The time under a message, e.g. "10:24"; nothing when there is none to show. */
+function Clock({ iso }: { iso: string }) {
+  const label = clockLabel(iso);
+  return label ? (
+    <time className="chat-time" dateTime={iso}>
+      {label}
+    </time>
+  ) : null;
+}
+
+/** A source's title: a link that opens it in a new tab, plain text if unsafe, or "Computed". */
+function SourceLabel({ source, link }: { source: ChatSource; link: string | null }) {
   if (source.source === 'derived') {
     return (
       <>
@@ -22,7 +50,6 @@ function SourceLabel({ source }: { source: ChatSource }) {
       </>
     );
   }
-  const link = sourceLink(source);
   const label = link ? (
     <a href={link} target="_blank" rel="noopener noreferrer" className="doc-link">
       {source.label}
@@ -48,25 +75,102 @@ function ChatSources({
   active: number | null;
 }) {
   return (
-    <ol className="chat-sources" aria-label="Sources">
-      {sources.map((source, index) => (
-        <li
-          key={`${index}-${source.marker}`}
-          id={sourceId(messageId, source.marker)}
-          tabIndex={-1} // so a marker can move the focus here
-          className={source.marker === active ? 'chat-source highlighted' : 'chat-source'}
-        >
-          <span className="chat-source-marker">{`[${source.marker}]`}</span>
-          <SourceLabel source={source} />
-          {source.quote && (
-            <details className="chat-quote">
-              <summary>Quote</summary>
-              <blockquote>{source.quote}</blockquote>
-            </details>
+    <div className="chat-sources-box">
+      <p className="chat-sources-title">Sources</p>
+      <ol className="chat-sources" aria-label="Sources">
+        {sources.map((source, index) => {
+          const link = sourceLink(source);
+          return (
+            <li
+              key={`${index}-${source.marker}`}
+              id={sourceId(messageId, source.marker)}
+              tabIndex={-1} // so a marker can move the focus here
+              className={source.marker === active ? 'chat-source highlighted' : 'chat-source'}
+            >
+              <span className="chat-source-marker">{source.marker}</span>
+              <div className="chat-source-body">
+                <div className="chat-source-title">
+                  <SourceLabel source={source} link={link} />
+                </div>
+                <p className="chat-source-detail">{KIND_DETAIL[source.source]}</p>
+                {source.quote && (
+                  <details className="chat-quote">
+                    <summary>Quote</summary>
+                    <blockquote>{source.quote}</blockquote>
+                  </details>
+                )}
+              </div>
+              {link && (
+                <a
+                  className="chat-source-open"
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-hidden="true"
+                  tabIndex={-1}
+                >
+                  <ExternalIcon />
+                </a>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+/** A small table the server built from stored figures: its title, columns, rows and source. */
+function AnswerTable({ table }: { table: ChatTable }) {
+  const link = tableLink(table);
+  const changeColumns = table.columns.map((column) => /change/i.test(column));
+  return (
+    <figure className="chat-table">
+      <table>
+        <caption>{table.title}</caption>
+        <thead>
+          <tr>
+            {table.columns.map((column, index) => (
+              <th key={index} scope="col" className={changeColumns[index] ? 'num' : undefined}>
+                {column}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {row.map((cell, index) =>
+                index === 0 ? (
+                  <th key={index} scope="row">
+                    {cell}
+                  </th>
+                ) : (
+                  <td
+                    key={index}
+                    className={changeColumns[index] ? `num chat-change ${changeTone(cell)}` : 'num'}
+                  >
+                    {cell}
+                  </td>
+                ),
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {table.source && (
+        <figcaption className="chat-table-source muted">
+          Source:{' '}
+          {link ? (
+            <a href={link} target="_blank" rel="noopener noreferrer" className="doc-link">
+              {table.source.label}
+            </a>
+          ) : (
+            <span>{table.source.label}</span>
           )}
-        </li>
-      ))}
-    </ol>
+        </figcaption>
+      )}
+    </figure>
   );
 }
 
@@ -76,7 +180,14 @@ function ChatSources({
  */
 function Answer({ message }: { message: ChatMessage }) {
   const [active, setActive] = useState<number | null>(null);
-  if (message.status !== 'answered') return <p className="chat-notice">{message.text}</p>;
+  if (message.status !== 'answered') {
+    return (
+      <>
+        <p className="chat-notice">{message.text}</p>
+        <Clock iso={message.created_at} />
+      </>
+    );
+  }
 
   const show = (marker: number) => {
     setActive(marker);
@@ -91,7 +202,11 @@ function Answer({ message }: { message: ChatMessage }) {
       <p className="chat-text">
         {segments.map((segment, index) =>
           segment.kind === 'text' ? (
-            <span key={index}>{segment.text}</span>
+            <span key={index}>
+              {boldFigures(segment.text).map((piece, at) =>
+                piece.bold ? <strong key={at}>{piece.text}</strong> : piece.text,
+              )}
+            </span>
           ) : (
             <sup key={index}>
               <button
@@ -107,10 +222,37 @@ function Answer({ message }: { message: ChatMessage }) {
           ),
         )}
       </p>
+      {message.table && <AnswerTable table={message.table} />}
       {message.sources.length > 0 && (
         <ChatSources messageId={message.id} sources={message.sources} active={active} />
       )}
+      <Clock iso={message.created_at} />
     </>
+  );
+}
+
+/** The user's message: a tinted bubble on the right, their initials beside it, the time under. */
+function Mine({
+  text,
+  initials,
+  at,
+  pending = false,
+}: {
+  text: string;
+  initials: string;
+  at: string | null;
+  pending?: boolean;
+}) {
+  return (
+    <li className={pending ? 'chat-message user pending' : 'chat-message user'}>
+      <div className="chat-mine-stack">
+        <p className="bubble">{text}</p>
+        {at !== null && <Clock iso={at} />}
+      </div>
+      <span className="chat-initials" aria-hidden="true">
+        {initials}
+      </span>
+    </li>
   );
 }
 
@@ -118,17 +260,17 @@ function Answer({ message }: { message: ChatMessage }) {
 export function ChatThread({
   messages,
   pending,
+  initials,
 }: {
   messages: ChatMessage[];
   pending: string | null;
+  initials: string;
 }) {
   return (
     <ol className="chat-thread" aria-label="Messages">
       {messages.map((message) =>
         message.role === 'user' ? (
-          <li key={message.id} className="chat-message user">
-            <p className="bubble">{message.text}</p>
-          </li>
+          <Mine key={message.id} text={message.text} initials={initials} at={message.created_at} />
         ) : (
           <li key={message.id} className="chat-message assistant">
             <span className="chat-avatar small" aria-hidden="true">
@@ -140,11 +282,7 @@ export function ChatThread({
           </li>
         ),
       )}
-      {pending !== null && (
-        <li className="chat-message user pending">
-          <p className="bubble">{pending}</p>
-        </li>
-      )}
+      {pending !== null && <Mine text={pending} initials={initials} at={null} pending />}
     </ol>
   );
 }

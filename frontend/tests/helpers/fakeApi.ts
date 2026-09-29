@@ -4,7 +4,7 @@
  */
 import { vi } from 'vitest';
 
-import type { ChatMessage, ChatSource, Conversation } from '@/lib/chat';
+import type { ChatMessage, ChatSource, ChatTable, Conversation } from '@/lib/chat';
 import type { Citation, DerivedValue, KeyFact, StockInsights } from '@/lib/insights';
 import type { FeedItem } from '@/lib/feed';
 import type { MatchReason, MatchResult, StockMatch } from '@/lib/match';
@@ -290,6 +290,29 @@ export const demoAnswer = (overrides: Partial<ChatMessage> = {}): ChatMessage =>
     }),
   ],
   created_at: '2026-09-27T10:00:05+00:00',
+  ...overrides,
+});
+
+/** The three real stocks the chat page's panel asks about (the fake has data for what it is given). */
+export const CHAT_STOCKS: FakeStock[] = [
+  { symbol: 'RELIANCE', name: 'Reliance Industries Limited', bse_code: '500325', sector: 'Energy' },
+  { symbol: 'TCS', name: 'Tata Consultancy Services Limited', bse_code: '532540', sector: 'IT' },
+  { symbol: 'HDFCBANK', name: 'HDFC Bank Limited', bse_code: '500180', sector: 'Banking' },
+];
+
+/** The table the server may add under an answer (invented figures); override any field. */
+export const demoTable = (overrides: Partial<ChatTable> = {}): ChatTable => ({
+  title: 'DemoCo Alpha net profit (consolidated, ₹ crore)',
+  columns: ['Year', 'Net profit (₹ crore)', 'Change'],
+  rows: [
+    ['FY2026', '12,345', '+1.3%'],
+    ['FY2025', '12,187', '-5.9%'],
+    ['FY2024', '12,950', ''],
+  ],
+  source: {
+    label: 'screener.in · consolidated, full years',
+    url: 'https://www.screener.in/company/DEMOA/consolidated/',
+  },
   ...overrides,
 });
 

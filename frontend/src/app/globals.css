@@ -1203,8 +1203,8 @@ a.chip:hover {
   font-size: 0.8rem;
 }
 
-/* Chat (P12): conversations on the left, the open one in a card, what is remembered on the right;
-   one column on a small screen. */
+/* Chat (P12): the conversation on the left, a panel for the stock discussed on the right (its
+   price, key figures, news and what is remembered); the panel drops below on a small screen. */
 
 :root {
   --chat-bubble: #f1f1f3;
@@ -1228,54 +1228,9 @@ a.chip:hover {
 
 .chat {
   display: grid;
-  grid-template-columns: 13rem minmax(0, 1fr) 19rem;
+  grid-template-columns: minmax(0, 1fr) 21rem;
   gap: 1.25rem;
   align-items: start;
-}
-
-.chat-list ul {
-  list-style: none;
-  margin: 0.75rem 0 0;
-  padding: 0;
-}
-
-.chat-list .button {
-  width: 100%;
-}
-
-.chat-list > .muted {
-  font-size: 0.9rem;
-}
-
-.chat-item {
-  display: block;
-  width: 100%;
-  margin-bottom: 0.15rem;
-  padding: 0.5rem 0.7rem;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: 0.9rem;
-  text-align: left;
-  overflow-wrap: anywhere;
-  cursor: pointer;
-}
-
-.chat-item:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-
-.chat-item[aria-current='true'] {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  font-weight: 600;
-}
-
-.chat-item:disabled {
-  cursor: progress;
 }
 
 .marker:focus-visible {
@@ -1290,6 +1245,8 @@ a.chip:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
 }
+
+/* The header: avatar, title, the honest pill, and the conversations menu. */
 
 .chat-card-head {
   display: flex;
@@ -1312,7 +1269,7 @@ a.chip:hover {
 
 .chat-card-title p {
   margin: 0.1rem 0 0;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
 .chat-avatar {
@@ -1349,6 +1306,86 @@ a.chip:hover {
   background: var(--ok-dot);
 }
 
+.chat-menu-wrap {
+  position: relative;
+}
+
+.chat-menu-button {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.chat-menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 20;
+  width: 17rem;
+  max-height: 20rem;
+  padding: 0.4rem;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+}
+
+.chat-menu ul {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+.chat-menu > .muted {
+  margin: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+}
+
+.chat-menu-new {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-item {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.15rem;
+  padding: 0.5rem 0.7rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.chat-item:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.chat-item[aria-current='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+/* The messages. */
+
 .chat-thread {
   list-style: none;
   margin: 0;
@@ -1366,22 +1403,34 @@ a.chip:hover {
 }
 
 .answer-body {
+  position: relative;
   min-width: 0;
-  max-width: 90%;
-  padding: 0.7rem 1rem;
+  max-width: 92%;
+  padding: 0.85rem 1rem 0.6rem;
+  border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  background: var(--chat-bubble);
+  background: var(--surface);
 }
 
-/* The user's questions sit on the right, in green; a question still waiting is faded. */
+/* The user's questions sit on the right, in a tinted bubble, with their initials; a question
+   still waiting is faded. */
 
 .chat-message.user {
   display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
   justify-content: flex-end;
 }
 
-.bubble {
+.chat-mine-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
   max-width: 85%;
+}
+
+.bubble {
   margin: 0;
   padding: 0.6rem 1rem;
   border-radius: var(--radius-card);
@@ -1390,7 +1439,33 @@ a.chip:hover {
   overflow-wrap: anywhere;
 }
 
-.chat-message.pending .bubble {
+.chat-initials {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: var(--chat-bubble);
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.chat-time {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.answer-body .chat-time {
+  text-align: right;
+}
+
+.chat-message.pending .chat-mine-stack,
+.chat-message.pending .chat-initials {
   opacity: 0.6;
 }
 
@@ -1400,32 +1475,13 @@ a.chip:hover {
   overflow-wrap: anywhere;
 }
 
+.chat-text strong {
+  font-weight: 650;
+}
+
 .chat-can {
   margin: 0.4rem 0 0;
   padding-left: 1.2rem;
-}
-
-.chat-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 0.25rem 0 0 2.65rem;
-}
-
-.chat-chip {
-  padding: 0.4rem 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  font-size: 0.88rem;
-  cursor: pointer;
-}
-
-.chat-chip:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
 }
 
 .chat-notice {
@@ -1449,18 +1505,95 @@ a.chip:hover {
   text-decoration: underline;
 }
 
+/* A table built from stored figures, under an answer. */
+
+.chat-table {
+  margin: 0.8rem 0 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+
+.chat-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.chat-table caption {
+  padding: 0.55rem 0.8rem;
+  font-weight: 650;
+  text-align: left;
+}
+
+.chat-table th,
+.chat-table td {
+  padding: 0.4rem 0.8rem;
+  border-top: 1px solid var(--border);
+  text-align: left;
+  font-weight: 500;
+}
+
+.chat-table thead th {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.chat-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-table-source {
+  margin: 0;
+  padding: 0.4rem 0.8rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+
+.chat-change.rise {
+  color: var(--rise);
+}
+
+.chat-change.fall {
+  color: var(--fall);
+}
+
+/* Sources: a numbered list in a bordered box. */
+
+.chat-sources-box {
+  margin-top: 0.8rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+}
+
+.chat-sources-title {
+  margin: 0 0 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
 .chat-sources {
   list-style: none;
-  margin: 0.6rem 0 0;
-  padding: 0.5rem 0 0;
-  border-top: 1px solid var(--border);
+  margin: 0;
+  padding: 0;
   font-size: 0.85rem;
 }
 
 .chat-source {
-  padding: 0.25rem 0.4rem;
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.4rem 0.4rem;
   border-radius: 6px;
   overflow-wrap: anywhere;
+}
+
+.chat-source + .chat-source {
+  border-top: 1px solid var(--border);
 }
 
 .chat-source.highlighted {
@@ -1472,23 +1605,81 @@ a.chip:hover {
 }
 
 .chat-source-marker {
-  margin-right: 0.4rem;
-  color: var(--muted);
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.chat-source-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-source-title a {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.chat-source-detail {
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.chat-source-open {
+  flex: none;
+  color: var(--muted);
 }
 
 .chat-quote summary {
   color: var(--muted);
+  font-size: 0.78rem;
   cursor: pointer;
 }
 
 .chat-quote blockquote {
-  margin: 0.25rem 0 0.25rem 1rem;
+  margin: 0.25rem 0 0.25rem 0.5rem;
   color: var(--muted);
   font-style: italic;
 }
 
-/* The input card: a large field and a round green send button. */
+/* Suggestion chips: outlined, rounded, with a small arrow. */
+
+.chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0 2.65rem;
+}
+
+.chat-chip {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.chat-chip:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* The input card: a large field and a round send button. */
 
 .chat-form {
   display: flex;
@@ -1542,34 +1733,191 @@ a.chip:hover {
   cursor: not-allowed;
 }
 
+.chat-disclaimer {
+  margin: 0.6rem 0 0;
+  font-size: 0.8rem;
+}
+
+/* The side panel: stock tabs, then cards. */
+
+.chat-panel {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.chat-stock-tabs,
+.chat-ranges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.chat-range {
+  padding: 0.25rem 0.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.chat-range[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.chat-card {
+  min-width: 0;
+  padding: 1rem 1.15rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.chat-card h2 {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+}
+
+.chat-card p {
+  margin: 0;
+}
+
+.chat-stock-row {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  margin-bottom: 0.7rem;
+}
+
+.chat-stock-row .muted {
+  font-size: 0.85rem;
+}
+
+.chat-price-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin-bottom: 0.6rem;
+}
+
+.chat-price {
+  font-size: 1.6rem;
+}
+
+.chat-ranges {
+  margin-bottom: 0.5rem;
+}
+
+.chat-card .price-chart .home-callout,
+.chat-card .price-chart .home-chart-dot {
+  display: none; /* the price is written above the chart */
+}
+
+.chat-asof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.4rem !important;
+  font-size: 0.78rem;
+}
+
+.chat-metrics,
+.chat-news {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chat-metrics li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+
+.chat-metrics li:first-child,
+.chat-news li:first-child {
+  border-top: 0;
+}
+
+.chat-metrics .chat-change {
+  min-width: 3.2rem;
+  text-align: right;
+}
+
+.chat-source-chip {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-decoration: none;
+}
+
+a.chat-source-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.chat-news li {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+
+.chat-news-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.chat-news-meta {
+  font-size: 0.75rem;
+}
+
 @media (max-width: 64rem) {
   .chat {
-    grid-template-columns: 12rem minmax(0, 1fr);
-  }
-
-  .memory-panel {
-    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 40rem) {
-  .chat {
-    grid-template-columns: 1fr;
-  }
-
   .bubble,
-  .answer-body {
+  .answer-body,
+  .chat-mine-stack {
     max-width: 100%;
   }
 
   .chat-suggestions {
     margin-left: 0;
   }
-}
 
-.chat-disclaimer {
-  margin-top: 0.6rem;
-  font-size: 0.8rem;
+  .chat-menu {
+    right: auto;
+    left: 0;
+  }
 }
 
 /* "Your investor profile": a round tinted icon, the field, its value on the right. */

@@ -599,3 +599,83 @@ async def test_a_price_question_is_answered_from_the_stored_close_with_its_bse_f
     finally:
         async with admin_engine.begin() as connection:
             await connection.execute(text("DELETE FROM prices"))
+
+
+# --- the year-by-year table (redesign) -----------------------------------------------------------
+
+
+async def seed_earlier_years(engine: AsyncEngine) -> None:
+    """Two more screener.in years for TCS, so with seed()'s FY2025 the series has three."""
+    async with engine.begin() as connection:
+        for year, value in ((2023, 1000), (2024, 1050)):
+            await connection.execute(
+                text(
+                    "INSERT INTO facts (stock_id, source, source_url, source_section, source_row, "
+                    "source_column, metric, period, period_end, basis, currency, unit, value) "
+                    "SELECT id, 'screener', 'https://www.screener.in/company/TCS/consolidated/', "
+                    "'profit-loss', 'Net Profit', :column, 'net_profit', :period, "
+                    "make_date(:year, 3, 31), 'consolidated', 'INR', 'INR_CRORE', :value "
+                    "FROM stocks WHERE symbol = 'TCS'"
+                ),
+                {"column": f"Mar {year}", "period": f"FY{year}", "year": year, "value": value},
+            )
+
+
+async def test_an_answered_net_profit_question_for_one_stock_carries_the_table(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    await seed_earlier_years(admin_engine)
+
+    reply = await ask(session_factory, FakeLlm(grounded), "What was TCS net profit in FY2026?")
+
+    assert reply.status == "answered"
+    table = reply.table
+    assert table is not None
+    assert table.title == "TCS net profit (consolidated, ₹ crore)"
+    assert table.columns == ("Year", "Net profit (₹ crore)", "Change")
+    assert table.rows == (
+        ("FY2025", "1,100", "+4.8%"),
+        ("FY2024", "1,050", "+5.0%"),
+        ("FY2023", "1,000", ""),
+    )  # screener.in only: the annual report's FY2026 figure is not mixed in
+    assert table.source_label == "screener.in · consolidated, full years"
+    assert table.source_url == "https://www.screener.in/company/TCS/consolidated/"
+
+
+async def test_a_follow_up_takes_its_stock_from_the_history_for_the_table(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    await seed_earlier_years(admin_engine)
+    earlier = [Turn(role="user", text="Tell me about TCS")]
+
+    reply = await ask(
+        session_factory, FakeLlm(grounded), "And the net profit in FY2026?", history=earlier
+    )
+
+    assert reply.table is not None
+    assert reply.table.title.startswith("TCS net profit")
+
+
+async def test_an_abstention_carries_no_table(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    await seed_earlier_years(admin_engine)
+    llm = FakeLlm(lambda s, u, t: {"outcome": "not_in_data", "claims": []})
+
+    reply = await ask(session_factory, llm, "What was TCS net profit in FY2026?")
+
+    assert (reply.status, reply.table) == ("abstained", None)
+
+
+async def test_a_question_about_all_three_stocks_carries_no_table(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    await seed_earlier_years(admin_engine)
+
+    reply = await ask(session_factory, FakeLlm(grounded), "What was the net profit in FY2026?")
+
+    assert reply.table is None

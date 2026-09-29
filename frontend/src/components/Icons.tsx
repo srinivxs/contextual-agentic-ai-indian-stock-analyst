@@ -107,3 +107,21 @@ export const MoonIcon = () => (
     <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />
   </Icon>
 );
+export const ExternalIcon = () => (
+  <Icon size={15}>
+    <path d="M14 4h6v6" />
+    <path d="M20 4 11 13" />
+    <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+  </Icon>
+);
+export const ArrowRightIcon = () => (
+  <Icon size={14}>
+    <path d="M5 12h14" />
+    <path d="m13 6 6 6-6 6" />
+  </Icon>
+);
+export const ChevronDownIcon = () => (
+  <Icon size={16}>
+    <path d="m6 9 6 6 6-6" />
+  </Icon>
+);

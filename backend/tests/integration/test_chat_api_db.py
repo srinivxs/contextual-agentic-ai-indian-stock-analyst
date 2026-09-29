@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.chat.contract import ABSTAIN_TEXT, Reply, Turn
+from app.chat.contract import ABSTAIN_TEXT, DataTable, Reply, Turn
 from app.chat.store import (
     add_exchange,
     chat_spent_usd,
@@ -144,7 +144,9 @@ async def test_an_answer_is_stored_with_its_sources_and_tokens_and_returned(
             "quote": DEMO_SOURCE.quote,
         }
     ]
-    assert set(question) == {"id", "role", "text", "status", "sources", "created_at"}
+    assert set(question) == {"id", "role", "text", "status", "sources", "table", "created_at"}
+    assert question["table"] is None
+    assert answer["table"] is None
     assert UUID(question["id"]) != UUID(answer["id"])
     assert question["created_at"] <= answer["created_at"]
     assert engine.calls == [(QUESTION, [], user_id)]
@@ -167,6 +169,57 @@ async def test_an_answer_is_stored_with_its_sources_and_tokens_and_returned(
         ("assistant", "answered", "fake-llm", 1000, 200),
     ]
     assert '"marker": 1' in stored[1][5]
+
+
+DEMO_TABLE = DataTable(
+    title="DemoCo net profit (consolidated, ₹ crore)",
+    columns=("Year", "Net profit (₹ crore)", "Change"),
+    rows=(("FY2026", "1,10", "+10.0%"), ("FY2025", "100", "")),
+    source_label="screener.in · consolidated, full years",
+    source_url="https://www.screener.in/company/DEMO/consolidated/",
+)
+TABLE_JSON = {
+    "title": DEMO_TABLE.title,
+    "columns": ["Year", "Net profit (₹ crore)", "Change"],
+    "rows": [["FY2026", "1,10", "+10.0%"], ["FY2025", "100", ""]],
+    "source": {
+        "label": "screener.in · consolidated, full years",
+        "url": "https://www.screener.in/company/DEMO/consolidated/",
+    },
+}
+
+
+async def test_a_replys_table_is_stored_returned_and_read_back_in_the_same_shape(
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    _, headers = await sign_in(make_user, session_factory)
+    engine = FakeChatEngine([answered(table=DEMO_TABLE)])
+
+    async with chat_app(db_config, engine) as client:
+        posted = (await ask(client, headers)).json()
+        listed = (
+            await client.get(f"{CONVERSATIONS}/{posted['conversation_id']}", headers=headers)
+        ).json()
+
+    assert posted["answer"]["table"] == TABLE_JSON
+    assert posted["question"]["table"] is None
+    assert [m["table"] for m in listed["messages"]] == [None, TABLE_JSON]
+    stored = await scalar(admin_engine, "SELECT data_table FROM messages WHERE role = 'assistant'")
+    assert stored == TABLE_JSON
+
+
+async def test_a_message_stored_without_a_table_returns_null(
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    """An older row (before migration 0012) has no data_table."""
+    user_id, headers = await sign_in(make_user, session_factory)
+    await spend(admin_engine, user_id, 1, 1)
+
+    async with chat_app(db_config, None) as client:
+        [item] = (await client.get(CONVERSATIONS, headers=headers)).json()["items"]
+        listed = (await client.get(f"{CONVERSATIONS}/{item['id']}", headers=headers)).json()
+
+    assert [m["table"] for m in listed["messages"]] == [None]
 
 
 async def test_an_abstention_is_stored_as_one(

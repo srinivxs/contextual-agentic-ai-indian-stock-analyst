@@ -18,7 +18,9 @@
 - generate (LLM): one call, a forced tool filling a fixed form (app/chat/prompts.py).
 - validate (code): every claim cites real evidence and every number is in what it cites
   (app/chat/answer_check.py). A failure gets one retry, told what failed; a second failure abstains.
-- respond (code): the [n] markers and the numbered sources (app/chat/render.py).
+- respond (code): the [n] markers and the numbered sources (app/chat/render.py), and for a
+  question about one stock's profit or revenue a year-by-year table built from stored screener.in
+  figures (app/chat/tables.py), so the model never writes a figure in it.
 
 The LLM decides nothing about control flow: it only writes the answer's sentences. Every edge is
 plain code, so the grounding path cannot be skipped, and each node is tested on its own.
@@ -35,10 +37,11 @@ from langgraph.graph import END, START, StateGraph
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.chat.answer_check import Claim, Problem, check_answer
-from app.chat.contract import ABSTAIN_TEXT, OUT_OF_SCOPE_TEXT, Reply, Turn
+from app.chat.contract import ABSTAIN_TEXT, OUT_OF_SCOPE_TEXT, DataTable, Reply, Turn
 from app.chat.evidence import EvidenceItem, build_evidence, evidence_block
 from app.chat.prompts import SYSTEM_PROMPT, Outcome, answer_tool, parse_answer, user_message
 from app.chat.render import render
+from app.chat.tables import SERIES_METRICS, build_table
 from app.chat.understand import Question, symbols_in, understand
 from app.derived import Sentiment, rolling_sentiment
 from app.embeddings import Embedder
@@ -51,6 +54,7 @@ from app.memory.store import get_profile, remember
 from app.memory.vocabulary import Preference, StoredPreference
 from app.prices.derived import PriceSnapshot, snapshot
 from app.retrieval import Result, search
+from app.series import SeriesPoint, load_series
 
 logger = logging.getLogger("app.chat")
 
@@ -76,6 +80,7 @@ class ChatState(TypedDict, total=False):
     stated: list[Preference]  # what this message says about the investor (P13)
     profile: list[StoredPreference]  # the investor's profile after this message
     evidence: list[EvidenceItem]
+    series: dict[str, list[SeriesPoint]]  # for the table: metric -> screener.in years, oldest first
     outcome: Outcome
     claims: list[Claim]
     problems: list[Problem]
@@ -183,6 +188,7 @@ class GraphChatEngine:
         sentiment: dict[str, Sentiment] = {}
         stocks: list[StockRows] = []
         prices: dict[str, PriceSnapshot] = {}
+        series: dict[str, list[SeriesPoint]] = {}
         async with self._session_factory() as db:
             for symbol in question.symbols:
                 stock = await load_stock(db, symbol)
@@ -195,6 +201,10 @@ class GraphChatEngine:
                     events[symbol] = stock.events
                     rows = [event.row for event in stock.events]
                     sentiment[symbol] = rolling_sentiment(rows, as_of=self._today())
+                    if len(question.symbols) == 1:  # a table is for one stock only
+                        for metric in SERIES_METRICS:
+                            if metric in question.metrics:
+                                series[metric] = await load_series(db, stock.id, metric)
         passages = await self._passages(
             state["question"], question, profile_summary(state["profile"])
         )
@@ -212,7 +222,7 @@ class GraphChatEngine:
             matches=matches,
             prices=prices,
         )
-        return {"evidence": evidence}
+        return {"evidence": evidence, "series": series}
 
     async def _passages(self, text: str, question: Question, profile: str) -> list[Result]:
         """The closest passages of the question's stocks, or none if search is switched off or
@@ -290,7 +300,8 @@ class GraphChatEngine:
 
     async def respond(self, state: ChatState) -> ChatState:
         text, sources = render(state["claims"], state["evidence"])
-        return {"reply": self._reply(state, text, "answered", sources)}
+        table = build_table(state["understood"], state["series"])
+        return {"reply": self._reply(state, text, "answered", sources, table)}
 
     async def abstain(self, state: ChatState) -> ChatState:
         return {"reply": self._reply(state, ABSTAIN_TEXT, "abstained", ())}
@@ -301,7 +312,14 @@ class GraphChatEngine:
     async def out_of_scope(self, state: ChatState) -> ChatState:
         return {"reply": self._reply(state, OUT_OF_SCOPE_TEXT, "out_of_scope", ())}
 
-    def _reply(self, state: ChatState, text: str, status: Any, sources: tuple[Any, ...]) -> Reply:
+    def _reply(
+        self,
+        state: ChatState,
+        text: str,
+        status: Any,
+        sources: tuple[Any, ...],
+        table: DataTable | None = None,
+    ) -> Reply:
         called = state["attempts"] > 0
         return Reply(
             text=text,
@@ -310,4 +328,5 @@ class GraphChatEngine:
             model=self._llm.model if called else None,
             input_tokens=state["tokens_in"],
             output_tokens=state["tokens_out"],
+            table=table,
         )

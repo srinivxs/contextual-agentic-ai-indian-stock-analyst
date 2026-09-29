@@ -39,7 +39,7 @@ async def test_the_migration_is_at_head(admin_engine: AsyncEngine) -> None:
         version = (
             await connection.execute(text("SELECT version_num FROM alembic_version"))
         ).scalar()
-    assert version == "0011"  # the head moves on as later phases add migrations
+    assert version == "0012"  # the head moves on as later phases add migrations
 
 
 async def test_users_has_the_agreed_columns_and_only_those(admin_engine: AsyncEngine) -> None:

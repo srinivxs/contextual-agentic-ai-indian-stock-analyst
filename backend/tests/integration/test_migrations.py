@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.integration.conftest import DbConfig, Migrator, make_alembic_config
 
-HEAD = "0011"
+HEAD = "0012"
 
 STATE_QUERIES = {
     "extension": "SELECT extversion FROM pg_extension WHERE extname = 'vector'",
@@ -156,11 +156,18 @@ async def test_up_down_up_round_trip_verified_at_every_step(
 async def test_each_downgrade_step_removes_only_what_its_revision_created(
     migrator: Migrator, admin_engine: AsyncEngine
 ) -> None:
-    """0011 owns prices and price_days, 0010 feed_items and feed_state, 0009 investor_profiles,
-    0008 conversations and messages, 0007 facts and events, 0006 embeddings, 0004 the ingestion
-    tables, 0003 user_follows, 0002 users and sessions, 0001 stocks."""
+    """0012 adds messages.data_table, 0011 owns prices and price_days, 0010 feed_items and
+    feed_state, 0009 investor_profiles, 0008 conversations and messages, 0007 facts and events,
+    0006 embeddings, 0004 the ingestion tables, 0003 user_follows,
+    0002 users and sessions, 0001 stocks."""
     await migrator.upgrade("head")
     at_head = await snapshot(admin_engine)
+
+    await migrator.downgrade("-1")  # 0012 only adds a column to messages
+    no_data_table = await snapshot(admin_engine)
+    assert no_data_table.revision == "0011"
+    assert no_data_table.prices_tables == 2
+    assert no_data_table.chat_tables == 2  # the table stays, its column goes
 
     await migrator.downgrade("-1")
     no_prices = await snapshot(admin_engine)

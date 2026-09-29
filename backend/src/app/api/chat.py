@@ -64,12 +64,25 @@ class SourceOut(BaseModel):
     quote: str | None
 
 
+class TableSourceOut(BaseModel):
+    label: str
+    url: str | None
+
+
+class TableOut(BaseModel):
+    title: str
+    columns: list[str]
+    rows: list[list[str]]
+    source: TableSourceOut
+
+
 class MessageOut(BaseModel):
     id: UUID
     role: Literal["user", "assistant"]
     text: str
     status: ReplyStatus | None
     sources: list[SourceOut]
+    table: TableOut | None = None
     created_at: str
 
 
@@ -101,6 +114,7 @@ def _message_out(view: MessageView) -> MessageOut:
         text=view.text,
         status=view.status,
         sources=[SourceOut(**source) for source in view.sources],
+        table=None if view.table is None else TableOut(**view.table),
         created_at=view.created_at.isoformat(),
     )
 

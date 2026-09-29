@@ -3,10 +3,11 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 
-import { AppShell } from '@/components/AppShell';
+import { AppShell, initials } from '@/components/AppShell';
+import { ChatPanel } from '@/components/ChatPanel';
 import { ChatThread } from '@/components/ChatThread';
-import { LeafIcon, PlusIcon, SendIcon } from '@/components/Icons';
-import { MemoryPanel } from '@/components/MemoryPanel';
+import { ArrowRightIcon, ChevronDownIcon, LeafIcon, PlusIcon, SendIcon } from '@/components/Icons';
+import { STOCKS } from '@/components/StockJump';
 import { ApiError } from '@/lib/api';
 import {
   getConversation,
@@ -15,6 +16,7 @@ import {
   type ChatMessage,
   type ConversationSummary,
 } from '@/lib/chat';
+import { followUps, stocksIn } from '@/lib/chatContext';
 import { signOut, useMe } from '@/lib/session';
 
 const MIN_CHARS = 3; // the server refuses shorter questions
@@ -22,8 +24,10 @@ const MAX_CHARS = 1000; // and longer ones
 
 const DISCLAIMER =
   'Not investment advice. Answers come only from stored filings and screener.in figures.';
-const DESCRIPTION = 'Ask about RELIANCE, TCS or HDFC Bank. Every figure comes with its source.';
-const PILL = 'Answers only from stored filings';
+const DESCRIPTION =
+  'Grounded in official filings, screener.in and BSE end-of-day prices · TCS, HDFC Bank, Reliance';
+const PILL = 'Answers only from stored data';
+const PLACEHOLDER = 'Ask anything about TCS, HDFC Bank or Reliance…';
 const CAPABILITIES = [
   'Answer questions about RELIANCE, TCS and HDFC Bank from their filings',
   'Show key figures and how they changed',
@@ -53,6 +57,16 @@ type Thread = {
 };
 
 const NEW_THREAD: Thread = { id: null, messages: [], phase: 'ready' };
+
+/** The stock the newest of these questions names, or null when none of them names one. */
+function stockOfLatestQuestion(messages: ChatMessage[]): string | null {
+  for (const message of [...messages].reverse()) {
+    if (message.role !== 'user') continue;
+    const found = stocksIn(message.text)[0];
+    if (found) return found;
+  }
+  return null;
+}
 
 /** The text of `?q=` in the address (the Home page links here), read without a router hook. */
 function initialDraft(): string {
@@ -86,6 +100,10 @@ export function ChatView() {
   const [draft, setDraft] = useState(initialDraft);
   const [pending, setPending] = useState<string | null>(null); // the question being answered
   const [problem, setProblem] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // The stock the side panel shows: the one a question names, or the one picked by its tabs.
+  const [stock, setStock] = useState<string>(STOCKS[0].symbol);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [memoryRefresh, setMemoryRefresh] = useState(0); // bumped to refetch what is remembered
   // The conversation asked for last, so an older one that arrives late is ignored.
   const opening = useRef<string | null>(null);
@@ -119,7 +137,18 @@ export function ChatView() {
     };
   }, [signedIn, listVersion, router]);
 
+  // A click anywhere outside the conversations menu closes it.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const away = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, [menuOpen]);
+
   const open = (id: string) => {
+    setMenuOpen(false);
     opening.current = id;
     setThread({ id, messages: [], phase: 'loading' });
     setProblem(null);
@@ -127,6 +156,8 @@ export function ChatView() {
       (conversation) => {
         if (opening.current === id) {
           setThread({ id, messages: conversation.messages, phase: 'ready' });
+          const named = stockOfLatestQuestion(conversation.messages);
+          if (named) setStock(named);
         }
       },
       (error: unknown) => {
@@ -139,6 +170,7 @@ export function ChatView() {
   };
 
   const startNew = () => {
+    setMenuOpen(false);
     opening.current = null;
     setThread(NEW_THREAD);
     setProblem(null);
@@ -148,6 +180,8 @@ export function ChatView() {
     if (!ready) return;
     const question = draft.trim();
     setPending(question);
+    const named = stocksIn(question)[0];
+    if (named) setStock(named);
     setDraft('');
     setProblem(null);
     try {
@@ -210,6 +244,7 @@ export function ChatView() {
 
   const leave = () => void signOut().finally(() => router.replace('/'));
   const empty = thread.phase === 'ready' && thread.messages.length === 0 && !busy;
+  const followable = thread.phase === 'ready' && thread.messages.length > 0 && !busy;
 
   return (
     <AppShell email={me.user.email} onSignOut={leave} active="chat">
@@ -219,31 +254,6 @@ export function ChatView() {
         </p>
       )}
       <div className="chat">
-        <section className="chat-list" aria-label="Conversations">
-          <button type="button" className="button secondary" onClick={startNew} disabled={busy}>
-            <PlusIcon />
-            New conversation
-          </button>
-          {conversations.length === 0 ? (
-            <p className="muted">No conversations yet.</p>
-          ) : (
-            <ul>
-              {conversations.map((conversation) => (
-                <li key={conversation.id}>
-                  <button
-                    type="button"
-                    className="chat-item"
-                    aria-current={conversation.id === thread.id ? 'true' : undefined}
-                    disabled={busy}
-                    onClick={() => open(conversation.id)}
-                  >
-                    {conversation.title || 'Untitled conversation'}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
         <section className="chat-main" aria-label="Conversation">
           <header className="chat-card-head">
             <span className="chat-avatar" aria-hidden="true">
@@ -257,6 +267,56 @@ export function ChatView() {
               <span className="dot" aria-hidden="true" />
               {PILL}
             </span>
+            <div
+              className="chat-menu-wrap"
+              ref={menuRef}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setMenuOpen(false);
+              }}
+            >
+              <button
+                type="button"
+                className="button secondary chat-menu-button"
+                aria-expanded={menuOpen}
+                aria-controls="chat-menu"
+                disabled={busy}
+                onClick={() => setMenuOpen((value) => !value)}
+              >
+                Conversations
+                <ChevronDownIcon />
+              </button>
+              {menuOpen && (
+                <div
+                  id="chat-menu"
+                  className="chat-menu"
+                  role="group"
+                  aria-label="Conversation list"
+                >
+                  <button type="button" className="chat-menu-new" onClick={startNew}>
+                    <PlusIcon />
+                    New chat
+                  </button>
+                  {conversations.length === 0 ? (
+                    <p className="muted">No conversations yet.</p>
+                  ) : (
+                    <ul>
+                      {conversations.map((conversation) => (
+                        <li key={conversation.id}>
+                          <button
+                            type="button"
+                            className="chat-item"
+                            aria-current={conversation.id === thread.id ? 'true' : undefined}
+                            onClick={() => open(conversation.id)}
+                          >
+                            {conversation.title || 'Untitled conversation'}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
           </header>
           {thread.phase === 'loading' && (
             <p role="status" className="muted">
@@ -299,11 +359,30 @@ export function ChatView() {
               </div>
             </div>
           )}
-          <ChatThread messages={thread.messages} pending={pending} />
+          <ChatThread
+            messages={thread.messages}
+            pending={pending}
+            initials={initials(me.user.email)}
+          />
           {busy && (
             <p role="status" className="muted">
               Thinking…
             </p>
+          )}
+          {followable && (
+            <div className="chat-suggestions" role="group" aria-label="Follow-up suggestions">
+              {followUps(stock).map((text) => (
+                <button
+                  key={text}
+                  type="button"
+                  className="chat-chip"
+                  onClick={() => suggest(text)}
+                >
+                  {text}
+                  <ArrowRightIcon />
+                </button>
+              ))}
+            </div>
           )}
           {problem && (
             <p role="alert" className="alert">
@@ -314,7 +393,7 @@ export function ChatView() {
             <textarea
               ref={boxRef}
               aria-label="Your question"
-              placeholder="Ask a question. Enter sends, Shift+Enter adds a line."
+              placeholder={PLACEHOLDER}
               rows={2}
               maxLength={MAX_CHARS}
               value={draft}
@@ -327,8 +406,9 @@ export function ChatView() {
             </button>
           </form>
           <p className="chat-disclaimer muted">{DISCLAIMER}</p>
+          <p className="chat-disclaimer muted">Enter sends, Shift+Enter adds a line.</p>
         </section>
-        <MemoryPanel refreshSignal={memoryRefresh} />
+        <ChatPanel symbol={stock} onPick={setStock} refreshSignal={memoryRefresh} />
       </div>
     </AppShell>
   );

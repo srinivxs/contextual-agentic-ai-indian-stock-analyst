@@ -210,6 +210,84 @@ async def test_the_lookups_have_their_indexes(admin_engine: AsyncEngine) -> None
     assert {"ix_conversations_user_updated", "ix_messages_conversation_created"} <= names
 
 
+TABLE = '{"title": "DemoCo net profit", "columns": ["Year"], "rows": [["FY2026"]], "source": {}}'
+
+
+async def test_a_reply_may_carry_a_data_table_and_a_question_may_not(
+    make_user: MakeUser, admin_engine: AsyncEngine
+) -> None:
+    conversation = await add_conversation(admin_engine, await make_user())
+    insert = text(
+        "INSERT INTO messages (conversation_id, role, text, status, data_table) "
+        "VALUES (:conversation_id, :role, 'x', :status, CAST(:data_table AS jsonb))"
+    )
+    async with admin_engine.begin() as connection:
+        await connection.execute(
+            insert,
+            {
+                "conversation_id": conversation,
+                "role": "assistant",
+                "status": "answered",
+                "data_table": TABLE,
+            },
+        )
+        await connection.execute(
+            insert,
+            {
+                "conversation_id": conversation,
+                "role": "assistant",
+                "status": "answered",
+                "data_table": None,
+            },
+        )
+        await connection.execute(
+            insert,
+            {"conversation_id": conversation, "role": "user", "status": None, "data_table": None},
+        )
+    with pytest.raises(DBAPIError):
+        async with admin_engine.begin() as connection:
+            await connection.execute(
+                insert,
+                {
+                    "conversation_id": conversation,
+                    "role": "user",
+                    "status": None,
+                    "data_table": TABLE,
+                },
+            )
+    assert await count(admin_engine, "messages") == 3
+
+
+async def test_older_messages_have_no_data_table(
+    make_user: MakeUser, admin_engine: AsyncEngine
+) -> None:
+    await add_message(
+        admin_engine, message(await add_conversation(admin_engine, await make_user()))
+    )
+    async with admin_engine.connect() as connection:
+        found = (await connection.execute(text("SELECT data_table FROM messages"))).scalar_one()
+    assert found is None
+
+
+async def test_downgrading_drops_the_data_table_column(
+    migrator: Migrator, admin_engine: AsyncEngine
+) -> None:
+    await migrator.downgrade("0011")
+    try:
+        async with admin_engine.connect() as connection:
+            columns = (
+                await connection.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_name = 'messages' AND column_name = 'data_table'"
+                    )
+                )
+            ).scalar_one()
+        assert columns == 0
+    finally:
+        await migrator.upgrade("head")
+
+
 async def test_downgrading_removes_both_tables(
     migrator: Migrator, admin_engine: AsyncEngine
 ) -> None:

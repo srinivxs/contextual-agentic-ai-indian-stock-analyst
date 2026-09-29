@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatView } from '@/components/ChatView';
 import {
+  CHAT_STOCKS,
   demoAnswer,
   demoChatSource,
   demoConversation,
@@ -11,6 +12,7 @@ import {
   demoProfileField,
   demoQuestion,
   installFakeApi,
+  type Options,
 } from '../helpers/fakeApi';
 
 // The real router object is stable between renders, so the mock's must be too.
@@ -26,6 +28,15 @@ beforeEach(() => {
 
 const SEND = 'POST /api/v1/chat/messages';
 
+/** The fake API with the three real stocks, which the side panel asks about. */
+const install = (options: Options = {}) => installFakeApi({ stocks: CHAT_STOCKS, ...options });
+
+/** Open the conversations menu in the header. */
+async function openMenu(): Promise<HTMLElement> {
+  await userEvent.click(await screen.findByRole('button', { name: 'Conversations' }));
+  return screen.getByRole('group', { name: 'Conversation list' });
+}
+
 const box = (): HTMLElement => screen.getByRole('textbox', { name: 'Your question' });
 const sendButton = (): HTMLElement => screen.getByRole('button', { name: 'Send' });
 const thread = (): HTMLElement => screen.getByRole('list', { name: 'Messages' });
@@ -38,7 +49,7 @@ async function ask(question: string): Promise<void> {
 
 describe('the chat page', () => {
   it('is in the main navigation, beside Stocks and Documents', async () => {
-    installFakeApi();
+    install();
     render(<ChatView />);
 
     const main = await screen.findByRole('navigation', { name: 'Main' });
@@ -48,18 +59,18 @@ describe('the chat page', () => {
   });
 
   it('titles the chat, and says honestly where answers come from', async () => {
-    installFakeApi();
+    install();
     render(<ChatView />);
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Chat with your analyst' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Answers only from stored filings')).toBeInTheDocument();
+    expect(screen.getByText('Answers only from stored data')).toBeInTheDocument();
     expect(screen.queryByText(/live Indian market data/)).toBeNull();
   });
 
   it('marks Chat as the current menu item', async () => {
-    installFakeApi();
+    install();
     render(<ChatView />);
     const main = await screen.findByRole('navigation', { name: 'Main' });
     expect(within(main).getByRole('link', { name: 'Chat' })).toHaveAttribute(
@@ -69,7 +80,7 @@ describe('the chat page', () => {
   });
 
   it('greets an empty conversation and says what the analyst can do', async () => {
-    installFakeApi();
+    install();
     render(<ChatView />);
     expect(
       await screen.findByText(/I can answer from the filings of RELIANCE/),
@@ -78,7 +89,7 @@ describe('the chat page', () => {
   });
 
   it('offers suggestions that fill the box without sending, and never advice prompts', async () => {
-    const api = installFakeApi();
+    const api = install();
     render(<ChatView />);
     await userEvent.click(await screen.findByRole('button', { name: 'Compare TCS and HDFC Bank' }));
 
@@ -96,7 +107,7 @@ describe('the chat page', () => {
   });
 
   it('hides the greeting and suggestions once a conversation has begun', async () => {
-    installFakeApi();
+    install();
     render(<ChatView />);
     await ask('How did revenue grow?');
     await screen.findByText(/reported revenue of/);
@@ -105,7 +116,7 @@ describe('the chat page', () => {
   });
 
   it('starts the box with the text of ?q=, and does not send it', async () => {
-    const api = installFakeApi();
+    const api = install();
     window.history.pushState({}, '', '/chat/?q=Analyse%20RELIANCE');
     try {
       render(<ChatView />);
@@ -119,19 +130,20 @@ describe('the chat page', () => {
   });
 
   it('starts with an empty box when there is no ?q=', async () => {
-    installFakeApi();
+    install();
     render(<ChatView />);
     expect(await screen.findByRole('textbox', { name: 'Your question' })).toHaveValue('');
   });
 
   it('says so when there are no conversations yet', async () => {
-    installFakeApi();
+    install();
     render(<ChatView />);
-    expect(await screen.findByText('No conversations yet.')).toBeInTheDocument();
+    const menu = await openMenu();
+    expect(within(menu).getByText('No conversations yet.')).toBeInTheDocument();
   });
 
   it('shows what is remembered beside the thread, and the short disclaimer under the input', async () => {
-    installFakeApi({ profileFields: [demoProfileField()] });
+    install({ profileFields: [demoProfileField()] });
     render(<ChatView />);
 
     const memory = await screen.findByRole('region', { name: 'Your investor profile' });
@@ -146,7 +158,7 @@ describe('the chat page', () => {
 
 describe('asking a question', () => {
   it('needs three characters that are not spaces before Send works', async () => {
-    installFakeApi();
+    install();
     render(<ChatView />);
 
     await userEvent.type(await screen.findByRole('textbox', { name: 'Your question' }), '  ab  ');
@@ -156,7 +168,7 @@ describe('asking a question', () => {
   });
 
   it('shows the question at once, says it is thinking, and waits with the box off', async () => {
-    const api = installFakeApi();
+    const api = install();
     const release = api.hold(SEND);
     render(<ChatView />);
 
@@ -166,7 +178,7 @@ describe('asking a question', () => {
     expect(within(thread()).getByText('How much revenue did DemoCo Alpha report?')).toBeVisible();
     expect(box()).toBeDisabled();
     expect(sendButton()).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'New conversation' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Conversations' })).toBeDisabled();
 
     release();
     expect(await screen.findByText(/reported revenue of/)).toBeInTheDocument();
@@ -180,7 +192,7 @@ describe('asking a question', () => {
   });
 
   it('sends the question trimmed, and a new conversation as null', async () => {
-    const api = installFakeApi();
+    const api = install();
     render(<ChatView />);
 
     await ask('  How did revenue grow?  ');
@@ -192,11 +204,12 @@ describe('asking a question', () => {
   });
 
   it('continues the same conversation, and lists it with the others', async () => {
-    const api = installFakeApi();
+    const api = install();
     render(<ChatView />);
 
     await ask('How did revenue grow?');
-    const list = screen.getByRole('region', { name: 'Conversations' });
+    await screen.findByText(/reported revenue of/);
+    const list = await openMenu();
     expect(
       await within(list).findByRole('button', { name: 'How did revenue grow?' }),
     ).toHaveAttribute('aria-current', 'true');
@@ -210,7 +223,7 @@ describe('asking a question', () => {
   });
 
   it('sends with Enter, and Shift+Enter starts a new line instead', async () => {
-    const api = installFakeApi();
+    const api = install();
     render(<ChatView />);
 
     await userEvent.type(
@@ -226,7 +239,7 @@ describe('asking a question', () => {
   });
 
   it('does not send with Enter before the question is long enough', async () => {
-    const api = installFakeApi();
+    const api = install();
     render(<ChatView />);
 
     await userEvent.type(
@@ -239,7 +252,7 @@ describe('asking a question', () => {
 
 describe('an answer’s sources', () => {
   async function answered(answer = demoAnswer()): Promise<HTMLElement> {
-    installFakeApi({ chatAnswer: () => answer });
+    install({ chatAnswer: () => answer });
     render(<ChatView />);
     await ask('How much revenue did DemoCo Alpha report?');
     return screen.findByRole('list', { name: 'Sources' });
@@ -249,10 +262,9 @@ describe('an answer’s sources', () => {
     const sources = await answered();
     const items = within(sources).getAllByRole('listitem');
     expect(items).toHaveLength(3);
-    expect(items[0]).toHaveTextContent('[1]');
+    const numbers = items.map((item) => item.querySelector('.chat-source-marker')?.textContent);
+    expect(numbers).toEqual(['1', '2', '3']);
     expect(items[0]).toHaveTextContent('Annual report · Annual Report 2026 · p.44');
-    expect(items[1]).toHaveTextContent('[2]');
-    expect(items[2]).toHaveTextContent('[3]');
   });
 
   it('links a filing and a screener figure, each in a new tab, safely', async () => {
@@ -365,7 +377,7 @@ describe('answers that are not answers', () => {
     ['out_of_scope', 'I can only answer about RELIANCE, TCS and HDFC Bank.'],
     ['remembered', "Noted. I'll remember: Risk: Conservative; Debt: Avoid high debt."],
   ] as const)('shows %s as a quiet notice, not an error', async (status, text) => {
-    installFakeApi({ chatAnswer: () => demoAnswer({ status, text, sources: [] }) });
+    install({ chatAnswer: () => demoAnswer({ status, text, sources: [] }) });
     render(<ChatView />);
     await ask('What is the share price?');
 
@@ -376,7 +388,7 @@ describe('answers that are not answers', () => {
   });
 
   it('refetches what is remembered after a reply that stated a preference', async () => {
-    const api = installFakeApi({
+    const api = install({
       chatAnswer: () =>
         demoAnswer({
           status: 'remembered',
@@ -400,7 +412,7 @@ describe('answers that are not answers', () => {
 
 describe('when the chat cannot answer', () => {
   it('says the chat is switched off (409)', async () => {
-    installFakeApi({ chatOff: true });
+    install({ chatOff: true });
     render(<ChatView />);
     await ask('How did revenue grow?');
 
@@ -410,7 +422,7 @@ describe('when the chat cannot answer', () => {
   });
 
   it('says to try again when the chat is unavailable (503), and keeps the question', async () => {
-    installFakeApi({ chatUnavailable: true });
+    install({ chatUnavailable: true });
     render(<ChatView />);
     await ask('How did revenue grow?');
 
@@ -423,7 +435,7 @@ describe('when the chat cannot answer', () => {
   });
 
   it('shows a general error for anything else, without technical detail', async () => {
-    const api = installFakeApi();
+    const api = install();
     api.failWith(SEND, 500);
     render(<ChatView />);
     await ask('How did revenue grow?');
@@ -434,7 +446,7 @@ describe('when the chat cannot answer', () => {
   });
 
   it('goes back to the sign-in page when the session has ended', async () => {
-    const api = installFakeApi();
+    const api = install();
     api.failWith(SEND, 401);
     render(<ChatView />);
     await ask('How did revenue grow?');
@@ -443,7 +455,7 @@ describe('when the chat cannot answer', () => {
   });
 
   it('clears the error on the next question', async () => {
-    const api = installFakeApi();
+    const api = install();
     api.failWith(SEND, 500);
     render(<ChatView />);
     await ask('How did revenue grow?');
@@ -477,29 +489,34 @@ describe('conversations', () => {
   });
 
   it('lists them newest first', async () => {
-    installFakeApi({ conversations: [older, newer] });
+    install({ conversations: [older, newer] });
     render(<ChatView />);
 
-    const list = await screen.findByRole('region', { name: 'Conversations' });
+    const list = await openMenu();
     await within(list).findByRole('button', { name: 'Newer question' });
     const titles = within(list)
       .getAllByRole('button')
       .map((b) => b.textContent);
-    expect(titles).toEqual(['New conversation', 'Newer question', 'Older question']);
+    expect(titles).toEqual(['New chat', 'Newer question', 'Older question']);
   });
 
   it('names a conversation without a title', async () => {
-    installFakeApi({ conversations: [demoConversation({ title: null })] });
+    install({ conversations: [demoConversation({ title: null })] });
     render(<ChatView />);
+    await openMenu();
     expect(await screen.findByRole('button', { name: 'Untitled conversation' })).toBeVisible();
   });
 
   it('opens one, showing its messages, and switches to another', async () => {
-    const api = installFakeApi({ conversations: [older, newer] });
+    const api = install({ conversations: [older, newer] });
     render(<ChatView />);
 
+    await openMenu();
     await userEvent.click(await screen.findByRole('button', { name: 'Older question' }));
     expect(await within(thread()).findByText(/reported revenue of/)).toBeInTheDocument();
+    // Picking one closes the menu; opening it again marks the one on screen.
+    expect(screen.queryByRole('group', { name: 'Conversation list' })).toBeNull();
+    await openMenu();
     expect(screen.getByRole('button', { name: 'Older question' })).toHaveAttribute(
       'aria-current',
       'true',
@@ -509,15 +526,17 @@ describe('conversations', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Newer question' }));
     expect(await within(thread()).findByText('What was the dividend?')).toBeInTheDocument();
     expect(within(thread()).queryByText(/reported revenue of/)).toBeNull();
+    await openMenu();
     expect(screen.getByRole('button', { name: 'Older question' })).not.toHaveAttribute(
       'aria-current',
     );
   });
 
   it('continues an opened conversation', async () => {
-    const api = installFakeApi({ conversations: [older] });
+    const api = install({ conversations: [older] });
     render(<ChatView />);
 
+    await openMenu();
     await userEvent.click(await screen.findByRole('button', { name: 'Older question' }));
     await within(thread()).findByText(/reported revenue of/);
     await ask('And net profit?');
@@ -531,12 +550,14 @@ describe('conversations', () => {
   });
 
   it('starts afresh with New conversation', async () => {
-    const api = installFakeApi({ conversations: [older] });
+    const api = install({ conversations: [older] });
     render(<ChatView />);
 
+    await openMenu();
     await userEvent.click(await screen.findByRole('button', { name: 'Older question' }));
     await within(thread()).findByText(/reported revenue of/);
-    await userEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+    await openMenu();
+    await userEvent.click(screen.getByRole('button', { name: 'New chat' }));
 
     expect(screen.queryByText(/reported revenue of/)).toBeNull();
     await ask('How did revenue grow?');
@@ -549,10 +570,11 @@ describe('conversations', () => {
   });
 
   it('says so when a conversation cannot be opened', async () => {
-    const api = installFakeApi({ conversations: [older] });
+    const api = install({ conversations: [older] });
     api.failWith(`GET /api/v1/chat/conversations/${demoId(1)}`, 404);
     render(<ChatView />);
 
+    await openMenu();
     await userEvent.click(await screen.findByRole('button', { name: 'Older question' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       "We couldn't open that conversation.",
@@ -560,7 +582,7 @@ describe('conversations', () => {
   });
 
   it('says so when the list cannot be loaded, and still lets you ask', async () => {
-    const api = installFakeApi();
+    const api = install();
     api.failWith('GET /api/v1/chat/conversations', 500);
     render(<ChatView />);
 
@@ -572,12 +594,14 @@ describe('conversations', () => {
   });
 
   it('ignores a conversation that arrives after you moved on', async () => {
-    const api = installFakeApi({ conversations: [older, newer] });
+    const api = install({ conversations: [older, newer] });
     const release = api.hold(`GET /api/v1/chat/conversations/${demoId(1)}`);
     render(<ChatView />);
 
+    await openMenu();
     await userEvent.click(await screen.findByRole('button', { name: 'Older question' }));
     expect(await screen.findByText('Loading the conversation…')).toBeInTheDocument();
+    await openMenu();
     await userEvent.click(screen.getByRole('button', { name: 'Newer question' }));
     await within(thread()).findByText('What was the dividend?');
 
@@ -591,7 +615,7 @@ describe('conversations', () => {
 describe('safety and sessions', () => {
   it('renders every text as text, never as HTML', async () => {
     const evil = '<img src=x onerror=alert(1)>';
-    installFakeApi({
+    install({
       conversations: [demoConversation({ title: evil })],
       chatAnswer: () =>
         demoAnswer({
@@ -608,7 +632,7 @@ describe('safety and sessions', () => {
   });
 
   it('sends a signed-out visitor to the sign-in page, asking nothing of the chat', async () => {
-    const api = installFakeApi({ signedIn: false });
+    const api = install({ signedIn: false });
     render(<ChatView />);
 
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
@@ -616,7 +640,7 @@ describe('safety and sessions', () => {
   });
 
   it('goes to the sign-in page when the list says the session has ended', async () => {
-    const api = installFakeApi();
+    const api = install();
     api.failWith('GET /api/v1/chat/conversations', 401);
     render(<ChatView />);
 
@@ -624,16 +648,17 @@ describe('safety and sessions', () => {
   });
 
   it('goes to the sign-in page when opening a conversation finds the session ended', async () => {
-    const api = installFakeApi({ conversations: [demoConversation()] });
+    const api = install({ conversations: [demoConversation()] });
     api.failWith(`GET /api/v1/chat/conversations/${demoId(1)}`, 401);
     render(<ChatView />);
 
+    await openMenu();
     await userEvent.click(await screen.findByRole('button', { name: demoConversation().title! }));
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
   });
 
   it('shows an error when it cannot find out who is signed in', async () => {
-    const api = installFakeApi();
+    const api = install();
     api.failWith('GET /api/v1/me', 500);
     render(<ChatView />);
 
@@ -642,7 +667,7 @@ describe('safety and sessions', () => {
   });
 
   it('signs out and returns to the sign-in page', async () => {
-    const api = installFakeApi();
+    const api = install();
     render(<ChatView />);
     await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
 

@@ -18,7 +18,7 @@ from uuid import UUID
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chat.contract import Reply, ReplyStatus, Turn
+from app.chat.contract import DataTable, Reply, ReplyStatus, Turn
 
 TITLE_LENGTH = 80  # the database's limit too (ck_conversations_title_length)
 _PER_MILLION = Decimal(1_000_000)
@@ -39,7 +39,8 @@ _LIST = text(
 
 # ``sources::text``: parsed here, so the result does not depend on the driver's jsonb handling.
 _MESSAGES = text(
-    "SELECT id, role, text, status, sources::text AS sources, created_at FROM messages "
+    "SELECT id, role, text, status, sources::text AS sources, data_table::text AS data_table, "
+    "created_at FROM messages "
     "WHERE conversation_id = :id ORDER BY created_at, role = 'assistant'"
 )
 
@@ -53,8 +54,9 @@ _HISTORY = text(
 
 _ADD_MESSAGE = text(
     "INSERT INTO messages (conversation_id, role, text, status, sources, model, input_tokens, "
-    "output_tokens) VALUES (:conversation_id, :role, :text, :status, CAST(:sources AS jsonb), "
-    ":model, :input_tokens, :output_tokens) RETURNING id, created_at"
+    "output_tokens, data_table) VALUES (:conversation_id, :role, :text, :status, "
+    "CAST(:sources AS jsonb), :model, :input_tokens, :output_tokens, "
+    "CAST(:data_table AS jsonb)) RETURNING id, created_at"
 )
 
 _TOUCH = text("UPDATE conversations SET updated_at = now() WHERE id = :id")
@@ -73,6 +75,7 @@ class MessageView:
     status: ReplyStatus | None  # None for the user's question
     sources: list[dict[str, Any]]  # {marker, source, label, url, quote}; [] for a question
     created_at: datetime
+    table: dict[str, Any] | None = None  # {title, columns, rows, source: {label, url}} or None
 
 
 @dataclass(frozen=True)
@@ -107,6 +110,7 @@ def _message(row: Row[Any]) -> MessageView:
         status=row.status,
         sources=json.loads(row.sources),
         created_at=row.created_at,
+        table=None if row.data_table is None else json.loads(row.data_table),
     )
 
 
@@ -151,6 +155,16 @@ async def history(db: AsyncSession, conversation_id: UUID, limit: int = 10) -> l
     return [Turn(role=row.role, text=row.text) for row in result]
 
 
+def table_json(table: DataTable) -> dict[str, Any]:
+    """The table as stored and as the api returns it (the frontend builds against this shape)."""
+    return {
+        "title": table.title,
+        "columns": list(table.columns),
+        "rows": [list(row) for row in table.rows],
+        "source": {"label": table.source_label, "url": table.source_url},
+    }
+
+
 async def _add_message(
     db: AsyncSession, conversation_id: UUID, values: dict[str, Any]
 ) -> MessageView:
@@ -161,6 +175,7 @@ async def _add_message(
                 **values,
                 "conversation_id": conversation_id,
                 "sources": json.dumps(values["sources"]),
+                "data_table": None if values["table"] is None else json.dumps(values["table"]),
             },
         )
     ).one()
@@ -171,6 +186,7 @@ async def _add_message(
         status=values["status"],
         sources=values["sources"],
         created_at=row.created_at,
+        table=values["table"],
     )
 
 
@@ -187,6 +203,7 @@ async def add_exchange(
             "text": question,
             "status": None,
             "sources": [],
+            "table": None,
             "model": None,
             "input_tokens": 0,
             "output_tokens": 0,
@@ -200,6 +217,7 @@ async def add_exchange(
             "text": reply.text,
             "status": reply.status,
             "sources": [asdict(source) for source in reply.sources],
+            "table": None if reply.table is None else table_json(reply.table),
             "model": reply.model,
             "input_tokens": reply.input_tokens,
             "output_tokens": reply.output_tokens,

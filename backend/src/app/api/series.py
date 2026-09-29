@@ -21,23 +21,13 @@ from app.auth.deps import current_user
 from app.auth.sessions import CurrentUser
 from app.core.errors import AppError
 from app.insights import METRIC_LABELS, screener_citation
+from app.series import load_series
 
 router = APIRouter(prefix="/api/v1", tags=["series"])
 
 SeriesMetric = Literal["net_profit", "revenue_from_operations", "net_interest_income"]
-MAX_POINTS = 10
 
 _STOCK_ID = text("SELECT id FROM stocks WHERE symbol = :symbol")
-_POINTS = text(
-    """
-    SELECT period, value, source_url, source_section, source_row, source_column
-    FROM facts
-    WHERE stock_id = :stock AND metric = :metric AND source = 'screener'
-      AND basis = 'consolidated' AND unit = 'INR_CRORE' AND period ~ '^FY[0-9]{4}$'
-    ORDER BY period_end DESC
-    LIMIT :limit
-    """
-)
 
 
 class PointOut(BaseModel):
@@ -72,9 +62,7 @@ async def series(
         if stock is None:
             # Deliberately does not repeat the symbol the caller sent.
             raise AppError(status_code=404, code="not_found", message="No such stock")
-        rows = (
-            await db.execute(_POINTS, {"stock": stock, "metric": metric, "limit": MAX_POINTS})
-        ).all()
+        points = await load_series(db, stock, metric)
     return SeriesOut(
         symbol=symbol,
         metric=metric,
@@ -93,6 +81,6 @@ async def series(
                     )
                 ),
             )
-            for row in reversed(rows)
+            for row in points
         ],
     )

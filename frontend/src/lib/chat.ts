@@ -24,6 +24,15 @@ export type ChatSource = {
   quote: string | null;
 };
 
+/** A small table the server builds from stored figures and adds under some answers. */
+export type ChatTable = {
+  title: string;
+  columns: string[];
+  /** Every row has one text cell per column; "" means nothing to show. */
+  rows: string[][];
+  source: { label: string; url: string | null } | null;
+};
+
 export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -31,6 +40,8 @@ export type ChatMessage = {
   /** How the question was dealt with; null for the user's own messages. */
   status: (typeof STATUSES)[number] | null;
   sources: ChatSource[];
+  /** Checked here: a table with a bad shape is dropped (null), the answer stays. */
+  table?: ChatTable | null;
   created_at: string;
 };
 
@@ -71,6 +82,35 @@ function isSource(value: unknown): value is ChatSource {
     orNull(s.quote, text)
   );
 }
+
+const MAX_TABLE_ROWS = 20;
+const MAX_TABLE_COLUMNS = 6;
+
+const textList = (value: unknown): value is string[] => Array.isArray(value) && value.every(text);
+
+/** The table if it has the agreed shape, else null. A bad table never spoils the answer. */
+function checkedTable(value: unknown): ChatTable | null {
+  const t = (value ?? {}) as Partial<ChatTable>;
+  const source = (t.source ?? {}) as Partial<NonNullable<ChatTable['source']>>;
+  const columns = t.columns;
+  const rows = t.rows;
+  const good =
+    text(t.title) &&
+    textList(columns) &&
+    columns.length >= 1 &&
+    columns.length <= MAX_TABLE_COLUMNS &&
+    Array.isArray(rows) &&
+    rows.length <= MAX_TABLE_ROWS &&
+    rows.every((row) => textList(row) && row.length === columns.length) &&
+    (t.source === null ||
+      (typeof t.source === 'object' && text(source.label) && orNull(source.url, text)));
+  return good ? (value as ChatTable) : null;
+}
+
+const withCheckedTable = (message: ChatMessage): ChatMessage => ({
+  ...message,
+  table: checkedTable(message.table),
+});
 
 function isMessage(value: unknown): value is ChatMessage {
   const m = (value ?? {}) as Partial<ChatMessage>;
@@ -128,7 +168,11 @@ export async function sendQuestion(
     body: { question, conversation_id },
   });
   if (!isReply(body)) throw new ApiError(200, 'unexpected_response');
-  return body;
+  return {
+    ...body,
+    question: withCheckedTable(body.question),
+    answer: withCheckedTable(body.answer),
+  };
 }
 
 /** The user's conversations, newest first (the server sends at most 20). */
@@ -146,7 +190,7 @@ export async function getConversation(id: string): Promise<Conversation> {
   // encodeURIComponent as well, although a UUID has nothing in it to escape.
   const body = await apiFetch(`/api/v1/chat/conversations/${encodeURIComponent(checkedId(id))}`);
   if (!isConversation(body)) throw new ApiError(200, 'unexpected_response');
-  return body;
+  return { ...body, messages: body.messages.map(withCheckedTable) };
 }
 
 /**
@@ -182,4 +226,48 @@ export function splitMarkers(answer: string, known: readonly number[]): Segment[
   const rest = answer.slice(last);
   if (rest) segments.push({ kind: 'text', text: rest });
   return segments;
+}
+
+/** The address a table's source may link to: only a screener.in company page, else null. */
+export function tableLink(table: ChatTable): string | null {
+  return screenerUrl(table.source?.url ?? null);
+}
+
+/** "+1.3%" is a rise, "-5.9%" (or with a real minus sign) a fall; anything else is flat. */
+export function changeTone(cell: string): 'rise' | 'fall' | 'flat' {
+  const trimmed = cell.trim();
+  if (!/\d/.test(trimmed) || Number(trimmed.replace(/[^0-9.]/g, '')) === 0) return 'flat';
+  if (trimmed.startsWith('+')) return 'rise';
+  if (trimmed.startsWith('-') || trimmed.startsWith('−')) return 'fall';
+  return 'flat';
+}
+
+export type Piece = { text: string; bold: boolean };
+
+// Amounts (with a unit word), percentages (with a sign), and numbers grouped with commas. Plain
+// small numbers, years ("FY2026") and "[1]" markers are left alone.
+const FIGURE =
+  /(?:US\$|₹)\s?\d(?:[\d,]*\d)?(?:\.\d+)?(?: (?:lakh crore|crore|million|billion))?|[+\-−]?\d(?:[\d,]*\d)?(?:\.\d+)?%|\d{1,3}(?:,\d{2,3})+(?:\.\d+)?/g;
+
+/**
+ * The text cut into plain and bold pieces, the figures being bold. The pieces joined give back the
+ * text exactly: this only decides how to show it, never what it says.
+ */
+export function boldFigures(source: string): Piece[] {
+  const pieces: Piece[] = [];
+  let last = 0;
+  for (const match of source.matchAll(FIGURE)) {
+    if (match.index > last) pieces.push({ text: source.slice(last, match.index), bold: false });
+    pieces.push({ text: match[0], bold: true });
+    last = match.index + match[0].length;
+  }
+  if (last < source.length) pieces.push({ text: source.slice(last), bold: false });
+  return pieces;
+}
+
+/** "10:24" in the reader's own time; "" if the time cannot be read. */
+export function clockLabel(iso: string): string {
+  const time = new Date(iso);
+  if (Number.isNaN(time.getTime())) return '';
+  return time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }

@@ -7,7 +7,7 @@ it: the question, the earlier turns (oldest first) and whose question it was.
 from collections.abc import Callable
 from uuid import UUID
 
-from app.chat.contract import ABSTAIN_TEXT, Reply, Source, Turn
+from app.chat.contract import ABSTAIN_TEXT, DataTable, Reply, Source, Turn
 
 ReplyFunction = Callable[[str, list[Turn]], Reply]
 
@@ -26,6 +26,7 @@ def answered(
     sources: tuple[Source, ...] = (DEMO_SOURCE,),
     input_tokens: int = 1000,
     output_tokens: int = 200,
+    table: DataTable | None = None,
 ) -> Reply:
     return Reply(
         text=text,
@@ -34,6 +35,7 @@ def answered(
         model="fake-llm",
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        table=table,
     )
 
 

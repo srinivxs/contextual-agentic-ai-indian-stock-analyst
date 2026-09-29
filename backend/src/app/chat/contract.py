@@ -42,6 +42,20 @@ class Reply:
     model: str | None  # the LLM that wrote it; None when no LLM was called
     input_tokens: int  # what AWS billed for this answer, all calls together (0 if none)
     output_tokens: int
+    # A year-by-year table shown under an answer about one stock's net profit or revenue: built
+    # by code from stored screener.in figures (never by the model), so it needs no checking.
+    table: "DataTable | None" = None
+
+
+@dataclass(frozen=True)
+class DataTable:
+    """ "TCS net profit (consolidated, ₹ crore)": newest year first, at most five rows."""
+
+    title: str
+    columns: tuple[str, ...]  # ("Year", "Net profit (₹ crore)", "Change")
+    rows: tuple[tuple[str, ...], ...]  # (("FY2026", "49,454", "+1.3%"), ...); "" = no change shown
+    source_label: str  # "screener.in · profit-loss · Net Profit"
+    source_url: str | None  # the screener.in company page
 
 
 @dataclass(frozen=True)
