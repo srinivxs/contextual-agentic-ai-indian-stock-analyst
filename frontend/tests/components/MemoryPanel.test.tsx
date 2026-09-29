@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MemoryPanel } from '@/components/MemoryPanel';
 import { demoProfileField, installFakeApi } from '../helpers/fakeApi';
@@ -219,5 +219,33 @@ describe('the memory panel', () => {
     expect(await within(panel()).findByRole('alert')).toHaveTextContent(
       "That choice wasn't accepted.",
     );
+  });
+
+  it('tells its owner after every save and forget, but not after a failed one', async () => {
+    const onChange = vi.fn();
+    const api = installFakeApi({ profileFields: [demoProfileField()] });
+    render(<MemoryPanel onChange={onChange} />);
+    await within(panel()).findByText('Conservative');
+    expect(onChange).not.toHaveBeenCalled();
+
+    api.failWith('DELETE /api/v1/profile/risk_preference', 500);
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Forget Risk' }));
+    await within(panel()).findByRole('alert');
+    expect(onChange).not.toHaveBeenCalled();
+
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Edit Risk' }));
+    await userEvent.click(within(panel()).getByRole('radio', { name: 'Moderate' }));
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Save Risk' }));
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+  });
+
+  it('tells its owner after Forget everything', async () => {
+    const onChange = vi.fn();
+    installFakeApi({ profileFields: [demoProfileField()] });
+    render(<MemoryPanel onChange={onChange} />);
+    await within(panel()).findByText('Conservative');
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Forget everything' }));
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Yes, forget everything' }));
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
   });
 });

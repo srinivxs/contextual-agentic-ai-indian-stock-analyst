@@ -2,16 +2,13 @@
 
 import { useEffect, useState } from 'react';
 
-import { FileIcon } from '@/components/Icons';
-import { MemoryPanel } from '@/components/MemoryPanel';
 import { Monogram } from '@/components/Monogram';
 import { PriceChart } from '@/components/PriceChart';
 import { STOCKS } from '@/components/StockJump';
-import { historyStillFilling, keyMetrics, newestEvents, shortName } from '@/lib/chatContext';
+import { historyStillFilling, keyMetrics, shortName } from '@/lib/chatContext';
 import {
   citationLink,
   eventDateLabel,
-  eventTypeLabel,
   getInsights,
   type Citation,
   type StockInsights,
@@ -20,8 +17,8 @@ import { getPrices, hasPrices, priceLabel, signedPercent, type Prices } from '@/
 import { direction } from '@/lib/series';
 
 /**
- * The side panel of the chat page: the stock being discussed (its end-of-day price, its latest
- * full-year figures and its recent events), and the investor profile. It only shows what the
+ * The side panel of the chat page: the stock being discussed (its end-of-day price and its latest
+ * full-year figures). It only shows what the
  * server stores; a missing figure is said to be missing, never filled in.
  */
 
@@ -173,56 +170,12 @@ function KeyMetrics({ insights }: { insights: Fetched<StockInsights> }) {
   );
 }
 
-function RecentNews({ symbol, insights }: { symbol: string; insights: Fetched<StockInsights> }) {
-  const events = insights?.data ? newestEvents(insights.data.events) : [];
-  return (
-    <section className="chat-card" aria-label="Recent news">
-      <h2>Recent news</h2>
-      {insights === null ? (
-        <p className="muted">Loading…</p>
-      ) : insights.failed ? (
-        <p className="muted">Events couldn&apos;t be loaded.</p>
-      ) : events.length === 0 ? (
-        <p className="muted">No events stored for {shortName(symbol)} yet.</p>
-      ) : (
-        <ul className="chat-news">
-          {events.map((event, index) => {
-            const link = citationLink(event.citation);
-            return (
-              <li key={index}>
-                <span className="chat-news-mark" aria-hidden="true">
-                  <FileIcon />
-                </span>
-                <div>
-                  <p className="chat-news-meta muted">
-                    {event.citation.label} · {eventDateLabel(event.event_date)} ·{' '}
-                    {eventTypeLabel(event.event_type)}
-                  </p>
-                  {link ? (
-                    <a href={link} target="_blank" rel="noopener noreferrer" className="doc-link">
-                      {event.summary}
-                    </a>
-                  ) : (
-                    <p>{event.summary}</p>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 export function ChatPanel({
   symbol,
   onPick,
-  refreshSignal,
 }: {
   symbol: string;
   onPick: (symbol: string) => void;
-  refreshSignal: number;
 }) {
   const insights = useForStock<StockInsights>(symbol, getInsights);
   return (
@@ -242,8 +195,6 @@ export function ChatPanel({
       </div>
       <Overview symbol={symbol} />
       <KeyMetrics insights={insights} />
-      <RecentNews symbol={symbol} insights={insights} />
-      <MemoryPanel refreshSignal={refreshSignal} />
     </aside>
   );
 }

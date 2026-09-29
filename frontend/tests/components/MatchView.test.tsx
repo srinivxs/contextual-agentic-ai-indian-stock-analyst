@@ -1,10 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MatchView } from '@/components/MatchView';
 import type { MatchStatus } from '@/lib/match';
 import {
   demoCitation,
+  demoProfileField,
   demoMatches,
   demoReason,
   demoStockMatch,
@@ -53,7 +55,7 @@ describe('the match page', () => {
     ).toBeInTheDocument();
     expect(
       await screen.findByText(
-        /Tell the chat your preferences first, for example: I'm conservative/,
+        /Add your preferences in the profile above, or tell the chat, for example: I'm conservative/,
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open the chat' })).toHaveAttribute('href', '/chat/');
@@ -285,5 +287,55 @@ describe('the match page', () => {
     const beta = screen.getByRole('region', { name: 'DemoCo Beta' });
     expect(within(beta).getByText(/A bonus since the EPS year/)).toBeInTheDocument();
     expect(screen.queryByRole('note', { name: 'Not judged for any stock' })).toBeNull();
+  });
+});
+
+describe('the investor profile on the match page', () => {
+  const profile = (): HTMLElement => screen.getByRole('region', { name: 'Your investor profile' });
+  const findProfile = () => screen.findByRole('region', { name: 'Your investor profile' });
+
+  it('sits above the results under a line saying the matches use it', async () => {
+    installFakeApi({ profileFields: [demoProfileField()], matches: profiled(demoStockMatch()) });
+    render(<MatchView />);
+
+    const card = await screen.findByRole('region', { name: 'DemoCo Alpha Limited' });
+    expect(await within(profile()).findByText('Conservative')).toBeInTheDocument();
+    expect(
+      screen.getByText('Your investor profile — the matches below use it'),
+    ).toBeInTheDocument();
+    expect(profile().compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('is there, with Add buttons, when nothing is remembered yet', async () => {
+    installFakeApi({ matches: demoMatches() });
+    render(<MatchView />);
+    expect(
+      await within(await findProfile()).findByRole('button', { name: 'Add Risk' }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Add your preferences in the profile above/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open the chat' })).toHaveAttribute('href', '/chat/');
+  });
+
+  it('loads the matches again after an edit and after a forget', async () => {
+    const api = installFakeApi({
+      profileFields: [demoProfileField()],
+      matches: profiled(demoStockMatch()),
+    });
+    render(<MatchView />);
+    const loads = () => api.requests.filter((r) => r === 'GET /api/v1/match').length;
+    await within(await findProfile()).findByText('Conservative');
+    await waitFor(() => expect(loads()).toBe(1));
+
+    await userEvent.click(within(profile()).getByRole('button', { name: 'Edit Risk' }));
+    await userEvent.click(within(profile()).getByRole('radio', { name: 'Moderate' }));
+    await userEvent.click(within(profile()).getByRole('button', { name: 'Save Risk' }));
+    await waitFor(() => expect(loads()).toBe(2));
+
+    await userEvent.click(within(profile()).getByRole('button', { name: 'Forget Risk' }));
+    await waitFor(() => expect(loads()).toBe(3));
+    // The cards stay on screen while the fresh answer loads.
+    expect(screen.getByRole('region', { name: 'DemoCo Alpha Limited' })).toBeInTheDocument();
   });
 });

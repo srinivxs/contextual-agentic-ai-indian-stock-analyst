@@ -16,8 +16,8 @@ import {
 } from '@/lib/profile';
 
 /**
- * The investor memory (P13): what the chat has remembered about the user, shown beside the
- * conversation. Every field can be edited by hand or forgotten; nothing here decides what to
+ * The investor memory (P13): what the chat has remembered about the user, shown on the Match
+ * page. Every field can be edited by hand or forgotten; nothing here decides what to
  * remember, that is the chat's job from the user's own words.
  */
 
@@ -169,8 +169,15 @@ function Remembered({
   );
 }
 
-/** Beside the chat thread: every field the chat (or the user) has set, and the fields still free. */
-export function MemoryPanel({ refreshSignal = 0 }: { refreshSignal?: number }) {
+/** On the Match page: every field the chat (or the user) has set, and the fields still free. */
+export function MemoryPanel({
+  refreshSignal = 0,
+  onChange,
+}: {
+  refreshSignal?: number;
+  /** Called after the user's own save or forget went through, so a page using the profile can reload. */
+  onChange?: () => void;
+}) {
   const [phase, setPhase] = useState<Phase>('loading');
   const [fields, setFields] = useState<ProfileFieldEntry[]>([]);
   const [choices, setChoices] = useState<ProfileChoice[]>([]);
@@ -210,6 +217,7 @@ export function MemoryPanel({ refreshSignal = 0 }: { refreshSignal?: number }) {
       const entry = await setField(choice.field, values);
       setFields((current) => [...current.filter((f) => f.field !== choice.field), entry]);
       setEditing(null);
+      onChange?.();
     } catch {
       setError(SAVE_FAILED);
     } finally {
@@ -223,6 +231,7 @@ export function MemoryPanel({ refreshSignal = 0 }: { refreshSignal?: number }) {
     try {
       await forgetField(field);
       setFields((current) => current.filter((f) => f.field !== field));
+      onChange?.();
     } catch {
       setError(ACTION_FAILED);
     } finally {
@@ -237,6 +246,7 @@ export function MemoryPanel({ refreshSignal = 0 }: { refreshSignal?: number }) {
       await forgetAll();
       setFields([]);
       setConfirmForgetAll(false);
+      onChange?.();
     } catch {
       setError(ACTION_FAILED);
     } finally {

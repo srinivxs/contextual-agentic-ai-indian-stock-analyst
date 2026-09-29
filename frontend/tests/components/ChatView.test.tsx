@@ -142,17 +142,16 @@ describe('the chat page', () => {
     expect(within(menu).getByText('No conversations yet.')).toBeInTheDocument();
   });
 
-  it('shows what is remembered beside the thread, and the short disclaimer under the input', async () => {
+  it('shows the short disclaimer under the input and no profile panel', async () => {
     install({ profileFields: [demoProfileField()] });
     render(<ChatView />);
 
-    const memory = await screen.findByRole('region', { name: 'Your investor profile' });
-    expect(await within(memory).findByText('Conservative')).toBeInTheDocument();
     expect(
-      screen.getByText(
+      await screen.findByText(
         'Not investment advice. Answers come only from stored filings and screener.in figures.',
       ),
     ).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Your investor profile' })).toBeNull();
   });
 });
 
@@ -387,8 +386,8 @@ describe('answers that are not answers', () => {
     expect(screen.queryByRole('list', { name: 'Sources' })).toBeNull();
   });
 
-  it('refetches what is remembered after a reply that stated a preference', async () => {
-    const api = install({
+  it('links a remembered reply to the Match page, and no other reply', async () => {
+    install({
       chatAnswer: () =>
         demoAnswer({
           status: 'remembered',
@@ -397,16 +396,21 @@ describe('answers that are not answers', () => {
         }),
     });
     render(<ChatView />);
-    const before = api.requests.filter((r) => r === 'GET /api/v1/profile').length;
 
     await ask("I'm conservative and dividend-focused.");
     await screen.findByText("Noted. I'll remember: Risk: Conservative.");
-
-    await waitFor(() =>
-      expect(api.requests.filter((r) => r === 'GET /api/v1/profile').length).toBeGreaterThan(
-        before,
-      ),
+    expect(screen.getByRole('link', { name: 'See it on Match' })).toHaveAttribute(
+      'href',
+      '/match/',
     );
+  });
+
+  it('has no Match link on an ordinary answer', async () => {
+    install();
+    render(<ChatView />);
+    await ask('How did revenue grow?');
+    await screen.findByRole('list', { name: 'Sources' });
+    expect(screen.queryByRole('link', { name: 'See it on Match' })).toBeNull();
   });
 });
 

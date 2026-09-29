@@ -11,7 +11,6 @@ import {
   type DerivedValue,
   type KeyFact,
   type Metric,
-  type StockEvent,
   type StockInsights,
 } from '@/lib/insights';
 import type { PricePoint } from '@/lib/prices';
@@ -62,11 +61,6 @@ export function historyStillFilling(history: PricePoint[]): boolean {
   const oldest = history[0]?.date;
   const newest = history.at(-1)?.date;
   return oldest !== undefined && newest !== undefined && oldest > monthsBefore(newest, 12);
-}
-
-/** The newest three events, newest first. */
-export function newestEvents(events: StockEvent[]): StockEvent[] {
-  return [...events].sort((a, b) => b.event_date.localeCompare(a.event_date)).slice(0, 3);
 }
 
 export type MetricRow = {

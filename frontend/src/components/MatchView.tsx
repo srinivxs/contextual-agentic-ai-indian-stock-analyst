@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { AppShell } from '@/components/AppShell';
+import { MemoryPanel } from '@/components/MemoryPanel';
 import { Monogram } from '@/components/Monogram';
 import { Citations } from '@/components/InsightSections';
 import { ApiError } from '@/lib/api';
@@ -20,10 +21,10 @@ import { signOut, useMe } from '@/lib/session';
 
 const LOAD_FAILED = "We couldn't load the match. Reload the page to try again.";
 const EMPTY_PROFILE =
-  "Tell the chat your preferences first, for example: I'm conservative, dividend-focused and I avoid high debt.";
+  "Add your preferences in the profile above, or tell the chat, for example: I'm conservative, dividend-focused and I avoid high debt.";
 
 const NOTHING_TO_CHECK =
-  'Nothing in your profile can be checked against the stored figures and prices yet. Add a debt or risk preference, or a dividend, growth, quality or momentum style, in the chat or its profile panel.';
+  'Nothing in your profile can be checked against the stored figures and prices yet. Add a debt or risk preference, or a dividend, growth, quality or momentum style, in the profile above or in the chat.';
 
 /** A reason that cannot be judged for any stock, in the same words: said once, above the cards. */
 function sharedKey(reason: MatchReason): string | null {
@@ -167,6 +168,7 @@ export function MatchView() {
   const router = useRouter();
   const signedIn = me.status === 'signed-in';
   const [result, setResult] = useState<MatchResult | 'problem' | null>(null);
+  const [reload, setReload] = useState(0); // bumped when the profile changes
 
   useEffect(() => {
     if (me.status === 'signed-out') router.replace('/');
@@ -188,7 +190,7 @@ export function MatchView() {
     return () => {
       cancelled = true;
     };
-  }, [signedIn, router]);
+  }, [signedIn, router, reload]);
 
   if (me.status === 'error') {
     return (
@@ -216,6 +218,10 @@ export function MatchView() {
       <p className="muted match-lede">
         Fixed rules over stored figures, each reason with its source.
       </p>
+      <p className="match-profile-line">Your investor profile — the matches below use it</p>
+      <div className="match-profile">
+        <MemoryPanel onChange={() => setReload((version) => version + 1)} />
+      </div>
       {result === null && (
         <p role="status" className="muted">
           Loading…

@@ -485,73 +485,18 @@ describe('the key metrics card', () => {
   });
 });
 
-describe('the recent news card', () => {
-  const event = (over: object) => ({ ...demoInsights().events[0]!, ...over });
-
-  it('lists the newest three events with source, date, summary and a safe link', async () => {
+describe('what the panel no longer holds', () => {
+  it('has no news card and no investor profile, only the stock, overview and key metrics', async () => {
     install({
-      insights: {
-        RELIANCE: demoInsights({
-          events: [
-            event({ event_date: '2026-01-01', summary: 'Oldest one' }),
-            event({ event_date: '2026-07-01', summary: 'Newest one' }),
-            event({ event_date: '2026-05-01', summary: 'Middle one' }),
-            event({ event_date: '2026-03-01', summary: 'Fourth one' }),
-          ],
-        }),
-      },
+      profileFields: [demoProfileField()],
+      insights: { RELIANCE: demoInsights() },
     });
     render(<ChatView />);
-    const card = await screen.findByRole('region', { name: 'Recent news' });
-    await within(card).findByText('Newest one');
-    const items = within(card).getAllByRole('listitem');
-    expect(items).toHaveLength(3);
-    expect(items[0]).toHaveTextContent('Newest one');
-    expect(items[0]).toHaveTextContent('01 Jul 2026');
-    expect(items[0]).toHaveTextContent('Announcement · Results · p.2');
-    expect(within(card).queryByText('Oldest one')).toBeNull();
-    expect(
-      within(items[0] as HTMLElement).getByRole('link', { name: 'Newest one' }),
-    ).toHaveAttribute('rel', 'noopener noreferrer');
-  });
-
-  it('shows an event with an unsafe link as plain text', async () => {
-    install({
-      insights: {
-        RELIANCE: demoInsights({
-          events: [
-            event({
-              summary: 'Odd link',
-              citation: { ...demoInsights().events[0]!.citation, url: 'javascript:alert(1)' },
-            }),
-          ],
-        }),
-      },
-    });
-    render(<ChatView />);
-    const card = await screen.findByRole('region', { name: 'Recent news' });
-    expect(await within(card).findByText('Odd link')).toBeInTheDocument();
-    expect(within(card).queryByRole('link')).toBeNull();
-  });
-
-  it('says so when there are no events, and has no publisher news', async () => {
-    install();
-    render(<ChatView />);
-    const card = await screen.findByRole('region', { name: 'Recent news' });
-    expect(await within(card).findByText('No events stored for Reliance yet.')).toBeInTheDocument();
-    expect(screen.queryByText(/Economic Times/i)).toBeNull();
-  });
-});
-
-describe('the investor profile in the panel', () => {
-  it('is at the bottom of the panel and can still be edited', async () => {
-    install({ profileFields: [demoProfileField()] });
-    render(<ChatView />);
-    const memory = await screen.findByRole('region', { name: 'Your investor profile' });
-    expect(panel()).toContainElement(memory);
-    expect(await within(memory).findByText('Conservative')).toBeInTheDocument();
-    await userEvent.click(within(memory).getByRole('button', { name: 'Edit Risk' }));
-    expect(within(memory).getByRole('button', { name: 'Save Risk' })).toBeInTheDocument();
+    await screen.findByRole('region', { name: 'Key metrics (FY2026)' });
+    expect(within(panel()).getByRole('region', { name: 'Reliance overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Recent news' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Your investor profile' })).toBeNull();
+    expect(screen.queryByText('DemoCo Alpha reported higher quarterly revenue.')).toBeNull();
   });
 });
 

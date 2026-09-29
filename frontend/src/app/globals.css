@@ -1836,8 +1836,7 @@ a.chip:hover {
   font-size: 0.78rem;
 }
 
-.chat-metrics,
-.chat-news {
+.chat-metrics {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1853,8 +1852,7 @@ a.chip:hover {
   font-size: 0.88rem;
 }
 
-.chat-metrics li:first-child,
-.chat-news li:first-child {
+.chat-metrics li:first-child {
   border-top: 0;
 }
 
@@ -1877,29 +1875,6 @@ a.chip:hover {
 a.chat-source-chip:hover {
   border-color: var(--accent);
   color: var(--accent-strong);
-}
-
-.chat-news li {
-  display: flex;
-  gap: 0.6rem;
-  padding: 0.6rem 0;
-  border-top: 1px solid var(--border);
-  font-size: 0.88rem;
-}
-
-.chat-news-mark {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-}
-
-.chat-news-meta {
-  font-size: 0.75rem;
 }
 
 @media (max-width: 64rem) {
@@ -2120,11 +2095,29 @@ a.chat-source-chip:hover {
   font-size: 0.8rem;
 }
 
+/* The chat's link from a "remembered" reply to the profile on the Match page. */
+
+.chat-match-link {
+  display: inline-block;
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+}
+
 /* The Match page (P14): a card per stock, a status badge, and the reasons. Words carry the
    meaning; the dot and the marks only back them up. */
 
 .match-lede {
   margin-bottom: 1rem;
+}
+
+.match-profile-line {
+  margin: 0 0 0.6rem;
+  font-weight: 600;
+}
+
+.match-profile {
+  max-width: 42rem;
+  margin-bottom: 1.5rem;
 }
 
 .match-list {
@@ -2921,4 +2914,95 @@ a.chat-source-chip:hover {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* --- News --- */
+
+.news-card {
+  margin-top: 1.25rem;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.news-panel {
+  margin-top: 1rem;
+}
+
+.news-summary {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+}
+
+.news-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.news-item {
+  display: flex;
+  gap: 0.85rem;
+  padding: 0.9rem 0.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.news-item:first-child {
+  border-top: 0;
+}
+
+.news-rbi {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.news-body {
+  min-width: 0;
+}
+
+.news-headline {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.news-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.6rem;
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+}
+
+.news-source {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+}
+
+.news-tag {
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.news-tag.positive {
+  color: var(--rise);
+  border-color: color-mix(in srgb, var(--rise) 40%, transparent);
+}
+
+.news-tag.negative {
+  color: var(--fall);
+  border-color: color-mix(in srgb, var(--fall) 40%, transparent);
 }

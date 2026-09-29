@@ -184,6 +184,11 @@ function Answer({ message }: { message: ChatMessage }) {
     return (
       <>
         <p className="chat-notice">{message.text}</p>
+        {message.status === 'remembered' && (
+          <a className="doc-link chat-match-link" href="/match/">
+            See it on Match
+          </a>
+        )}
         <Clock iso={message.created_at} />
       </>
     );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { followUps, keyMetrics, newestEvents, shortName, stocksIn } from '@/lib/chatContext';
+import { followUps, keyMetrics, shortName, stocksIn } from '@/lib/chatContext';
 import { demoFact, demoInsights } from '../helpers/fakeApi';
 
 describe('stocksIn', () => {
@@ -46,21 +46,6 @@ describe('shortName and followUps', () => {
       'How does TCS fit my profile?',
     ]);
     expect(followUps('RELIANCE')[1]).toBe('Compare Reliance with TCS and HDFC Bank');
-  });
-});
-
-describe('newestEvents', () => {
-  it('gives the newest three, newest first', () => {
-    const base = demoInsights().events[0]!;
-    const events = ['2026-01-01', '2026-07-01', '2026-03-01', '2026-05-01'].map((d) => ({
-      ...base,
-      event_date: d,
-    }));
-    expect(newestEvents(events).map((e) => e.event_date)).toEqual([
-      '2026-07-01',
-      '2026-05-01',
-      '2026-03-01',
-    ]);
   });
 });
 

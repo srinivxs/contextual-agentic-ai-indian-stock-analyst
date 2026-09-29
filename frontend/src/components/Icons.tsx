@@ -51,6 +51,12 @@ export const FileIcon = () => (
     <path d="M14 3v4h4M10 12h5M10 16h5" />
   </Icon>
 );
+export const NewsIcon = () => (
+  <Icon>
+    <path d="M5 5h11v14H7a2 2 0 0 1-2-2V5Z" />
+    <path d="M16 9h3v8a2 2 0 0 1-2 2M8 9h5M8 12.5h5M8 16h3" />
+  </Icon>
+);
 export const TargetIcon = () => (
   <Icon>
     <circle cx="12" cy="12" r="8" />

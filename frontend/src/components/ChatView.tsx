@@ -104,7 +104,6 @@ export function ChatView() {
   // The stock the side panel shows: the one a question names, or the one picked by its tabs.
   const [stock, setStock] = useState<string>(STOCKS[0].symbol);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [memoryRefresh, setMemoryRefresh] = useState(0); // bumped to refetch what is remembered
   // The conversation asked for last, so an older one that arrives late is ignored.
   const opening = useRef<string | null>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
@@ -193,7 +192,6 @@ export function ChatView() {
         phase: 'ready',
       }));
       setListVersion((version) => version + 1); // a new conversation, or a newer one
-      setMemoryRefresh((version) => version + 1); // the reply may have changed what is remembered
     } catch (error) {
       if (isStatus(error, 401)) {
         router.replace('/');
@@ -408,7 +406,7 @@ export function ChatView() {
           <p className="chat-disclaimer muted">{DISCLAIMER}</p>
           <p className="chat-disclaimer muted">Enter sends, Shift+Enter adds a line.</p>
         </section>
-        <ChatPanel symbol={stock} onPick={setStock} refreshSignal={memoryRefresh} />
+        <ChatPanel symbol={stock} onPick={setStock} />
       </div>
     </AppShell>
   );

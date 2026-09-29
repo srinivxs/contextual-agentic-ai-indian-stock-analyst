@@ -1,10 +1,18 @@
 import type { ReactNode } from 'react';
 
-import { ChatIcon, FileIcon, HomeIcon, LeafIcon, StarIcon, TargetIcon } from '@/components/Icons';
+import {
+  ChatIcon,
+  FileIcon,
+  HomeIcon,
+  LeafIcon,
+  NewsIcon,
+  StarIcon,
+  TargetIcon,
+} from '@/components/Icons';
 import { StockJump } from '@/components/StockJump';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
-export type Section = 'home' | 'chat' | 'stocks' | 'documents' | 'match';
+export type Section = 'home' | 'chat' | 'stocks' | 'news' | 'documents' | 'match';
 
 type Props = {
   email: string;
@@ -18,6 +26,7 @@ const MENU: { section: Section; href: string; label: string; icon: ReactNode }[]
   { section: 'home', href: '/home/', label: 'Home', icon: <HomeIcon /> },
   { section: 'chat', href: '/chat/', label: 'Chat', icon: <ChatIcon /> },
   { section: 'stocks', href: '/stocks/', label: 'Stocks', icon: <StarIcon /> },
+  { section: 'news', href: '/news/', label: 'News', icon: <NewsIcon /> },
   { section: 'documents', href: '/documents/', label: 'Documents', icon: <FileIcon /> },
   { section: 'match', href: '/match/', label: 'Match', icon: <TargetIcon /> },
 ];

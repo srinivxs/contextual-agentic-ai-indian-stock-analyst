@@ -15,7 +15,7 @@ describe('the app shell', () => {
     );
     const menu = screen.getByRole('navigation', { name: 'Main' });
     const links = Array.from(menu.querySelectorAll('a')).map((a) => a.textContent);
-    expect(links).toEqual(['Home', 'Chat', 'Stocks', 'Documents', 'Match']);
+    expect(links).toEqual(['Home', 'Chat', 'Stocks', 'News', 'Documents', 'Match']);
     expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current');
     expect(screen.getByText('content')).toBeInTheDocument();
