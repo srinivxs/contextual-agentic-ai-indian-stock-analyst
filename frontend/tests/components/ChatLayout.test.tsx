@@ -393,52 +393,30 @@ describe('the overview card', () => {
     expect(await screen.findByText('−0.8%')).toHaveClass('fall');
   });
 
-  it('has range tabs that filter the history, 1Y being the default', async () => {
+  it('shows every stored close, with no range buttons (BSE keeps about a month)', async () => {
     withPrices();
     render(<ChatView />);
     const overview = await screen.findByRole('region', { name: 'Reliance overview' });
     await within(overview).findAllByText('₹101.50');
-    expect(
-      within(overview)
-        .getAllByRole('button', { pressed: true })
-        .map((b) => b.textContent),
-    ).toContain('1Y');
     expect(chartRows()).toBe(4);
-
-    await userEvent.click(within(overview).getByRole('button', { name: '3M' }));
-    expect(chartRows()).toBe(3);
-    await userEvent.click(within(overview).getByRole('button', { name: '1M' }));
-    expect(chartRows()).toBe(2);
-    expect(within(overview).getByRole('button', { name: '1M' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(within(overview).queryByRole('button', { name: '1D' })).toBeNull();
-    expect(within(overview).queryByRole('button', { name: '1W' })).toBeNull();
+    for (const name of ['1M', '3M', '6M', '1Y', '1D', '1W']) {
+      expect(within(overview).queryByRole('button', { name })).toBeNull();
+    }
+    expect(within(overview).queryByRole('group', { name: 'Chart range' })).toBeNull();
   });
 
-  it('greys out ranges the history does not reach yet, and says how far back it goes', async () => {
+  it('says how far back the prices go while there is less than a year', async () => {
     install({ prices: { RELIANCE: demoPrices('RELIANCE') } }); // five days: 22 to 28 Sep 2026
     render(<ChatView />);
     const overview = await screen.findByRole('region', { name: 'Reliance overview' });
-    await within(overview).findAllByText('₹101.50');
-    for (const name of ['3M', '6M', '1Y']) {
-      const button = within(overview).getByRole('button', { name });
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute('title', 'Not enough history yet');
-    }
-    expect(within(overview).getByRole('button', { name: '1M' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
     expect(
-      within(overview).getByText(
+      await within(overview).findByText(
         'Prices from 22 Sep 2026: BSE keeps about a month of daily files, so the history grows by a day each trading day.',
       ),
     ).toBeInTheDocument();
   });
 
-  it('says prices are not loaded yet, with no chart and no range tabs', async () => {
+  it('says prices are not loaded yet, with no chart', async () => {
     install({ prices: { RELIANCE: noPrices('RELIANCE') } });
     render(<ChatView />);
     const overview = await screen.findByRole('region', { name: 'Reliance overview' });

@@ -1,6 +1,6 @@
 /**
  * What the chat page's side panel needs, all plain functions: which stock a message is about, the
- * follow-up questions to offer, which closes a range tab shows, and which stored figures make the
+ * follow-up questions to offer, and which stored figures make the
  * key-metrics card. Nothing here invents or calculates a financial figure: the growth shown is the
  * server's own derived value.
  */
@@ -51,52 +51,17 @@ export function followUps(symbol: string): string[] {
   ];
 }
 
-export const RANGES = [
-  { key: '1m', label: '1M', months: 1 },
-  { key: '3m', label: '3M', months: 3 },
-  { key: '6m', label: '6M', months: 6 },
-  { key: '1y', label: '1Y', months: 12 },
-] as const;
-export type RangeKey = (typeof RANGES)[number]['key'];
-
-/** The closes of the last month(s) before the newest close (dates compared as text, no time zone). */
-/** The first date a range shows, counted back from the newest close ("YYYY-MM-DD"). */
-function rangeStart(newest: string, months: number): string {
+/** The date ``months`` before the newest close ("YYYY-MM-DD"). */
+function monthsBefore(newest: string, months: number): string {
   const [year = 0, month = 1, day = 1] = newest.split('-').map(Number);
   return new Date(Date.UTC(year, month - 1 - months, day)).toISOString().slice(0, 10);
-}
-
-export function rangeHistory(history: PricePoint[], range: RangeKey): PricePoint[] {
-  const newest = history.at(-1);
-  if (!newest) return [];
-  const months = RANGES.find((r) => r.key === range)?.months ?? 12;
-  const from = rangeStart(newest.date, months);
-  return history.filter((point) => point.date >= from);
-}
-
-/**
- * Which ranges show more than the shorter one before them. The shortest always does; a longer
- * range only once the stored history reaches back past the shorter range's start. BSE serves
- * only about a month of daily files, so the history starts short and grows a day at a time;
- * until then 3M, 6M and 1Y would repeat the 1M chart, so they stay off.
- */
-export function availableRanges(history: PricePoint[]): Record<RangeKey, boolean> {
-  const oldest = history[0]?.date;
-  const newest = history.at(-1)?.date;
-  const result = { '1m': true, '3m': false, '6m': false, '1y': false } as Record<RangeKey, boolean>;
-  if (oldest === undefined || newest === undefined) return result;
-  RANGES.forEach((range, index) => {
-    const shorter = RANGES[index - 1];
-    if (shorter) result[range.key] = oldest < rangeStart(newest, shorter.months);
-  });
-  return result;
 }
 
 /** True while the history does not reach back a full year yet. */
 export function historyStillFilling(history: PricePoint[]): boolean {
   const oldest = history[0]?.date;
   const newest = history.at(-1)?.date;
-  return oldest !== undefined && newest !== undefined && oldest > rangeStart(newest, 12);
+  return oldest !== undefined && newest !== undefined && oldest > monthsBefore(newest, 12);
 }
 
 /** The newest three events, newest first. */

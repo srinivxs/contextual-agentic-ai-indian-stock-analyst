@@ -7,16 +7,7 @@ import { MemoryPanel } from '@/components/MemoryPanel';
 import { Monogram } from '@/components/Monogram';
 import { PriceChart } from '@/components/PriceChart';
 import { STOCKS } from '@/components/StockJump';
-import {
-  availableRanges,
-  historyStillFilling,
-  keyMetrics,
-  newestEvents,
-  rangeHistory,
-  RANGES,
-  shortName,
-} from '@/lib/chatContext';
-import type { RangeKey } from '@/lib/chatContext';
+import { historyStillFilling, keyMetrics, newestEvents, shortName } from '@/lib/chatContext';
 import {
   citationLink,
   eventDateLabel,
@@ -89,7 +80,6 @@ function SourceChip({ citation }: { citation: Citation }) {
 }
 
 function Overview({ symbol }: { symbol: string }) {
-  const [range, setRange] = useState<RangeKey>('1y');
   const fetched = useForStock<Prices>(symbol, getPrices);
   const stock = STOCKS.find((s) => s.symbol === symbol);
   const title = `${shortName(symbol)} overview`;
@@ -107,12 +97,6 @@ function Overview({ symbol }: { symbol: string }) {
     const percent = signedPercent(latest?.change_pct ?? null);
     const tone = direction(latest?.change_pct == null ? null : Number(latest.change_pct));
     const link = latest ? citationLink(latest.citation) : null;
-    // A range the history cannot fill yet is greyed out; the chart shows the longest one that has
-    // data, or the one chosen when it has.
-    const available = availableRanges(prices.history);
-    const shown = available[range]
-      ? range
-      : ([...RANGES].reverse().find((r) => available[r.key])?.key ?? '1m');
     const since = prices.history[0]?.date;
     body = (
       <>
@@ -121,23 +105,8 @@ function Overview({ symbol }: { symbol: string }) {
           {percent && <span className={`chat-change ${TONE_CLASS[tone]}`}>{percent}</span>}
           <span className="muted">on the day</span>
         </div>
-        <div className="chat-ranges" role="group" aria-label="Chart range">
-          {RANGES.map((r) => (
-            <button
-              key={r.key}
-              type="button"
-              className="chat-range"
-              aria-pressed={shown === r.key}
-              disabled={!available[r.key]}
-              title={available[r.key] ? undefined : 'Not enough history yet'}
-              onClick={() => setRange(r.key)}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
         <PriceChart
-          history={rangeHistory(prices.history, shown)}
+          history={prices.history}
           name={stock?.name ?? symbol}
           changePct={latest?.change_pct ?? null}
         />

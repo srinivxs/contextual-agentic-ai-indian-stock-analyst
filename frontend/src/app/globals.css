@@ -1746,8 +1746,7 @@ a.chip:hover {
   min-width: 0;
 }
 
-.chat-stock-tabs,
-.chat-ranges {
+.chat-stock-tabs {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 0.25rem;
@@ -1772,12 +1771,6 @@ a.chip:hover {
 .chat-range[aria-pressed='true'] {
   background: var(--accent-soft);
   color: var(--accent-strong);
-}
-
-/* A range the stored history cannot fill yet. */
-.chat-range:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .chat-card {
@@ -1818,10 +1811,6 @@ a.chip:hover {
 
 .chat-price {
   font-size: 1.6rem;
-}
-
-.chat-ranges {
-  margin-bottom: 0.5rem;
 }
 
 .chat-card .price-chart .home-callout,
