@@ -118,8 +118,10 @@ class CommonSettings(BaseSettings):
     # --- share prices (ADR 025) ----------------------------------------------------------------
     # Off unless switched on: only then does the worker fetch BSE's daily price files.
     prices_enabled: bool = False
-    # How many days back from today to fill in (one file per trading day).
-    prices_history_days: int = Field(default=365, ge=30, le=1100)
+    # How many days back from today to ask for. BSE serves only about the last month of daily
+    # files at this address (found 2026-09-29: 4 Sep came, 3 Sep and older never did), so the
+    # history starts there and grows by one stored day per trading day from then on.
+    prices_history_days: int = Field(default=30, ge=30, le=1100)
     # BSE answers 406 to requests a few seconds apart, so a run fetches a few files, slowly.
     prices_per_run: int = Field(default=5, ge=1, le=50)
     prices_pause_seconds: float = Field(default=30, ge=0, le=120)

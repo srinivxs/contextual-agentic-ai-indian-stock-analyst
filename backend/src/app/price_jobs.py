@@ -1,7 +1,9 @@
 """Share prices (ADR 025): queueing a run, and the ``sync_prices`` job itself.
 
-WHERE THE PRICES COME FROM. BSE publishes one file per trading day (app/prices/bse.py). A full
-year is about 250 files, and BSE will not hand them over quickly.
+WHERE THE PRICES COME FROM. BSE publishes one file per trading day (app/prices/bse.py), and
+serves only about the last month of them at this address; older days answer 406 for ever. So
+the worker asks for the last ``PRICES_HISTORY_DAYS`` (30) only, and the stored history grows by
+one day per trading day from then on (stored prices are kept).
 
 THE 406 RULE. Ask for files a few seconds apart and BSE answers HTTP 406 with a small HTML page;
 the same file downloads fine after a pause of about half a minute. A weekend or a market holiday
@@ -20,8 +22,8 @@ has no file and answers 404 or 406 too. From outside, "too fast" and "no file" l
     full cool-down, is marked ``no_file`` and never asked for again. (A day that was only
     rate-limited three times that far apart is lost the same way; the trade is accepted, a
     missing day in a price history is harmless.)
-  * Days already fetched are never asked for again, so a year fills in overnight (about 8 to
-    12 hours at 5 files a run) and then the timer has one file a day to fetch.
+  * Days already fetched are never asked for again: the month fills in within a few hours, and
+    then the timer has one file a day to fetch.
 
 WHY IS A TIMER INSIDE THE WORKER SAFE WITH SEVERAL WORKERS? The same way as the feed poll
 (app/feed_jobs.py): the job's dedupe key names the time slot, ``sync_prices:2026-09-29T10:05:00Z``,

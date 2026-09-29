@@ -9,7 +9,8 @@ from tests.helpers import build_settings
 def test_prices_are_off_and_paced_gently_by_default() -> None:
     settings = build_settings()
     assert settings.prices_enabled is False
-    assert settings.prices_history_days == 365
+    # BSE serves only about the last month of daily files (found 2026-09-29): ask for no more
+    assert settings.prices_history_days == 30
     # gentler after the first real run: BSE refused the 7th file of a quick run
     assert settings.prices_per_run == 5
     assert settings.prices_pause_seconds == 30

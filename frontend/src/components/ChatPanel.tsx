@@ -143,7 +143,7 @@ function Overview({ symbol }: { symbol: string }) {
         />
         {since && historyStillFilling(prices.history) && (
           <p className="chat-asof muted">
-            {`Prices from ${eventDateLabel(since)} so far; the rest of the year is still being fetched.`}
+            {`Prices from ${eventDateLabel(since)}: BSE keeps about a month of daily files, so the history grows by a day each trading day.`}
           </p>
         )}
         <p className="chat-asof muted">

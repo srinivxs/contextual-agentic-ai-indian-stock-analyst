@@ -50,12 +50,22 @@ third run five minutes after that made three strikes: a normal Friday was record
 files 30 seconds apart. The year's first fill therefore takes about 8 to 12 hours (overnight
 locally), then one file a day.
 
+**BSE keeps about a month (2026-09-29).** 4 September downloaded; 3 September, 1 September and a
+year back never did, even after long pauses: BSE serves only about the last month of daily files
+at this address. So `PRICES_HISTORY_DAYS` is 30: the worker asks only for what exists, the few
+days at the far edge are marked "no file" after three spaced refusals, and the **stored history
+grows by one trading day per day** from 4 September 2026 (stored prices are kept). A full year
+of history therefore takes a year; until then the chat panel's longer ranges stay greyed out,
+momentum falls back to earnings momentum (six months of prices needed) and a short-term horizon
+waits for about three months of prices (volatility needs 60 daily returns).
+
 ## Consequences
 
 - The Match page can judge momentum, value and a horizon; the chat can answer price questions
   from stored, cited figures.
-- Local and AWS runs need the backfill once per fresh database (about 8 to 12 hours at BSE's
-  pace), or a restored snapshot (a GL decision).
+- A fresh database gets only the last month; the longer history exists only where the database
+  has been kept. On AWS, where the stack's database is destroyed after each session (ADR 015),
+  keeping price history needs a snapshot or keeping the database (a GL decision).
 
 ## Limits and risks
 

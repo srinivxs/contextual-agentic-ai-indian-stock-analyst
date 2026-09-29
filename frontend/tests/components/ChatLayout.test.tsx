@@ -433,7 +433,7 @@ describe('the overview card', () => {
     );
     expect(
       within(overview).getByText(
-        'Prices from 22 Sep 2026 so far; the rest of the year is still being fetched.',
+        'Prices from 22 Sep 2026: BSE keeps about a month of daily files, so the history grows by a day each trading day.',
       ),
     ).toBeInTheDocument();
   });

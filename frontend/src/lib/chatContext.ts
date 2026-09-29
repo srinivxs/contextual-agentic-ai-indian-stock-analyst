@@ -76,9 +76,9 @@ export function rangeHistory(history: PricePoint[], range: RangeKey): PricePoint
 
 /**
  * Which ranges show more than the shorter one before them. The shortest always does; a longer
- * range only once the stored history reaches back past the shorter range's start. While the
- * price history is still being fetched (a few weeks at first), 3M, 6M and 1Y would all repeat
- * the 1M chart, so they stay off until they have something of their own to show.
+ * range only once the stored history reaches back past the shorter range's start. BSE serves
+ * only about a month of daily files, so the history starts short and grows a day at a time;
+ * until then 3M, 6M and 1Y would repeat the 1M chart, so they stay off.
  */
 export function availableRanges(history: PricePoint[]): Record<RangeKey, boolean> {
   const oldest = history[0]?.date;

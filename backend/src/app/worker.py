@@ -94,7 +94,7 @@ class WorkerContext:
     # Share prices (ADR 025): a client for BSE's daily files exists only with PRICES_ENABLED. The
     # pause and clock are injectable so tests never wait.
     prices_http: httpx.AsyncClient | None = None
-    prices_history_days: int = 365
+    prices_history_days: int = 30
     prices_per_run: int = 5
     prices_pause_seconds: float = 30.0
     prices_cooldown_minutes: int = 20
