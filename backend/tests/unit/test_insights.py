@@ -13,9 +13,11 @@ from app.insights import (
     Citation,
     StoredEvent,
     StoredFact,
+    change_views,
     derived_views,
     filing_citation,
     key_facts,
+    measure_facts,
     recent_events,
     screener_citation,
 )
@@ -209,3 +211,127 @@ def test_amounts_leave_the_api_as_plain_digits() -> None:
     assert _amount(Decimal("1E+2")) == "100"
     assert _amount(Decimal("-3.0")) == "-3.0"
     assert _amount(None) is None
+
+
+# --- one measure for one answer (the owner's review, 2026-09-29) --------------------------------
+
+REVENUE = "revenue_from_operations"
+
+
+def screener(fact_id: int, period: str, value: str, **kwargs: str) -> StoredFact:
+    stored = fact(fact_id, REVENUE, period, value, source="screener", **kwargs)  # type: ignore[arg-type]
+    year = period[-4:]
+    citation = screener_citation(SCREENER, "profit-loss", "Sales", f"Mar {year}")
+    return StoredFact(row=stored.row, citation=citation)
+
+
+# The annual reports have two years, screener.in three; they count revenue a little differently.
+TWO_SOURCES = [
+    fact(1, REVENUE, "FY2025", "980"),
+    fact(2, REVENUE, "FY2024", "914"),
+    screener(3, "FY2026", "1055"),
+    screener(4, "FY2025", "962"),
+    screener(5, "FY2024", "899"),
+]
+
+
+def shown(facts: list[StoredFact], **kwargs: object) -> list[tuple[str, str, str]]:
+    return [
+        (f.period, str(f.value), f.citation.source)
+        for f in measure_facts(facts, REVENUE, **kwargs)  # type: ignore[arg-type]
+    ]
+
+
+def test_the_latest_years_come_from_the_best_ranked_source_that_has_them_all() -> None:
+    # the annual reports lack FY2026, so all three years come from screener.in: like with like
+    assert shown(TWO_SOURCES) == [
+        ("FY2026", "1055", "screener"),
+        ("FY2025", "962", "screener"),
+        ("FY2024", "899", "screener"),
+    ]
+
+
+def test_a_named_year_takes_the_best_ranked_source_that_has_it_and_names_the_other() -> None:
+    [only] = measure_facts(TWO_SOURCES, REVENUE, periods=("FY2024",))
+    assert (only.value, only.citation.source, only.status) == (Decimal("914"), "filing", "disputed")
+    assert [(r.citation.source, r.value) for r in only.rivals] == [("screener", Decimal("899"))]
+    assert only.row is not None
+    assert only.row.id == 2
+
+
+def test_two_named_years_come_from_one_source() -> None:
+    assert shown(TWO_SOURCES, periods=("FY2024", "FY2025")) == [
+        ("FY2025", "980", "filing"),
+        ("FY2024", "914", "filing"),
+    ]
+
+
+def test_a_figure_used_for_consistency_names_the_better_ranked_one_it_differs_from() -> None:
+    fy2025 = measure_facts(TWO_SOURCES, REVENUE)[1]
+    assert [(r.citation.source, r.value) for r in fy2025.rivals] == [("filing", Decimal("980"))]
+
+
+def test_when_no_source_has_every_year_each_year_takes_its_best_figure() -> None:
+    facts = [fact(1, REVENUE, "FY2025", "980"), screener(2, "FY2024", "899")]
+    assert shown(facts) == [("FY2025", "980", "filing"), ("FY2024", "899", "screener")]
+
+
+def test_a_figure_within_one_percent_agrees_and_is_no_rival() -> None:
+    facts = [fact(1, REVENUE, "FY2025", "1000"), screener(2, "FY2025", "1005")]
+    [only] = measure_facts(facts, REVENUE)
+    assert (only.status, only.corroborated_by, only.rivals) == ("agreed", 1, ())
+
+
+def test_the_window_of_years_and_a_basis_the_question_asks_for() -> None:
+    facts = [*TWO_SOURCES, fact(9, REVENUE, "FY2026", "524", basis="standalone")]
+    assert shown(facts, years=1) == [("FY2026", "1055", "screener")]
+    assert shown(facts, years=1, basis="standalone") == [("FY2026", "524", "filing")]
+    # a basis with no figures falls back to the usual order
+    assert shown(TWO_SOURCES, years=1, basis="standalone") == [("FY2026", "1055", "screener")]
+
+
+def test_a_named_year_nobody_has_gives_nothing() -> None:
+    assert measure_facts(TWO_SOURCES, REVENUE, periods=("FY2019",)) == []
+    assert measure_facts(TWO_SOURCES, "net_profit") == []
+
+
+def test_changes_are_computed_between_consecutive_years_of_one_source() -> None:
+    views = change_views(measure_facts(TWO_SOURCES, REVENUE))
+    assert [(v.label, v.status, str(v.value)) for v in views] == [
+        ("Revenue from operations change, FY2025 to FY2026", "ok", "9.7"),
+        ("Revenue from operations change, FY2024 to FY2025", "ok", "7.0"),
+    ]
+    latest = views[0]
+    assert latest.name == "change"
+    assert latest.reason == (
+        "Change in revenue from operations from FY2025 to FY2026, consolidated figures from "
+        "screener.in."
+    )
+    assert [(row.period, row.value) for row in latest.inputs] == [
+        ("FY2025", Decimal("962")),
+        ("FY2026", Decimal("1055")),
+    ]
+    assert len(latest.citations) == 2
+
+
+def test_no_change_is_computed_across_two_sources_or_from_a_year_at_zero() -> None:
+    mixed = [fact(1, REVENUE, "FY2025", "980"), screener(2, "FY2024", "899")]
+    assert change_views(measure_facts(mixed, REVENUE)) == []
+    zero = [fact(1, REVENUE, "FY2025", "980"), fact(2, REVENUE, "FY2024", "0")]
+    [view] = change_views(measure_facts(zero, REVENUE))
+    assert (view.status, view.value) == ("not_assessable", None)
+    assert "zero or negative" in view.reason
+
+
+def test_derived_values_carry_the_stored_figures_they_were_computed_from() -> None:
+    facts = [
+        fact(1, "total_borrowings", "FY2026", "50"),
+        fact(2, "total_equity", "FY2026", "200"),
+    ]
+    debt = derived_views(facts, is_financial=False)[0]
+    assert [row.id for row in debt.inputs] == [1, 2]
+
+
+def test_no_change_is_computed_from_figures_without_their_stored_rows() -> None:
+    # the stock page's key facts carry no row: a change needs the rows' source and basis
+    assert change_views(key_facts(TWO_SOURCES)) == []

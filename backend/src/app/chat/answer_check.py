@@ -23,6 +23,24 @@ Nothing it writes is trusted. This code decides, and an empty list of problems i
                             leverage" citing ten figures, "TCS is a partial match"):
                             a judgment must show the figure it rests on, or there is nothing
                             for the number check to test
+    cause_without_source    a claim that gives a cause ("because", "due (mainly) to", "driven
+                            by", "led by", "owing to", "on account of", "as a result of",
+                            "thanks to", "attributed to", "on the back of", "helped by",
+                            "caused by", "boosted by", "fuelled by", "stems from",
+                            "resulting from") citing
+                            no filing passage (N), event (E) or match verdict (M), and no
+                            computed value whose reason is its whole content (one with no
+                            number, "does not apply to banks"): figures show THAT something
+                            changed, never WHY
+    conflicting_figures     across the whole answer, two cited items rest on different stored
+                            figures for one stock, measure, period and basis (an annual
+                            report's FY2025 revenue in one claim, a change computed from
+                            screener.in's FY2025 revenue in another): one answer, one figure.
+                            Another source's figure (a rival, ``rival_of``) does not count
+                            when the answer also cites the figure it differs from: citing the
+                            two together discloses the difference. Figures are compared per
+                            stock, measure, period and basis (one answer shows one currency
+                            view of a measure, app/insights.py's measure_facts)
 
 Numbers are compared as values, with app/fact_validation.py's ``numbers_in``: "1,23,456",
 "123,456", "123456" and "123456.0" are one number, "8.8%" matches "8.8%". They are compared by
@@ -58,6 +76,12 @@ _URL = re.compile(r"https?://|www\.", re.IGNORECASE)
 _BARE_PERIOD = re.compile(r"(?<![a-z0-9])(?:q[1-4]|[1-4]q|h[12]|9m)(?![a-z0-9])", re.IGNORECASE)
 _YEAR = re.compile(r"(?<![\d,.])(?:199\d|20\d\d)(?![\d%]|[.,]\d)")
 _MONEY_BEFORE = re.compile(r"(?:₹|\$|\busd|\brs\.?|\binr)\s*$", re.IGNORECASE)
+_CAUSE = re.compile(
+    r"\b(?:because|due\s+(?:\w+\s+)?to|driven\s+by|led\s+by|owing\s+to|on\s+account\s+of|"
+    r"as\s+a\s+result\s+of|thanks\s+to|attributed\s+to|on\s+the\s+back\s+of|helped\s+by|"
+    r"caused\s+by|boosted\s+by|fu?ell?ed\s+by|stems?\s+from|resulting\s+from)\b",
+    re.IGNORECASE,
+)
 _MONEY_AFTER = re.compile(
     r"\s*(?:crores?|cr|lakhs?|lacs?|millions?|mn|billions?|bn|per share)\b", re.IGNORECASE
 )
@@ -176,6 +200,9 @@ def _claim_problems(index: int, claim: Claim, evidence: dict[str, EvidenceItem])
     for metric in _mixed_metrics(cited):
         detail = f"{metric} over time from different sources; cite the growth value"
         problems.append(Problem("mixed_sources", index, detail))
+    if _CAUSE.search(claim.text) and not any(_states_reasons(item) for item in cited):
+        detail = "a reason needs a cited filing passage (N) or event (E) that states it"
+        problems.append(Problem("cause_without_source", index, detail))
     if not problems and _figure_missing(claim.text, cited):  # only once nothing else is wrong
         detail = "show at least one figure from the cited facts or values"
         problems.append(Problem("figure_missing", index, detail))
@@ -193,6 +220,39 @@ def _mixed_metrics(cited: list[EvidenceItem]) -> list[str]:
     return [m for m in periods if len(periods[m]) > 1 and len(sources[m]) > 1]
 
 
+def _states_reasons(item: EvidenceItem) -> bool:
+    """A passage, an event or a match verdict can state a reason; so can a computed value that
+    is only its reason ("does not apply to banks"). A figure never can."""
+    if item.kind in ("passage", "event", "match"):
+        return True
+    return item.kind == "derived" and not _sizes(_checkable(item.text, [item]))
+
+
+def _conflicts(claims: list[Claim], evidence: dict[str, EvidenceItem]) -> list[Problem]:
+    """Each claim whose cited items rest on a different stored figure for a stock, measure,
+    period and basis than an earlier citation in the answer did. A rival cited with the figure
+    it differs from is a disclosure and is left out, whatever the order of citation."""
+    cited = {cid for claim in claims for cid in claim.citations}
+    first: dict[tuple[str, str, str, str], tuple[Decimal, str]] = {}
+    problems: list[Problem] = []
+    for index, claim in enumerate(claims):
+        for cid in dict.fromkeys(claim.citations):
+            item = evidence.get(cid)
+            if item is None or item.rival_of in cited:
+                continue
+            for figure in item.figures:
+                key = (figure.symbol, figure.metric, figure.period, figure.basis)
+                value, first_id = first.setdefault(key, (figure.value, cid))
+                detail = (
+                    f"{cid} and {first_id} rest on different figures for {figure.metric} "
+                    f"{figure.period}; cite one of them"
+                )
+                problem = Problem("conflicting_figures", index, detail)
+                if value != figure.value and problem not in problems:
+                    problems.append(problem)
+    return problems
+
+
 def _figure_missing(text: str, cited: list[EvidenceItem]) -> bool:
     """True when the cited facts and computed values have numbers and the claim shows none."""
     figures: set[Decimal] = set()
@@ -208,7 +268,10 @@ def check_answer(claims: list[Claim], evidence: list[EvidenceItem]) -> list[Prob
         return [Problem("no_claims", -1, "the answer has no claims")]
     by_id = {item.id: item for item in evidence}
     return [
-        problem
-        for index, claim in enumerate(claims)
-        for problem in _claim_problems(index, claim, by_id)
+        *(
+            problem
+            for index, claim in enumerate(claims)
+            for problem in _claim_problems(index, claim, by_id)
+        ),
+        *_conflicts(claims, by_id),
     ]

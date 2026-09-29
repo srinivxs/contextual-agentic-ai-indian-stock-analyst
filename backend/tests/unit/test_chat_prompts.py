@@ -95,3 +95,18 @@ def test_malformed_claims_are_dropped_and_the_count_is_capped() -> None:
     assert parsed.claims[0] == Claim(text="kept", citations=("F1",))  # non-string IDs dropped
     assert len(parsed.claims) == MAX_CLAIMS
     assert parse_answer({"outcome": "answer", "claims": "none"}).claims == []
+
+
+def test_the_form_may_name_the_other_company_of_an_out_of_scope_question() -> None:
+    schema = answer_tool().schema["properties"]
+    assert schema["other_company"] == {"type": "string", "maxLength": 60}
+    parsed = parse_answer({"outcome": "out_of_scope", "claims": [], "other_company": " Infosys "})
+    assert parsed.other_company == "Infosys"
+    assert parse_answer({"outcome": "out_of_scope", "claims": []}).other_company is None
+    assert parse_answer({"outcome": "out_of_scope", "other_company": 7}).other_company is None
+
+
+def test_the_system_prompt_keeps_causes_to_documents_and_never_forecasts() -> None:
+    assert "never infer a cause from the figures" in SYSTEM_PROMPT
+    assert "Never predict" in SYSTEM_PROMPT
+    assert "Answer only what the question asks" in SYSTEM_PROMPT

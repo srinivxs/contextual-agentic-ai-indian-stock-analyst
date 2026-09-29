@@ -8,13 +8,23 @@ import pytest
 
 from app.chat.evidence import (
     EvidenceItem,
+    Figure,
     build_evidence,
     evidence_block,
     format_amount,
+    measures_for,
 )
 from app.chat.understand import Question
-from app.derived import EventRow, Sentiment
-from app.insights import Citation, DerivedView, KeyFact, StoredEvent
+from app.derived import EventRow, FactRow, Sentiment
+from app.insights import (
+    Citation,
+    DerivedView,
+    KeyFact,
+    Rival,
+    StoredEvent,
+    StoredFact,
+    screener_citation,
+)
 from app.matching.model import Reason, StockMatch
 from app.prices.derived import PriceSnapshot, PriceValue
 from app.prices.model import DailyPrice
@@ -164,6 +174,8 @@ def test_a_fact_is_one_line_citing_its_source() -> None:
             quote="Net profit for the year was 1,234 crore.",
             metric="net_profit",
             period="FY2026",
+            figures=(Figure("TCS", "net_profit", "FY2026", "consolidated", Decimal("1234.0000")),),
+            amount="₹1,234 crore",
         )
     ]
 
@@ -679,3 +691,156 @@ def test_price_items_are_left_out_unless_asked_and_say_when_none_are_loaded() ->
     assert item.text == (
         "TCS · Share price · not in the data yet (end-of-day prices from BSE's daily files)"
     )
+
+
+# --- one figure per thing, with its provenance (the owner's review, 2026-09-29) ------------------
+
+SCREENER_CITATION = screener_citation(SCREENER, "profit-loss", "Sales", "Mar 2026")
+
+
+def row(
+    fact_id: int, period: str, value: str, *, source: str = "screener", metric: str = "net_profit"
+) -> FactRow:
+    year = int(period[-4:])
+    return FactRow(
+        id=fact_id,
+        metric=metric,
+        period=period,
+        period_end=date(year, 3, 31),
+        basis="consolidated",
+        currency="INR",
+        unit="INR_CRORE",
+        value=Decimal(value),
+        source=source,  # type: ignore[arg-type]
+        source_date=date(year, 6, 30),
+    )
+
+
+def test_a_fact_item_carries_the_figure_it_rests_on_and_its_amount() -> None:
+    [item] = build_evidence(
+        question=question(), facts={"TCS": [key_fact()]}, derived={}, passages=[]
+    )
+    assert item.figures == (Figure("TCS", "net_profit", "FY2026", "consolidated", Decimal("1234")),)
+    assert item.amount == "₹1,234 crore"
+    assert item.rivals == ()
+
+
+def test_another_source_s_differing_figure_becomes_its_own_item_linked_both_ways() -> None:
+    disputed = replace(
+        key_fact(status="disputed"),
+        rivals=(Rival(citation=SCREENER_CITATION, value=Decimal("1200"), unit="INR_CRORE"),),
+    )
+    main, rival = build_evidence(
+        question=question(), facts={"TCS": [disputed]}, derived={}, passages=[]
+    )
+    assert main.text == (
+        "TCS · Net profit · FY2026 · consolidated · ₹1,234 crore · Annual report "
+        "(another source differs: F2)"
+    )
+    assert main.rivals == ("F2",)
+    assert rival.id == "F2"
+    assert rival.text == (
+        "TCS · Net profit · FY2026 · consolidated · ₹1,200 crore · screener.in "
+        "(another source's figure for the same period; F1 is used)"
+    )
+    assert (rival.source, rival.label, rival.amount) == (
+        "screener",
+        SCREENER_CITATION.label,
+        "₹1,200 crore",
+    )
+    assert rival.figures == (
+        Figure("TCS", "net_profit", "FY2026", "consolidated", Decimal("1200")),
+    )
+    assert rival.rival_of == "F1"  # linked both ways: citing the two together is a disclosure
+    assert (rival.metric, rival.period) == ("net_profit", "FY2026")
+
+
+def test_a_computed_value_names_the_stored_figures_it_used() -> None:
+    change = replace(
+        view("change", "Net profit change, FY2025 to FY2026", value="9.7", reason="Change."),
+        inputs=(row(1, "FY2025", "962"), row(2, "FY2026", "1055")),
+    )
+    [item] = build_evidence(
+        question=question(wants_growth=True), facts={}, derived={"TCS": [change]}, passages=[]
+    )
+    used = "Figures used: ₹962 crore (FY2025), ₹1,055 crore (FY2026)."
+    assert item.text == f"TCS · Net profit change, FY2025 to FY2026 · 9.7% · Change. {used}"
+    assert item.quote == f"Change. {used}"
+    assert item.figures == (
+        Figure("TCS", "net_profit", "FY2025", "consolidated", Decimal("962")),
+        Figure("TCS", "net_profit", "FY2026", "consolidated", Decimal("1055")),
+    )
+
+
+def test_changes_come_only_when_growth_is_asked_or_nothing_specific() -> None:
+    change = view("change", "Net profit change, FY2025 to FY2026")
+    for asked, expected in (
+        (question(wants_growth=True), ["Net profit change, FY2025 to FY2026"]),
+        (question(), ["Net profit change, FY2025 to FY2026"]),
+        (question(metrics=("net_profit",)), []),
+    ):
+        items = build_evidence(question=asked, facts={}, derived={"TCS": [change]}, passages=[])
+        assert names(items) == expected
+
+
+def stored(fact_id: int, metric: str, period: str, value: str) -> StoredFact:
+    return StoredFact(row=row(fact_id, period, value, metric=metric), citation=SCREENER_CITATION)
+
+
+PROFITS = [
+    stored(1, "net_profit", "FY2023", "80"),
+    stored(2, "net_profit", "FY2024", "90"),
+    stored(3, "net_profit", "FY2025", "100"),
+    stored(4, "net_profit", "FY2026", "110"),
+    stored(5, "revenue_from_operations", "FY2025", "500"),
+    stored(6, "revenue_from_operations", "FY2026", "550"),
+    stored(7, "eps_basic", "FY2026", "12"),
+]
+
+
+def test_an_asked_measure_gets_its_years_and_the_changes_between_them() -> None:
+    asked = replace(question(metrics=("net_profit",)), wants_growth=True)
+    facts, changes = measures_for(asked, PROFITS, is_financial=False)
+    assert [f.period for f in facts] == ["FY2026", "FY2025", "FY2024"]
+    assert [c.label for c in changes] == [
+        "Net profit change, FY2025 to FY2026",
+        "Net profit change, FY2024 to FY2025",
+    ]
+
+
+def test_named_periods_and_a_window_of_years_decide_the_figures() -> None:
+    named = replace(question(metrics=("net_profit",)), periods=("FY2023", "FY2025"))
+    facts, changes = measures_for(named, PROFITS, is_financial=False)
+    assert [f.period for f in facts] == ["FY2025", "FY2023"]
+    assert [c.label for c in changes] == ["Net profit change, FY2023 to FY2025"]
+    latest = replace(question(metrics=("net_profit",)), years=1)
+    assert [f.period for f in measures_for(latest, PROFITS, is_financial=False)[0]] == ["FY2026"]
+    # a change needs two years, even for "the latest growth"
+    grown = replace(latest, wants_growth=True)
+    assert len(measures_for(grown, PROFITS, is_financial=False)[0]) == 2
+
+
+def test_with_no_measure_asked_every_metric_and_the_latest_top_line_and_profit_change() -> None:
+    facts, changes = measures_for(question(), PROFITS, is_financial=False)
+    assert {f.metric for f in facts} == {"net_profit", "revenue_from_operations", "eps_basic"}
+    assert [c.label for c in changes] == [
+        "Revenue from operations change, FY2025 to FY2026",
+        "Net profit change, FY2025 to FY2026",
+    ]
+
+
+def test_a_bank_s_revenue_is_its_net_interest_income_and_a_company_s_is_not() -> None:
+    both = [
+        stored(1, "revenue_from_operations", "FY2026", "900"),
+        stored(2, "net_interest_income", "FY2026", "300"),
+    ]
+    asked = question(metrics=("revenue_from_operations", "net_interest_income"))
+    bank, _ = measures_for(asked, both, is_financial=True)
+    company, _ = measures_for(asked, both, is_financial=False)
+    assert [f.metric for f in bank] == ["net_interest_income"]
+    assert [f.metric for f in company] == ["revenue_from_operations"]
+    # a question naming net interest income itself still gets it
+    nii = question(metrics=("net_interest_income",))
+    assert [f.metric for f in measures_for(nii, both, is_financial=False)[0]] == [
+        "net_interest_income"
+    ]

@@ -390,7 +390,7 @@ describe('an answer’s sources', () => {
 describe('answers that are not answers', () => {
   it.each([
     ['abstained', "I don't have that in the data."],
-    ['out_of_scope', 'I can only answer about RELIANCE, TCS and HDFC Bank.'],
+    ['out_of_scope', 'I currently have research data only for Reliance, TCS and HDFC Bank.'],
     ['remembered', "Noted. I'll remember: Risk: Conservative; Debt: Avoid high debt."],
   ] as const)('shows %s as a quiet notice, not an error', async (status, text) => {
     install({ chatAnswer: () => demoAnswer({ status, text, sources: [] }) });

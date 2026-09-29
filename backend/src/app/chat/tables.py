@@ -3,12 +3,18 @@
 Built by code from screener.in's stored series (app/series.py), never by the model, so it needs no
 checking: every figure is a stored row, shown in rupees crore as reported, and the change is plain
 arithmetic on two of those rows. One stock, one measure, one source: like with like.
+
+fits_answer (the owner's review, 2026-09-29): the table is shown only beside an answer about its
+measure (one that cites a figure of it) whose every figure of that measure is consolidated and,
+for each year the table shows, the very figure the table shows. An answer resting on an annual
+report's figure that screener.in counts differently gets no table: never one figure in the text
+and another in the table.
 """
 
 from decimal import ROUND_HALF_UP, Decimal
 
 from app.chat.contract import DataTable
-from app.chat.evidence import _indian, _plain  # the same Indian grouping as the answer text
+from app.chat.evidence import EvidenceItem, _indian, _plain  # the answer's Indian grouping
 from app.chat.understand import Question
 from app.insights import METRIC_LABELS
 from app.series import SeriesPoint
@@ -58,30 +64,61 @@ def _measure(question: Question) -> tuple[str, ...]:
     return PROFIT if asks_profit else tuple(m for m in REVENUE if m in question.metrics)
 
 
-def build_table(question: Question, series: dict[str, list[SeriesPoint]]) -> DataTable | None:
-    """The table for the question, or None. ``series``: each candidate metric's points, oldest
-    first (app/series.py). A table needs exactly one named stock and at least two years."""
+def _chosen(
+    question: Question, series: dict[str, list[SeriesPoint]]
+) -> tuple[str, list[SeriesPoint]] | None:
+    """The metric and points the table shows: one named stock and at least two years."""
     if len(question.symbols) != 1:
         return None
     for metric in _measure(question):
         points = series.get(metric, [])
-        if len(points) < 2:
-            continue
-        label = METRIC_LABELS[metric]
-        newest_first = list(reversed(points))
-        rows = tuple(
-            (
-                point.period,
-                _shown(point.value),
-                _change(point, newest_first[i + 1] if i + 1 < len(newest_first) else None),
-            )
-            for i, point in enumerate(newest_first[:MAX_ROWS])
-        )
-        return DataTable(
-            title=f"{question.symbols[0]} {label.lower()} (consolidated, ₹ crore)",
-            columns=("Year", f"{label} (₹ crore)", "Change"),
-            rows=rows,
-            source_label=SOURCE_LABEL,
-            source_url=points[-1].source_url,
-        )
+        if len(points) >= 2:
+            return metric, points
     return None
+
+
+def fits_answer(
+    question: Question, series: dict[str, list[SeriesPoint]], cited: list[EvidenceItem]
+) -> bool:
+    """Whether the table may be shown beside an answer citing these items."""
+    chosen = _chosen(question, series)
+    if chosen is None:
+        return False
+    metric, points = chosen
+    shown = {point.period: point.value for point in points[-MAX_ROWS:]}
+    mine = [
+        figure
+        for item in cited
+        for figure in item.figures
+        if figure.symbol == question.symbols[0] and figure.metric == metric
+    ]
+    return bool(mine) and all(
+        figure.basis == "consolidated" and shown.get(figure.period, figure.value) == figure.value
+        for figure in mine
+    )
+
+
+def build_table(question: Question, series: dict[str, list[SeriesPoint]]) -> DataTable | None:
+    """The table for the question, or None. ``series``: each candidate metric's points, oldest
+    first (app/series.py). A table needs exactly one named stock and at least two years."""
+    chosen = _chosen(question, series)
+    if chosen is None:
+        return None
+    metric, points = chosen
+    label = METRIC_LABELS[metric]
+    newest_first = list(reversed(points))
+    rows = tuple(
+        (
+            point.period,
+            _shown(point.value),
+            _change(point, newest_first[i + 1] if i + 1 < len(newest_first) else None),
+        )
+        for i, point in enumerate(newest_first[:MAX_ROWS])
+    )
+    return DataTable(
+        title=f"{question.symbols[0]} {label.lower()} (consolidated, ₹ crore)",
+        columns=("Year", f"{label} (₹ crore)", "Change"),
+        rows=rows,
+        source_label=SOURCE_LABEL,
+        source_url=points[-1].source_url,
+    )

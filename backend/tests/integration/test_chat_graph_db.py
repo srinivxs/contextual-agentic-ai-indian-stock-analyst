@@ -157,7 +157,7 @@ async def test_a_grounded_answer_comes_back_with_its_numbered_source(
     await seed(admin_engine)
     llm = FakeLlm(grounded)
 
-    reply = await ask(session_factory, llm, "What was TCS net profit in FY2026?")
+    reply = await ask(session_factory, llm, "Summarise TCS's net profit in FY2026.")
 
     assert reply.status == "answered"
     assert reply.text == "TCS's net profit for FY2026 was ₹1,234 crore. [1]"
@@ -187,7 +187,7 @@ async def test_a_failed_check_is_retried_once_and_told_what_failed(
     answers = iter([invented, grounded])
     llm = FakeLlm(lambda s, u, t: next(answers)(s, u, t))
 
-    reply = await ask(session_factory, llm, "What was TCS net profit in FY2026?")
+    reply = await ask(session_factory, llm, "Summarise TCS's net profit in FY2026.")
 
     assert reply.status == "answered"
     assert len(llm.calls) == 2
@@ -202,7 +202,7 @@ async def test_an_invented_number_is_rejected_and_the_answer_abstains(
     await seed(admin_engine)
     llm = FakeLlm(invented)
 
-    reply = await ask(session_factory, llm, "What was TCS net profit in FY2026?")
+    reply = await ask(session_factory, llm, "Summarise TCS's net profit in FY2026.")
 
     assert (reply.status, reply.text) == ("abstained", ABSTAIN_TEXT)
     assert len(llm.calls) == 2  # the answer and its one retry
@@ -218,7 +218,7 @@ async def test_the_model_can_say_the_question_is_out_of_scope(
     await seed(admin_engine)
     llm = FakeLlm([{"outcome": "out_of_scope", "claims": []}])
 
-    reply = await ask(session_factory, llm, "What is the weather in Mumbai, and TCS profit?")
+    reply = await ask(session_factory, llm, "What is the weather in Mumbai?")
 
     assert (reply.status, reply.text) == ("out_of_scope", OUT_OF_SCOPE_TEXT)
 
@@ -261,7 +261,7 @@ async def test_a_failed_search_still_answers_from_the_facts(
     broken = FakeEmbedder(fail_on="", error=RuntimeError("throttled"))
 
     reply = await ask(
-        session_factory, FakeLlm(grounded), "What was TCS net profit in FY2026?", embedder=broken
+        session_factory, FakeLlm(grounded), "Summarise TCS's net profit in FY2026.", embedder=broken
     )
 
     assert reply.status == "answered"
@@ -273,7 +273,7 @@ async def test_an_unrelated_passage_is_not_evidence(
     await seed(admin_engine, passages=["Weather monsoon rainfall cricket schedule"])
     llm = FakeLlm(grounded)
 
-    await ask(session_factory, llm, "What was TCS net profit in FY2026?")
+    await ask(session_factory, llm, "Summarise TCS's net profit in FY2026.")
 
     assert "[N1]" not in llm.calls[0][1]
 
@@ -298,7 +298,7 @@ async def test_an_unusable_model_answer_is_billed_and_retried(
                 raise LlmError("cut off", input_tokens=500, output_tokens=2000)
             return await self.inner.call(system=system, user=user, tool=tool)
 
-    reply = await ask(session_factory, CutOffOnce(), "What was TCS net profit in FY2026?")
+    reply = await ask(session_factory, CutOffOnce(), "Summarise TCS's net profit in FY2026.")
 
     assert reply.status == "answered"
     assert (reply.input_tokens, reply.output_tokens) == (1500, 2200)
@@ -315,7 +315,7 @@ async def test_a_follow_up_takes_its_stock_from_the_conversation(
         return {"outcome": "answer", "claims": [claim]}
 
     history = [
-        Turn("user", "What was TCS net profit in FY2026?"),
+        Turn("user", "Summarise TCS's net profit in FY2026."),
         Turn("assistant", "TCS's net profit for FY2026 was ₹1,234 crore. [1]"),
     ]
     reply = await ask(
@@ -337,7 +337,7 @@ async def test_with_search_switched_off_it_answers_from_the_facts_alone(
     )
 
     reply = await engine_without_search.answer(
-        question="What was TCS net profit in FY2026?", history=[], user_id=uuid4()
+        question="Summarise TCS's net profit in FY2026.", history=[], user_id=uuid4()
     )
 
     assert reply.status == "answered"
@@ -627,7 +627,7 @@ async def test_an_answered_net_profit_question_for_one_stock_carries_the_table(
     await seed(admin_engine)
     await seed_earlier_years(admin_engine)
 
-    reply = await ask(session_factory, FakeLlm(grounded), "What was TCS net profit in FY2026?")
+    reply = await ask(session_factory, FakeLlm(grounded), "Summarise TCS's net profit in FY2026.")
 
     assert reply.status == "answered"
     table = reply.table
@@ -665,7 +665,7 @@ async def test_an_abstention_carries_no_table(
     await seed_earlier_years(admin_engine)
     llm = FakeLlm(lambda s, u, t: {"outcome": "not_in_data", "claims": []})
 
-    reply = await ask(session_factory, llm, "What was TCS net profit in FY2026?")
+    reply = await ask(session_factory, llm, "Summarise TCS's net profit in FY2026.")
 
     assert (reply.status, reply.table) == ("abstained", None)
 

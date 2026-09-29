@@ -332,3 +332,153 @@ def test_a_match_verdict_must_show_one_of_its_figures() -> None:
     shown = Claim("TCS is a partial match: its debt to equity is 0.45, within 1.0.", ("M1",))
     assert check_answer([shown], [match]) == []
     assert without_markers("See note [1] and [x].") == "See note [1] and [x]."
+
+
+# --- one figure per thing, and causes only from documents (the owner's review, 2026-09-29) -------
+
+
+def with_figures(base: EvidenceItem, *figures: tuple[str, str, str]) -> EvidenceItem:
+    from decimal import Decimal
+
+    from app.chat.evidence import Figure
+
+    return replace(
+        base,
+        figures=tuple(
+            Figure("RELIANCE", metric, period, "consolidated", Decimal(value))
+            for metric, period, value in figures
+        ),
+    )
+
+
+RIVALS = [
+    with_figures(
+        item("F1", "RELIANCE · Revenue from operations · FY2025 · consolidated · ₹9,80,136 crore"),
+        ("revenue_from_operations", "FY2025", "980136"),
+    ),
+    with_figures(
+        item(
+            "D1",
+            "RELIANCE · Revenue from operations change, FY2025 to FY2026 · 9.7% · Change. "
+            "Figures used: ₹9,62,820 crore (FY2025), ₹10,55,780 crore (FY2026).",
+        ),
+        ("revenue_from_operations", "FY2025", "962820"),
+        ("revenue_from_operations", "FY2026", "1055780"),
+    ),
+    with_figures(
+        item("F2", "RELIANCE · Revenue from operations · FY2026 · consolidated · ₹10,55,780 crore"),
+        ("revenue_from_operations", "FY2026", "1055780"),
+    ),
+    item("N1", "RELIANCE · Annual report · p.40: Revenue rose on higher retail volumes."),
+    item("E1", "RELIANCE · 01 Aug 2026 · earnings results · positive · high impact · Retail grew."),
+]
+
+
+def test_an_answer_resting_on_two_figures_for_one_thing_is_refused() -> None:
+    problems = check_answer(
+        [
+            Claim("FY2025 revenue was ₹9,80,136 crore.", ("F1",)),
+            Claim("Revenue grew 9.7% to FY2026.", ("D1",)),  # rests on ₹9,62,820 crore for FY2025
+        ],
+        RIVALS,
+    )
+    assert [(p.code, p.claim) for p in problems] == [("conflicting_figures", 1)]
+    assert problems[0].detail == (
+        "D1 and F1 rest on different figures for revenue_from_operations FY2025; cite one of them"
+    )
+
+
+def test_a_figure_and_its_own_rival_may_be_cited_together_but_not_a_rival_and_a_change() -> None:
+    rival = replace(
+        with_figures(
+            item(
+                "F9", "RELIANCE · Revenue from operations · FY2025 · consolidated · ₹9,62,820 crore"
+            ),
+            ("revenue_from_operations", "FY2025", "962820"),
+        ),
+        rival_of="F1",
+    )
+    evidence = [replace(RIVALS[0], rivals=("F9",)), *RIVALS[1:], rival]
+    disclosed = Claim(
+        "The annual report gives ₹9,80,136 crore, screener.in ₹9,62,820 crore.", ("F1", "F9")
+    )
+    assert check_answer([disclosed], evidence) == []
+    # the annual report's figure next to a change computed from screener.in's: two figures
+    mixed = [Claim("FY2025 revenue was ₹9,62,820 crore.", ("F9",)), Claim("It grew 9.7%.", ("D1",))]
+    assert [p.code for p in check_answer(mixed, evidence)] == []  # F9 and D1 agree on ₹9,62,820
+    main_and_change = [
+        Claim("FY2025 revenue was ₹9,80,136 crore.", ("F1",)),
+        Claim("It grew 9.7%.", ("D1",)),
+    ]
+    assert [p.code for p in check_answer(main_and_change, evidence)] == ["conflicting_figures"]
+
+
+def test_items_that_agree_on_every_shared_figure_pass_together() -> None:
+    claims = [
+        Claim("Revenue grew 9.7% from FY2025 to FY2026.", ("D1",)),
+        Claim("FY2026 revenue was ₹10,55,780 crore.", ("F2",)),
+    ]
+    assert check_answer(claims, RIVALS) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Revenue rose 9.7% because of higher volumes.",
+        "Revenue rose 9.7%, driven by retail.",
+        "Revenue rose 9.7% due to pricing.",
+        "Revenue rose 9.7% on the back of new stores.",
+    ],
+)
+def test_a_cause_that_only_figures_support_is_refused(text: str) -> None:
+    problems = check_answer([Claim(text, ("D1",))], RIVALS)
+    assert [p.code for p in problems] == ["cause_without_source"]
+
+
+@pytest.mark.parametrize("cited", [("D1", "N1"), ("D1", "E1")])
+def test_a_cause_a_filing_passage_or_event_states_passes(cited: tuple[str, ...]) -> None:
+    claim = Claim("Revenue rose 9.7%, driven by higher retail volumes.", cited)
+    assert check_answer([claim], RIVALS) == []
+
+
+def test_a_computed_value_s_own_reason_without_a_number_may_say_because() -> None:
+    claim = Claim("Debt to equity does not apply to HDFC Bank because it is a bank.", ("D3",))
+    assert check(claim) == []
+
+
+def test_the_conflict_check_does_not_depend_on_the_order_of_citations() -> None:
+    main = replace(RIVALS[0], rivals=("F9",))  # F1: the annual report's ₹9,80,136 crore
+    rival = replace(
+        with_figures(
+            item("F9", "RELIANCE · Revenue from operations · FY2025 · ₹9,62,820 crore"),
+            ("revenue_from_operations", "FY2025", "962820"),
+        ),
+        rival_of="F1",
+    )
+    agreeing = with_figures(  # a change computed from F1's figure
+        item("D5", "RELIANCE · change · 12% · Figures used: ₹9,80,136 crore (FY2025)."),
+        ("revenue_from_operations", "FY2025", "980136"),
+    )
+    evidence = [main, rival, agreeing]
+    for order in (("F9", "F1", "D5"), ("F1", "F9", "D5"), ("D5", "F9", "F1")):
+        claims = [Claim("Sources: ₹9,80,136 crore and ₹9,62,820 crore, up 12%.", order)]
+        assert check_answer(claims, evidence) == [], order
+    # without its main figure, the rival is what the answer rests on: it conflicts with D5
+    claims = [Claim("FY2025 was ₹9,62,820 crore.", ("F9",)), Claim("Up 12%.", ("D5",))]
+    assert [p.code for p in check_answer(claims, evidence)] == ["conflicting_figures"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Revenue rose 9.7% due mainly to retail.",
+        "Revenue rose 9.7%, boosted by retail.",
+        "Revenue rose 9.7%, fuelled by retail.",
+        "The 9.7% rise stems from retail.",
+        "Revenue rose 9.7%, resulting from new stores.",
+    ],
+)
+def test_more_ways_of_giving_a_cause_need_a_document(text: str) -> None:
+    assert [p.code for p in check_answer([Claim(text, ("D1",))], RIVALS)] == [
+        "cause_without_source"
+    ]

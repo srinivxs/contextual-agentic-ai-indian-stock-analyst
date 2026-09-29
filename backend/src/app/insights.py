@@ -9,17 +9,33 @@ decides what to show and attaches a citation to every figure:
 - derived values: debt to equity, growth of revenue (net interest income for a bank) and of net
   profit, the latest dividend, each citing the facts it used;
 - recent events, newest first.
+
+The chat (the owner's review, 2026-09-29) reads one measure for one answer with measure_facts:
+all the years it needs come from ONE source, so that the answer, its changes and its table never
+show two figures for one thing:
+
+- the years needed are the ones the question names, else the latest ``years`` full years;
+- the source is the best-ranked one (SOURCE_RANK: annual report first) that has every one of
+  those years; only if none has them all does each year take its own best figure;
+- another source's figure for the same year that differs by more than 1% is kept as a rival,
+  so the answer can say so instead of choosing silently;
+- change_views computes the change between consecutive years of that one source (never across
+  two sources: that would measure a change of definition, ADR 020).
 """
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
+from itertools import pairwise
 from typing import Literal
 
 from app.derived import (
+    SOURCE_RANK,
+    SOURCE_WORDS,
     Chosen,
     Derived,
     EventRow,
     FactRow,
+    agrees,
     choose_all,
     debt_to_equity,
     growth_yoy,
@@ -80,6 +96,16 @@ class StoredEvent:
 
 
 @dataclass(frozen=True)
+class Rival:
+    """Another source's figure for the same metric, period, basis and currency, more than 1%
+    away from the one shown."""
+
+    citation: Citation
+    value: Decimal
+    unit: str
+
+
+@dataclass(frozen=True)
 class KeyFact:
     metric: str
     label: str
@@ -92,6 +118,8 @@ class KeyFact:
     corroborated_by: int
     citation: Citation
     disputed_by: tuple[Citation, ...]
+    rivals: tuple[Rival, ...] = ()
+    row: FactRow | None = None  # the stored row, for computing changes
 
 
 @dataclass(frozen=True)
@@ -102,6 +130,7 @@ class DerivedView:
     value: Decimal | None
     reason: str
     citations: tuple[Citation, ...]
+    inputs: tuple[FactRow, ...] = ()  # the stored figures it was computed from
 
 
 def filing_citation(
@@ -172,7 +201,10 @@ def key_facts(facts: list[StoredFact], *, years: int = YEARS_SHOWN) -> list[KeyF
     return shown
 
 
-def _view(name: str, label: str, derived: Derived, citations: dict[int, Citation]) -> DerivedView:
+def _view(
+    name: str, label: str, derived: Derived, citations: dict[int, Citation], rows: list[FactRow]
+) -> DerivedView:
+    by_id = {row.id: row for row in rows}
     return DerivedView(
         name=name,
         label=label,
@@ -180,6 +212,7 @@ def _view(name: str, label: str, derived: Derived, citations: dict[int, Citation
         value=derived.value,
         reason=derived.reason,
         citations=tuple(citations[fact_id] for fact_id in derived.fact_ids),
+        inputs=tuple(by_id[fact_id] for fact_id in derived.fact_ids),
     )
 
 
@@ -195,11 +228,129 @@ def derived_views(facts: list[StoredFact], *, is_financial: bool) -> list[Derive
             "Debt to equity",
             debt_to_equity(rows, is_financial=is_financial),
             citations,
+            rows,
         ),
-        _view("revenue_growth", top_label, growth_yoy(rows, top_line), citations),
-        _view("profit_growth", "Net profit growth", growth_yoy(rows, "net_profit"), citations),
-        _view("latest_dividend", "Latest dividend", latest_dividend(rows), citations),
+        _view("revenue_growth", top_label, growth_yoy(rows, top_line), citations, rows),
+        _view(
+            "profit_growth", "Net profit growth", growth_yoy(rows, "net_profit"), citations, rows
+        ),
+        _view("latest_dividend", "Latest dividend", latest_dividend(rows), citations, rows),
     ]
+
+
+# --- one measure for one answer -------------------------------------------------------------------
+
+
+def _latest_years(rows: list[FactRow], years: int) -> list[str]:
+    full_years = sorted({row.period for row in rows if row.period.startswith("FY")}, reverse=True)
+    return full_years[:years]
+
+
+def _measured(fact: FactRow, view_rows: list[FactRow], citations: dict[int, Citation]) -> KeyFact:
+    """The figure shown, with every other source's best figure for its period: agreeing ones
+    counted, differing ones kept as rivals."""
+    agreeing = 0
+    rivals: list[Rival] = []
+    for source in SOURCE_RANK:
+        others = [r for r in view_rows if r.period == fact.period and r.source == source]
+        if source == fact.source or not others:
+            continue
+        best = choose_all(others)[(fact.metric, fact.period, fact.basis, fact.currency)].fact
+        if agrees(best.value, fact.value):
+            agreeing += 1
+        else:
+            rivals.append(Rival(citation=citations[best.id], value=best.value, unit=best.unit))
+    status = "disputed" if rivals else ("agreed" if agreeing else "single")
+    return KeyFact(
+        metric=fact.metric,
+        label=METRIC_LABELS[fact.metric],
+        period=fact.period,
+        basis=fact.basis,
+        currency=fact.currency,
+        unit=fact.unit,
+        value=fact.value,
+        status=status,
+        corroborated_by=agreeing,
+        citation=citations[fact.id],
+        disputed_by=tuple(rival.citation for rival in rivals),
+        rivals=tuple(rivals),
+        row=fact,
+    )
+
+
+def _one_source(view_rows: list[FactRow], wanted: list[str]) -> list[FactRow]:
+    """The wanted periods from the best-ranked source that has them all; failing that, each
+    period's own best figure (the sources then differ, and no change is computed across them)."""
+    for source in SOURCE_RANK:
+        chosen = {
+            key[1]: winner.fact
+            for key, winner in choose_all([r for r in view_rows if r.source == source]).items()
+        }
+        if all(period in chosen for period in wanted):
+            return [chosen[period] for period in wanted]
+    best = {key[1]: winner.fact for key, winner in choose_all(view_rows).items()}
+    return [best[period] for period in wanted if period in best]
+
+
+def measure_facts(
+    facts: list[StoredFact],
+    metric: str,
+    *,
+    periods: tuple[str, ...] = (),
+    years: int = YEARS_SHOWN,
+    basis: str | None = None,
+) -> list[KeyFact]:
+    """One metric's figures for an answer, newest first, from one source where possible: the
+    named periods, else the latest ``years`` full years, in the first view (consolidated ₹ first,
+    or the basis asked for) that has any of them."""
+    citations = {stored.row.id: stored.citation for stored in facts}
+    rows = [stored.row for stored in facts if stored.row.metric == metric]
+    views = sorted(_VIEWS, key=lambda view: view[0] != basis) if basis else _VIEWS
+    for view_basis, view_currency in views:
+        view_rows = [r for r in rows if (r.basis, r.currency) == (view_basis, view_currency)]
+        wanted = list(periods) if periods else _latest_years(view_rows, years)
+        picked = sorted(_one_source(view_rows, wanted), key=lambda r: r.period_end, reverse=True)
+        if picked:
+            return [_measured(fact, view_rows, citations) for fact in picked]
+    return []
+
+
+def _change(earlier: KeyFact, later: KeyFact) -> DerivedView | None:
+    first, second = earlier.row, later.row
+    if first is None or second is None:
+        return None
+    same_kind = first.period[:2] == second.period[:2]  # two years, or the same quarter twice
+    like_with_like = (first.source, first.basis, first.currency, first.unit) == (
+        second.source,
+        second.basis,
+        second.currency,
+        second.unit,
+    )
+    if not (same_kind and like_with_like):
+        return None
+    words = METRIC_LABELS[first.metric].lower()
+    label = f"{METRIC_LABELS[first.metric]} change, {first.period} to {second.period}"
+    citations = (earlier.citation, later.citation)
+    if first.value <= 0:
+        reason = (
+            f"Not assessable: {words} for {first.period} is zero or negative, so a percent "
+            "change has no meaning."
+        )
+        return DerivedView("change", label, "not_assessable", None, reason, citations, (first,))
+    change = (second.value - first.value) / first.value * 100
+    value = change.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    reason = (
+        f"Change in {words} from {first.period} to {second.period}, {second.basis} figures "
+        f"from {SOURCE_WORDS[second.source]}."
+    )
+    return DerivedView("change", label, "ok", value, reason, citations, (first, second))
+
+
+def change_views(picked: list[KeyFact]) -> list[DerivedView]:
+    """The change between each two consecutive periods of one measure (newest first, as
+    measure_facts returns them), when both come from one source on one basis."""
+    views = [_change(earlier, later) for later, earlier in pairwise(picked)]
+    return [view for view in views if view is not None]
 
 
 def recent_events(events: list[StoredEvent], *, limit: int = EVENTS_SHOWN) -> list[StoredEvent]:

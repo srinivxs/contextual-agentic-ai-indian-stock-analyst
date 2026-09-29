@@ -247,3 +247,192 @@ def test_price_questions_ask_for_prices(text: str) -> None:
 )
 def test_other_questions_do_not_ask_for_prices(text: str) -> None:
     assert ask(text).wants_price is False
+
+
+# --- what kind of question (the owner's review, 2026-09-29) -------------------------------------
+
+
+def test_a_stock_named_in_the_question_or_the_history_is_named_and_all_three_are_not() -> None:
+    assert ask("What was TCS's net profit?").named is True
+    history = [Turn(role="user", text="Tell me about HDFC Bank.")]
+    assert ask("And its dividend?", history).named is True
+    # Infosys is none of ours: all three are searched, but no stock was named
+    assert ask("What is Infosys's latest revenue?").named is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What did HDFC Bank's management say in its latest earnings call?",
+        "Summarise TCS's earnings calls",
+        "What did the earnings presentation say?",
+    ],
+)
+def test_an_earnings_call_or_presentation_is_a_document_not_the_profit_metric(text: str) -> None:
+    assert ask(text).metrics == ()
+
+
+def test_earnings_on_their_own_still_mean_net_profit() -> None:
+    assert ask("How did TCS's earnings do?").metrics == ("net_profit",)
+
+
+@pytest.mark.parametrize(
+    ("text", "periods"),
+    [
+        ("Reliance revenue in FY24", ("FY2024",)),
+        ("Reliance revenue for the year ended March 2024", ("FY2024",)),
+        ("Reliance revenue in Mar 2025", ("FY2025",)),
+        ("TCS profit for fiscal 2025", ("FY2025",)),
+        ("TCS profit for financial year 2024", ("FY2024",)),
+        ("TCS profit in March 2024 and FY2025", ("FY2024", "FY2025")),
+        ("TCS profit for financial year 2023-24", ("FY2024",)),  # a range, not FY2023
+    ],
+)
+def test_more_ways_of_naming_a_fiscal_year(text: str, periods: tuple[str, ...]) -> None:
+    assert ask(text).periods == periods
+
+
+def test_a_march_quarter_is_not_read_as_the_full_year() -> None:
+    assert ask("TCS profit in the March 2025 quarter").periods == ()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Why did Reliance's revenue change between FY2024 and FY2025?",
+        "What factors explain the change in TCS's profit?",
+        "What drove HDFC Bank's growth?",
+        "What were the reasons behind the fall?",
+    ],
+)
+def test_why_questions_ask_for_reasons(text: str) -> None:
+    assert ask(text).wants_reason is True
+
+
+def test_a_plain_figure_question_does_not_ask_for_reasons() -> None:
+    assert ask("What was Reliance's revenue in FY2024?").wants_reason is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What will TCS's share price be next year?",
+        "Predict Reliance's stock price",
+        "What is the target price for HDFC Bank?",
+        "Where is TCS's share price going to be in the future?",
+    ],
+)
+def test_a_future_share_price_is_a_forecast(text: str) -> None:
+    assert ask(text).wants_forecast is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What is TCS's share price?",  # the stored close, not a forecast
+        "What will TCS's revenue be next year?",  # not a price: a filing may state guidance
+    ],
+)
+def test_other_questions_are_not_price_forecasts(text: str) -> None:
+    assert ask(text).wants_forecast is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What was Reliance's revenue in FY2024?",
+        "What was TCS's net profit in FY2025, and what source supports the figure?",
+        "What is HDFC Bank's net interest margin?",
+        "what's TCS's dividend per share",
+        "How much debt does Reliance have?",
+    ],
+)
+def test_asking_for_a_figure_is_a_lookup(text: str) -> None:
+    assert ask(text).lookup is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Compare Reliance's FY2024 and FY2025 revenue.",  # a comparison
+        "Why did Reliance's revenue change between FY2024 and FY2025?",  # a reason
+        "How has Reliance's revenue changed over the last three years?",  # a trend
+        "What was TCS's revenue growth in FY2025?",  # a computed change
+        "Is TCS's net profit high?",  # a judgment, and not a what question
+        "What is a good net profit for TCS?",  # a judgment
+        "What is TCS's share price?",  # a price, answered with its date
+        "What is the recent news on TCS?",  # events
+        "What was TCS's headcount?",  # no metric of ours
+    ],
+)
+def test_other_questions_are_not_lookups(text: str) -> None:
+    assert ask(text).lookup is False
+
+
+@pytest.mark.parametrize(
+    ("text", "years"),
+    [
+        ("How has Reliance's revenue changed over the last three years?", 3),
+        ("TCS profit in the past 5 years", 5),
+        ("TCS profit over the last 9 years", 5),  # at most five
+        ("What is TCS's latest revenue?", 1),
+        ("HDFC Bank's most recent net profit", 1),
+        ("TCS revenue", None),
+    ],
+)
+def test_how_many_years_a_question_means(text: str, years: int | None) -> None:
+    assert ask(text).years == years
+
+
+@pytest.mark.parametrize(
+    ("text", "basis"),
+    [
+        ("Reliance standalone revenue", "standalone"),
+        ("Reliance consolidated revenue", "consolidated"),
+        ("Reliance revenue", None),
+    ],
+)
+def test_a_question_may_ask_for_one_basis(text: str, basis: str | None) -> None:
+    assert ask(text).basis == basis
+
+
+# --- the review's edge cases ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What was Reliance's revenue last quarter?",  # a period we do not read
+        "What was TCS's revenue in Q3?",
+        "What was HDFC Bank's revenue in 2024?",  # a bare year
+        "What was TCS's revenue in the last 3 years?",  # a window, not one figure
+        "What are the main sources of Reliance's revenue?",  # not a figure
+        "What is driving Reliance's profit?",
+        "What's TCS's debt to equity?",  # a ratio, computed: not two raw figures
+        "What was Reliance's revenue for the quarter ended March 2024?",
+    ],
+)
+def test_questions_code_cannot_answer_with_one_stored_figure_are_not_lookups(text: str) -> None:
+    assert ask(text).lookup is False
+
+
+def test_a_quarter_ending_in_march_is_not_the_full_year() -> None:
+    assert ask("Revenue for the quarter ended March 2024").periods == ()
+    assert ask("TCS profit in Q4 March 2024").periods == ()
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["What was Jio's contribution to Reliance's revenue?", "What are TCS's risk factors?"],
+)
+def test_contribution_and_factors_alone_do_not_ask_why(text: str) -> None:
+    assert ask(text).wants_reason is False
+
+
+def test_driving_asks_why() -> None:
+    assert ask("What is driving Reliance's profit?").wants_reason is True
+
+
+def test_current_liabilities_is_not_the_latest_year() -> None:
+    assert ask("What are Reliance's current liabilities?").years is None
+    assert ask("TCS profit for the current year").years == 1

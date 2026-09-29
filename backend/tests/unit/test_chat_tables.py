@@ -5,7 +5,8 @@ All figures are synthetic (DemoCo-style numbers on the seeded symbols are used o
 
 from decimal import Decimal
 
-from app.chat.tables import build_table
+from app.chat.evidence import EvidenceItem, Figure
+from app.chat.tables import build_table, fits_answer
 from app.chat.understand import Question
 from app.series import SeriesPoint
 
@@ -198,3 +199,56 @@ def test_the_table_cites_the_newest_figures_page() -> None:
 
     assert table is not None
     assert table.source_url == URL
+
+
+# --- a table only beside an answer it agrees with (the owner's review, 2026-09-29) ---------------
+
+
+def cited(*figures: tuple[str, str, str], basis: str = "consolidated") -> list[EvidenceItem]:
+    return [
+        EvidenceItem(
+            id=f"F{n}",
+            kind="fact",
+            symbol="TCS",
+            text="TCS figure",
+            source="screener",
+            label="screener.in",
+            url=None,
+            quote=None,
+            figures=(Figure("TCS", metric, period, basis, Decimal(value)),),
+        )
+        for n, (metric, period, value) in enumerate(figures, start=1)
+    ]
+
+
+PROFITS = {"net_profit": series((2024, "900"), (2025, "1000"), (2026, "1100"))}
+
+
+def test_the_table_fits_an_answer_that_cites_the_same_figures() -> None:
+    answer = cited(("net_profit", "FY2025", "1000"))
+    assert fits_answer(question("net_profit"), PROFITS, answer) is True
+
+
+def test_no_table_beside_an_answer_giving_another_figure_for_a_year_it_shows() -> None:
+    answer = cited(("net_profit", "FY2025", "1020"))  # an annual report's figure, say
+    assert fits_answer(question("net_profit"), PROFITS, answer) is False
+
+
+def test_no_table_beside_an_answer_that_cites_nothing_of_that_measure() -> None:
+    # "what did management say about deposits": the passages answer it, the table would not
+    assert fits_answer(question("net_profit"), PROFITS, []) is False
+    other = cited(("total_equity", "FY2025", "5"))
+    assert fits_answer(question("net_profit"), PROFITS, other) is False
+
+
+def test_no_table_beside_a_standalone_figure_or_when_there_is_no_table() -> None:
+    standalone = cited(("net_profit", "FY2025", "1000"), basis="standalone")
+    assert fits_answer(question("net_profit"), PROFITS, standalone) is False
+    answer = cited(("net_profit", "FY2025", "1000"))
+    two_stocks = question("net_profit", symbols=("TCS", "HDFCBANK"))
+    assert fits_answer(two_stocks, PROFITS, answer) is False
+
+
+def test_a_year_the_table_does_not_show_cannot_disagree_with_it() -> None:
+    answer = cited(("net_profit", "FY2025", "1000"), ("net_profit", "FY2019", "300"))
+    assert fits_answer(question("net_profit"), PROFITS, answer) is True

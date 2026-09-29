@@ -34,27 +34,75 @@ Passages are text from the filings and therefore untrusted: a filing could conta
 instructions". An event's summary was written by the extraction model from such text, so it is
 untrusted too. ``evidence_block`` wraps both in <document> tags the text cannot close
 (app/extraction_prompts.py's document_block). Facts and derived values are our own lines.
+
+One figure per thing (the owner's review, 2026-09-29):
+
+- measures_for picks each asked measure's figures from one source (app/insights.py's
+  measure_facts) and the changes between them (change_views), so the facts and the changes of
+  an answer rest on the same stored figures;
+- each F and D item lists the stored figures it rests on (``figures``); the checker refuses an
+  answer that rests on two different figures for one stock, measure, period and basis, and the
+  table is shown only if it agrees with them;
+- another source's differing figure is its own F item (``rivals`` and ``rival_of`` link them), so
+  the answer can disclose it with its own source instead of choosing silently; the two may be cited
+  together (that is the disclosure), but a rival never stands in for the figure in a change;
+- a computed value says which stored figures it used ("Figures used: ...").
+
+A worked example (Reliance's revenue, the owner's real case): the annual reports give FY2025
+₹9,80,136 crore and FY2024 ₹9,14,472 crore; screener.in gives FY2026 ₹10,55,780 crore, FY2025
+₹9,62,820 crore and FY2024 ₹8,99,041 crore (it counts revenue a little differently).
+
+- "Compare FY2024 and FY2025": the annual reports have both years, so F1 = FY2025 ₹9,80,136 crore
+  and F3 = FY2024 ₹9,14,472 crore; F2 and F4 are screener.in's figures for those years, marked as
+  another source's; D1 = the change 7.2%, "Figures used: ₹9,14,472 crore (FY2024), ₹9,80,136
+  crore (FY2025)" -- the same figures as F1 and F3.
+- "The last three years": the annual reports lack FY2026, so all three years are screener.in's,
+  the annual reports' FY2025 and FY2024 become the other source's items, and the changes (9.7%,
+  7.1%) are computed from screener.in's figures -- the same ones its table shows.
 """
 
 from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import Literal, TypeVar
+from typing import Literal, NamedTuple, TypeVar
 
 from app.chat.understand import Question
-from app.derived import Sentiment
+from app.derived import FactRow, Sentiment
 from app.extraction_prompts import document_block
-from app.insights import DerivedView, KeyFact, StoredEvent, filing_citation, recent_events
+from app.insights import (
+    YEARS_SHOWN,
+    DerivedView,
+    KeyFact,
+    Rival,
+    StoredEvent,
+    StoredFact,
+    change_views,
+    filing_citation,
+    measure_facts,
+    recent_events,
+)
 from app.matching.model import StockMatch
 from app.prices.derived import PriceSnapshot, PriceValue, price_citation
 from app.prices.model import PRICE_SOURCE_LABEL, DailyPrice
 from app.retrieval import Result, excerpt
+from app.vocabulary import METRICS
 
 PASSAGE_CHARS = 600  # the model reads this much of a passage; the source shows EXCERPT_CHARS
 
-GROWTH = ("revenue_growth", "profit_growth")
+GROWTH = ("revenue_growth", "profit_growth", "change")
+TOP_LINES = ("revenue_from_operations", "net_interest_income")
 ALL_DERIVED = ("debt_to_equity", *GROWTH, "latest_dividend")
 
 T = TypeVar("T")
+
+
+class Figure(NamedTuple):
+    """One stored figure an item rests on."""
+
+    symbol: str
+    metric: str
+    period: str
+    basis: str
+    value: Decimal
 
 
 @dataclass(frozen=True)
@@ -69,6 +117,10 @@ class EvidenceItem:
     quote: str | None
     metric: str | None = None  # facts only: what and when, for the mixed-sources check
     period: str | None = None
+    figures: tuple[Figure, ...] = ()  # the stored figures it rests on (F and D items)
+    amount: str | None = None  # facts: the figure as written, "₹1,234 crore"
+    rivals: tuple[str, ...] = ()  # facts: the IDs of other sources' differing figures
+    rival_of: str | None = None  # another source's figure: the ID of the fact it differs from
 
 
 # --- writing numbers ------------------------------------------------------------------------------
@@ -145,11 +197,16 @@ def _derived_wanted(question: Question) -> set[str]:
 # --- the items ------------------------------------------------------------------------------------
 
 
+def source_word(label: str) -> str:
+    """ "Annual report", "screener.in", "Earnings call": the first part of a citation label."""
+    return label.split(" · ")[0]
+
+
 def _fact_item(number: int, symbol: str, fact: KeyFact) -> EvidenceItem:
-    text = f"{symbol} · {fact.label} · {fact.period} · {fact.basis} · "
-    text += format_amount(fact.value, fact.unit)
-    text += f" · {fact.citation.label.split(' · ')[0]}"  # "Annual report", "screener.in"
-    if fact.status == "disputed":
+    amount = format_amount(fact.value, fact.unit)
+    text = f"{symbol} · {fact.label} · {fact.period} · {fact.basis} · {amount}"
+    text += f" · {source_word(fact.citation.label)}"
+    if fact.status == "disputed" and not fact.rivals:  # with rivals, they are listed instead
         text += " (disputed: another source differs)"
     return EvidenceItem(
         id=f"F{number}",
@@ -162,7 +219,47 @@ def _fact_item(number: int, symbol: str, fact: KeyFact) -> EvidenceItem:
         quote=fact.citation.quote,
         metric=fact.metric,
         period=fact.period,
+        figures=(Figure(symbol, fact.metric, fact.period, fact.basis, fact.value),),
+        amount=amount,
     )
+
+
+def _rival_item(symbol: str, fact: KeyFact, rival: Rival) -> EvidenceItem:
+    """Another source's differing figure for the same thing, cited when the answer discloses it."""
+    amount = format_amount(rival.value, rival.unit)
+    text = f"{symbol} · {fact.label} · {fact.period} · {fact.basis} · {amount}"
+    return EvidenceItem(
+        id="F0",  # numbered, and linked to its fact, by _numbered_facts
+        kind="fact",
+        symbol=symbol,
+        text=f"{text} · {source_word(rival.citation.label)}",
+        source=rival.citation.source,
+        label=rival.citation.label,
+        url=rival.citation.url,
+        quote=rival.citation.quote,
+        metric=fact.metric,
+        period=fact.period,
+        figures=(Figure(symbol, fact.metric, fact.period, fact.basis, rival.value),),
+        amount=amount,
+    )
+
+
+def _numbered_facts(
+    entries: list[tuple[EvidenceItem, list[EvidenceItem]]],
+) -> list[EvidenceItem]:
+    """F1, F2 ... in order, each fact followed by its rivals, linked both ways."""
+    items: list[EvidenceItem] = []
+    for main, rivals in entries:
+        main_id = f"F{len(items) + 1}"
+        rival_ids = tuple(f"F{len(items) + 2 + i}" for i in range(len(rivals)))
+        text = main.text + (f" (another source differs: {', '.join(rival_ids)})" if rivals else "")
+        items.append(replace(main, id=main_id, text=text, rivals=rival_ids))
+        note = f" (another source's figure for the same period; {main_id} is used)"
+        items += [
+            replace(rival, id=rid, text=rival.text + note, rival_of=main_id)
+            for rival, rid in zip(rivals, rival_ids, strict=True)
+        ]
+    return items
 
 
 def _derived_value(view: DerivedView, value: Decimal, facts: list[KeyFact]) -> str:
@@ -178,6 +275,18 @@ def _derived_value(view: DerivedView, value: Decimal, facts: list[KeyFact]) -> s
     return _plain(value)
 
 
+def _figures_used(inputs: tuple[FactRow, ...]) -> str:
+    """ "Figures used: ₹962 crore (FY2025), ₹1,055 crore (FY2026)." Each figure is named by its
+    metric when the inputs are of more than one (total borrowings and total equity)."""
+    named = len({row.metric for row in inputs}) > 1
+    parts = [
+        (f"{row.metric.replace('_', ' ')} " if named else "")
+        + f"{format_amount(row.value, row.unit)} ({row.period})"
+        for row in inputs
+    ]
+    return f"Figures used: {', '.join(parts)}."
+
+
 def _derived_item(
     number: int, symbol: str, view: DerivedView, facts: list[KeyFact]
 ) -> EvidenceItem:
@@ -185,15 +294,19 @@ def _derived_item(
         shown = _derived_value(view, view.value, facts)
     else:
         shown = view.status.replace("_", " ")  # "not applicable": no number
+    how = f"{view.reason} {_figures_used(view.inputs)}" if view.inputs else view.reason
     return EvidenceItem(
         id=f"D{number}",
         kind="derived",
         symbol=symbol,
-        text=f"{symbol} · {view.label} · {shown} · {view.reason}",
+        text=f"{symbol} · {view.label} · {shown} · {how}",
         source="derived",
         label=view.label,  # the page marks it "Computed"
         url=None,
-        quote=view.reason,
+        quote=how,
+        figures=tuple(
+            Figure(symbol, row.metric, row.period, row.basis, row.value) for row in view.inputs
+        ),
     )
 
 
@@ -385,10 +498,13 @@ def build_evidence(
         for s in question.symbols
         if question.wants_price and s in (prices or {})
     ]
-    fact_items = [
-        *(_fact_item(0, symbol, f) for symbol, f in chosen_facts),
+    fact_entries = [
         *(
-            _price_fact(symbol, snap.latest, snap.day_change)
+            (_fact_item(0, symbol, f), [_rival_item(symbol, f, rival) for rival in f.rivals])
+            for symbol, f in chosen_facts
+        ),
+        *(
+            (_price_fact(symbol, snap.latest, snap.day_change), [])
             for symbol, snap in snaps
             if snap.latest is not None
         ),
@@ -399,12 +515,43 @@ def build_evidence(
         *(item for symbol, snap in snaps for item in _price_views(symbol, snap)),
     ]
     return [
-        *(replace(item, id=f"F{n}") for n, item in enumerate(fact_items, start=1)),
+        *_numbered_facts(fact_entries),
         *(replace(item, id=f"D{n}") for n, item in enumerate(derived_items, start=1)),
         *(_match_item(n, m) for n, m in enumerate(chosen_matches, start=1)),
         *(_passage_item(n, r) for n, r in enumerate(chosen_passages, start=1)),
         *(_event_item(n, symbol, e) for n, (symbol, e) in enumerate(chosen_events, start=1)),
     ]
+
+
+def measures_for(
+    question: Question, facts: list[StoredFact], *, is_financial: bool
+) -> tuple[list[KeyFact], list[DerivedView]]:
+    """One stock's figures for the question and the changes between them. Each measure asked
+    (every metric when none is) comes from one source (app/insights.py's measure_facts): the
+    periods the question names, else its window of years (the latest three by default, at
+    least two when a change is wanted). "Revenue" names both top lines; the stock's own one is
+    kept (net interest income for a bank). With no measure asked, only the latest change of the
+    top line and of net profit is kept."""
+    asked = question.metrics
+    years = question.years or YEARS_SHOWN
+    if question.wants_growth or not asked:
+        years = max(years, 2)
+    top_line = "net_interest_income" if is_financial else "revenue_from_operations"
+    shown: list[KeyFact] = []
+    changes: list[DerivedView] = []
+    both_top_lines = {"revenue_from_operations", "net_interest_income"} <= set(asked)
+    for metric in asked or METRICS:
+        if both_top_lines and metric in TOP_LINES and metric != top_line:
+            continue  # "revenue" asked: the stock's own top line only
+        picked = measure_facts(
+            facts, metric, periods=question.periods, years=years, basis=question.basis
+        )
+        shown += picked
+        if asked:
+            changes += change_views(picked)
+        elif metric in (top_line, "net_profit"):
+            changes += change_views(picked)[:1]
+    return shown, changes
 
 
 def evidence_block(items: list[EvidenceItem]) -> str:

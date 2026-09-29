@@ -11,14 +11,31 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 from uuid import UUID
 
-# answered:     a cited answer that passed the checker
-# abstained:    too little evidence, or no answer passed the checker: ABSTAIN_TEXT
-# out_of_scope: not about RELIANCE, TCS or HDFC Bank
+# answered:     a cited answer that passed the checker (or a stored figure stated by code)
+# abstained:    one of our stocks, but the data does not answer it: ABSTAIN_TEXT, or
+#               FORECAST_TEXT for a future share price
+# out_of_scope: names none of our three stocks (another company, or not about companies)
 # remembered:   the message only stated preferences (P13): saved, and confirmed with no LLM call
 ReplyStatus = Literal["answered", "abstained", "out_of_scope", "remembered"]
 
 ABSTAIN_TEXT = "I don't have that in the data."
-OUT_OF_SCOPE_TEXT = "I can only answer about RELIANCE, TCS and HDFC Bank."
+OUT_OF_SCOPE_TEXT = "I currently have research data only for Reliance, TCS and HDFC Bank."
+FORECAST_TEXT = (
+    "I don't have a verified future share-price prediction in the available data, so I can't "
+    "provide one."
+)
+# Added by code under a "why" answer that cites no filing passage or event.
+NO_EXPLANATION_TEXT = (
+    "The available data shows the change, but I don't have sufficient source material to "
+    "establish why it occurred."
+)
+
+
+def out_of_scope_text(company: str | None) -> str:
+    """OUT_OF_SCOPE_TEXT, naming the other company when the question itself names it."""
+    if not company:
+        return OUT_OF_SCOPE_TEXT
+    return f"{OUT_OF_SCOPE_TEXT} I don't have grounded data for {company}."
 
 
 @dataclass(frozen=True)

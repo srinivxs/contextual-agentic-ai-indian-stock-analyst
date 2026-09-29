@@ -12,12 +12,36 @@ from the model: the model cannot invent a label, a link or a quote.
 
 Only a checked answer is rendered (app/chat/answer_check.py): an unknown ID here is a bug in
 the caller, so it raises instead of being skipped.
+
+disclosures (the owner's review, 2026-09-29): when a cited figure has another source's differing
+figure (its ``rivals``) and the answer does not cite it, code adds one sentence naming it, cited
+to that source, so a figure is never chosen silently.
 """
 
 from app.chat.answer_check import Claim, without_markers
 from app.chat.contract import Source
-from app.chat.evidence import EvidenceItem
+from app.chat.evidence import EvidenceItem, source_word
+from app.insights import METRIC_LABELS
 from app.retrieval import excerpt
+
+
+def disclosures(claims: list[Claim], evidence: list[EvidenceItem]) -> list[Claim]:
+    """One sentence for each rival of a cited figure that the answer does not cite itself."""
+    by_id = {item.id: item for item in evidence}
+    cited = list(dict.fromkeys(cid for claim in claims for cid in claim.citations))
+    added: list[Claim] = []
+    for cid in cited:
+        for rid in by_id[cid].rivals if cid in by_id else ():
+            rival = by_id[rid]
+            if rid in cited or rival.metric is None:
+                continue
+            what = METRIC_LABELS[rival.metric].lower()
+            text = (
+                f"{source_word(rival.label)} gives {rival.amount} for {rival.period}; sources "
+                f"can count {what} differently."
+            )
+            added.append(Claim(text=text, citations=(rid,)))
+    return added
 
 
 def render(claims: list[Claim], evidence: list[EvidenceItem]) -> tuple[str, tuple[Source, ...]]:

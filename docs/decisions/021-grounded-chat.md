@@ -87,6 +87,29 @@ crore), although screener.in's own FY2025 is ₹9,62,820 crore: the two count re
 Fix: each fact line names its source, and a claim citing one measure for two periods from
 different sources is refused (`mixed_sources`); the growth value compares like with like.
 
+## Amendment: the owner's review of real answers (2026-09-29)
+
+Six real questions went wrong. The fixes keep the workflow's shape and add code, not model
+judgment:
+
+| Seen | Cause | Fix |
+|---|---|---|
+| "What was Reliance's revenue in FY2024?" abstained | the model chose "not in data" although the figure was an F item | a question that only asks for stored figures (`understand.py`: "what is/was ..." or "how much", a metric of ours, no growth, reason, news, price, match or judgment word, a stock named) is answered by code: `lookup.py` states each figure with its period, basis and source; no LLM call |
+| The annual report's figures in the text, screener.in's in the table | the table is one source; the facts were the best figure per year | one source per measure per answer (`insights.measure_facts`): the best-ranked source that has every year the question needs; changes (`change_views`) come from those same figures; every F and D item lists the figures it rests on; `conflicting_figures` refuses an answer resting on two figures for one stock, measure, period and basis; the table is shown only when it agrees (`tables.fits_answer`) |
+| A differing figure chosen silently | the hierarchy was applied without a word | another source's differing figure is its own F item (`rivals` / `rival_of`); code adds one sentence naming it with its source when the answer does not (`render.disclosures`) |
+| "Why did revenue change?" repeated the figures | no rule for causes | `cause_without_source`: "because", "due to", "driven by" ... must cite a passage, event or match verdict; a why-answer citing no passage or event ends with "The available data shows the change, but I don't have sufficient source material to establish why it occurred." |
+| "What will TCS's share price be next year?" called out of scope | the model's out-of-scope was taken as is | a future share price of a named stock is refused by code ("I don't have a verified future share-price prediction ..."); the model's out-of-scope stands only when no stock of ours is named, otherwise it is "I don't have that in the data"; the reply names the other company only if the question writes it word for word |
+| A net profit table under a question about an earnings call | "earnings" matched the profit metric | "earnings call/presentation/release ..." name a document; a table also needs the answer to cite its measure |
+
+Also read by code: "last/past N years", "latest", "standalone"/"consolidated", and "March 2024",
+"fiscal 2024", "financial year 2024" as FY2024. Computed values now say which stored figures they
+used ("Figures used: ₹9,62,820 crore (FY2025), ₹10,55,780 crore (FY2026).").
+
+Kept on purpose: "I don't have that in the data." stays the wording for a stock of ours whose
+data lacks the answer (the project notes quotes it). Trade-off: preferring one source per answer means a
+trend may use screener.in's figure for a year where the annual report ranks first; the annual
+report's figure is then disclosed beside it, never dropped silently.
+
 ## What it does not prove (the known limits)
 
 - **Entailment.** The checker proves the numbers are in the cited evidence, not that the sentence

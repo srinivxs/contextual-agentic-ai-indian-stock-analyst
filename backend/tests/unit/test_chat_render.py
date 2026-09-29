@@ -5,7 +5,7 @@ import pytest
 from app.chat.answer_check import Claim
 from app.chat.contract import Source
 from app.chat.evidence import EvidenceItem
-from app.chat.render import render
+from app.chat.render import disclosures, render
 
 BSE = "https://www.bseindia.com/xml-data/corpfiling/AttachHis/demo.pdf"
 
@@ -115,3 +115,57 @@ def test_an_empty_answer_renders_as_nothing() -> None:
 def test_rendering_an_unchecked_answer_with_an_unknown_id_is_refused() -> None:
     with pytest.raises(ValueError, match="checked"):
         render([Claim("A.", ("F9",))], EVIDENCE)
+
+
+# --- disclosing another source's figure (the owner's review, 2026-09-29) -------------------------
+
+MAIN = EvidenceItem(
+    id="F1",
+    kind="fact",
+    symbol="RELIANCE",
+    text="RELIANCE · Revenue from operations · FY2024 · consolidated · ₹914 crore",
+    source="filing",
+    label="Annual report · Annual Report 2024 · p.133",
+    url=f"{BSE}#page=133",
+    quote="Revenue from Operations 914",
+    metric="revenue_from_operations",
+    period="FY2024",
+    amount="₹914 crore",
+    rivals=("F2",),
+)
+RIVAL = EvidenceItem(
+    id="F2",
+    kind="fact",
+    symbol="RELIANCE",
+    text="RELIANCE · Revenue from operations · FY2024 · consolidated · ₹899 crore · screener.in",
+    source="screener",
+    label="screener.in · profit-loss · Sales · Mar 2024",
+    url="https://www.screener.in/company/RELIANCE/consolidated/",
+    quote=None,
+    metric="revenue_from_operations",
+    period="FY2024",
+    amount="₹899 crore",
+)
+
+
+def test_a_cited_figure_another_source_disputes_is_disclosed_with_that_source() -> None:
+    claims = [Claim("Revenue was ₹914 crore.", ("F1",))]
+    assert disclosures(claims, [MAIN, RIVAL]) == [
+        Claim(
+            "screener.in gives ₹899 crore for FY2024; sources can count revenue from operations "
+            "differently.",
+            ("F2",),
+        )
+    ]
+    text, sources = render([*claims, *disclosures(claims, [MAIN, RIVAL])], [MAIN, RIVAL])
+    assert text == (
+        "Revenue was ₹914 crore. [1] screener.in gives ₹899 crore for FY2024; sources can count "
+        "revenue from operations differently. [2]"
+    )
+    assert [s.label for s in sources] == [MAIN.label, RIVAL.label]
+
+
+def test_nothing_is_added_when_the_answer_already_cites_the_other_source() -> None:
+    claims = [Claim("The annual report gives ₹914 crore, screener.in ₹899 crore.", ("F1", "F2"))]
+    assert disclosures(claims, [MAIN, RIVAL]) == []
+    assert disclosures([Claim("Other.", ("F2",))], [MAIN, RIVAL]) == []
