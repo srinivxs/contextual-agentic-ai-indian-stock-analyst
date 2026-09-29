@@ -125,10 +125,9 @@ describe('the messages', () => {
     expect(card.querySelector('time')?.textContent).toMatch(/^\d{2}:\d{2}$/);
     const bold = [...card.querySelectorAll('strong')].map((b) => b.textContent);
     expect(bold).toEqual(['₹1,23,456 crore', '₹12,345.5 crore', '12.2%']);
-    // Nothing is altered: the words are all still there.
-    expect(card.querySelector('.chat-text')?.textContent).toBe(
-      demoAnswer().text.replace(/\[(\d)\]/g, '[$1]'),
-    );
+    // Nothing is altered: the points, joined back with a space, are the answer word for word.
+    const points = [...card.querySelectorAll('.chat-text')].map((p) => p.textContent);
+    expect(points.join(' ')).toBe(demoAnswer().text);
   });
 
   it('gives an abstention no bold figures and no time-less card', async () => {

@@ -228,6 +228,31 @@ export function splitMarkers(answer: string, known: readonly number[]): Segment[
   return segments;
 }
 
+/**
+ * The answer's points, for showing each on its own line. The server writes every claim as its
+ * text followed by its markers ("Margins held up. [1]") and joins claims with a space, so a
+ * text piece that starts with a space right after a marker starts the next point. Nothing is
+ * reworded.
+ */
+export function answerPoints(segments: Segment[]): Segment[][] {
+  const points: Segment[][] = [];
+  let current: Segment[] = [];
+  segments.forEach((segment, index) => {
+    const afterMarker = segments[index - 1]?.kind === 'marker';
+    // a marker followed by a space ends a claim; "crore [1], net profit" goes on
+    if (segment.kind === 'text' && afterMarker && /^\s/.test(segment.text) && current.length > 0) {
+      points.push(current);
+      current = [];
+      const text = segment.text.trimStart();
+      if (text) current.push({ kind: 'text', text });
+      return;
+    }
+    current.push(segment);
+  });
+  if (current.length > 0) points.push(current);
+  return points;
+}
+
 /** The address a table's source may link to: only a screener.in company page, else null. */
 export function tableLink(table: ChatTable): string | null {
   return screenerUrl(table.source?.url ?? null);

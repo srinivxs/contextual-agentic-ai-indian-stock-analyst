@@ -6,6 +6,7 @@ import {
   listConversations,
   sendQuestion,
   sourceLink,
+  answerPoints,
   splitMarkers,
   type ChatSource,
 } from '@/lib/chat';
@@ -334,5 +335,38 @@ describe('sourceLink for RBI', () => {
     installFakeApi({ chatAnswer: () => answer });
     const reply = await sendQuestion('What did the RBI say?', null);
     expect(reply.answer.sources[0]?.source).toBe('rbi');
+  });
+});
+
+describe('answerPoints', () => {
+  const texts = (points: ReturnType<typeof answerPoints>) =>
+    points.map((point) =>
+      point.map((s) => (s.kind === 'text' ? s.text : `[${s.marker}]`)).join(''),
+    );
+
+  it('starts a new point after the markers that end a claim', () => {
+    // how the server joins claims: "text [1] next text [2][3]"
+    const answer = 'Margins held up. [1] Cash conversion was strong. [2][3] Debt is zero. [2]';
+    expect(texts(answerPoints(splitMarkers(answer, [1, 2, 3])))).toEqual([
+      'Margins held up. [1]',
+      'Cash conversion was strong. [2][3]',
+      'Debt is zero. [2]',
+    ]);
+  });
+
+  it('keeps a one-claim answer, and text without markers, as one point', () => {
+    expect(texts(answerPoints(splitMarkers('Only this. [1]', [1])))).toEqual(['Only this. [1]']);
+    expect(texts(answerPoints(splitMarkers("I don't have that in the data.", [])))).toEqual([
+      "I don't have that in the data.",
+    ]);
+    expect(answerPoints([])).toEqual([]);
+  });
+});
+
+describe('answerPoints, mid-sentence markers', () => {
+  it('keeps a sentence whole when a marker is followed by a comma', () => {
+    const answer = 'Revenue was ₹10 crore [1], and profit ₹2 crore [2].';
+    const points = answerPoints(splitMarkers(answer, [1, 2]));
+    expect(points).toHaveLength(1);
   });
 });

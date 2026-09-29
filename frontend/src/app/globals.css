@@ -3049,3 +3049,15 @@ a.chat-source-chip:hover {
   color: var(--fall);
   border-color: color-mix(in srgb, var(--fall) 40%, transparent);
 }
+
+/* An answer's points: each claim on its own line, with space between. */
+.chat-points {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.chat-points li::marker {
+  color: var(--muted);
+}

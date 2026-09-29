@@ -362,6 +362,23 @@ describe('an answer’s sources', () => {
     expect(items[1]).not.toHaveClass('highlighted');
   });
 
+  it('shows each point of an answer on its own line, with space between', async () => {
+    install({
+      chatAnswer: () =>
+        demoAnswer({
+          text: 'Margins held up. [1] Cash conversion was strong. [2]',
+          sources: [demoChatSource({ marker: 1 }), demoChatSource({ marker: 2, label: 'Two' })],
+        }),
+    });
+    render(<ChatView />);
+    await ask('Why did profit grow?');
+    const points = await screen.findByRole('list', { name: 'Answer' });
+    const items = within(points).getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent('Margins held up. [1]');
+    expect(items[1]).toHaveTextContent('Cash conversion was strong. [2]');
+  });
+
   it('leaves a marker without a source as plain text', async () => {
     await answered(demoAnswer({ text: 'Revenue rose [1] and [7].', sources: [demoChatSource()] }));
     expect(screen.getByRole('button', { name: 'Source 1' })).toBeInTheDocument();

@@ -8,6 +8,7 @@ import {
   changeTone,
   clockLabel,
   sourceLink,
+  answerPoints,
   splitMarkers,
   tableLink,
   type ChatMessage,
@@ -202,31 +203,43 @@ function Answer({ message }: { message: ChatMessage }) {
     message.text,
     message.sources.map((s) => s.marker),
   );
+  const renderSegments = (part: typeof segments) =>
+    part.map((segment, index) =>
+      segment.kind === 'text' ? (
+        <span key={index}>
+          {boldFigures(segment.text).map((piece, at) =>
+            piece.bold ? <strong key={at}>{piece.text}</strong> : piece.text,
+          )}
+        </span>
+      ) : (
+        <sup key={index}>
+          <button
+            type="button"
+            className="marker"
+            aria-label={`Source ${segment.marker}`}
+            aria-controls={sourceId(message.id, segment.marker)}
+            onClick={() => show(segment.marker)}
+          >
+            {`[${segment.marker}]`}
+          </button>
+        </sup>
+      ),
+    );
+  // One point per claim, each on its own line with space between (a single claim stays a line).
+  const points = answerPoints(segments);
   return (
     <>
-      <p className="chat-text">
-        {segments.map((segment, index) =>
-          segment.kind === 'text' ? (
-            <span key={index}>
-              {boldFigures(segment.text).map((piece, at) =>
-                piece.bold ? <strong key={at}>{piece.text}</strong> : piece.text,
-              )}
-            </span>
-          ) : (
-            <sup key={index}>
-              <button
-                type="button"
-                className="marker"
-                aria-label={`Source ${segment.marker}`}
-                aria-controls={sourceId(message.id, segment.marker)}
-                onClick={() => show(segment.marker)}
-              >
-                {`[${segment.marker}]`}
-              </button>
-            </sup>
-          ),
-        )}
-      </p>
+      {points.length > 1 ? (
+        <ul className="chat-points" aria-label="Answer">
+          {points.map((point, index) => (
+            <li key={index} className="chat-text">
+              {renderSegments(point)}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="chat-text">{renderSegments(segments)}</p>
+      )}
       {message.table && <AnswerTable table={message.table} />}
       {message.sources.length > 0 && (
         <ChatSources messageId={message.id} sources={message.sources} active={active} />
