@@ -138,6 +138,7 @@ def demo_stocks() -> list[StockRows]:
             *debt("20", "100"),
             *pair(3, "revenue_from_operations", "100", "103"),
             *pair(7, "net_profit", "50", "52"),
+            fact(20, "net_profit", "FY2024", "48"),  # growth 4.2% then 4%: slowing
             dividend("5"),
             roe("12"),
         ],
@@ -158,6 +159,7 @@ def demo_stocks() -> list[StockRows]:
             *debt("300", "200"),
             *pair(3, "revenue_from_operations", "100", "150"),
             *pair(7, "net_profit", "10", "13"),
+            fact(21, "net_profit", "FY2024", "9"),  # growth 11.1% then 30%: speeding up
             roe("22"),
         ],
         events=NEGATIVE_NEWS,
@@ -188,7 +190,7 @@ GOLDEN = [
     ),
     pytest.param(
         profile(investment_style=("value", "momentum"), other_preferences="long_term"),
-        ["not_enough_data"] * 4,
+        ["partial", "not_enough_data", "match", "not_enough_data"],  # momentum from earnings
         id="value-momentum-long-term",
     ),
     pytest.param(
@@ -269,7 +271,7 @@ def test_golden_unassessable_styles_and_horizon() -> None:
     demo, *_ = match_all(prefs, demo_stocks(), today=TODAY)
     assert [(r.criterion, r.outcome) for r in demo.reasons] == [
         ("value", "not_assessable"),
-        ("momentum", "not_assessable"),
+        ("momentum", "miss"),
         ("horizon", "not_assessable"),
     ]
     assert only(demo, "value").text == "Value needs share prices, which this app does not have."
@@ -370,7 +372,73 @@ def test_avoid_debt_pass_text() -> None:
 def test_debt_ok_moderate_and_aggressive_add_no_debt_rule(preference: str) -> None:
     field: Field = "debt_preference" if preference == "debt_ok" else "risk_preference"
     match = run(profile(**{field: preference}), *debt("300", "100"))
-    assert match.reasons == ()
+    assert "debt" not in [reason.criterion for reason in match.reasons]
+
+
+# --- the owner's Match fix: aggressive asks for growth, momentum is earnings momentum -------------
+
+
+def test_aggressive_asks_for_revenue_growth() -> None:
+    match = run(
+        profile(risk_preference="aggressive"), *pair(1, "revenue_from_operations", "100", "115")
+    )
+    reason = only(match, "revenue_growth")
+    assert (reason.preference, reason.outcome, reason.hard) == ("aggressive", "pass", False)
+    assert reason.text == (
+        "Revenue growth is 15%, at or above the 10% wanted for an aggressive investor."
+    )
+    assert match.status == "match"
+
+
+def test_a_growth_style_and_aggressive_make_one_revenue_reason_named_for_the_style() -> None:
+    prefs = profile(risk_preference="aggressive", investment_style="growth")
+    match = run(prefs, *pair(1, "revenue_from_operations", "100", "105"))
+    assert [r.preference for r in match.reasons if r.criterion == "revenue_growth"] == ["growth"]
+
+
+def test_earnings_momentum_passes_when_profit_growth_speeds_up() -> None:
+    *_, grow, _ = match_all(profile(investment_style="momentum"), demo_stocks(), today=TODAY)
+    reason = only(grow, "momentum")
+    assert reason.outcome == "pass"
+    assert reason.text == (
+        "Net profit changed by 30% in FY2026 against 11.1% in FY2025: earnings are speeding "
+        "up (earnings momentum; the app has no share prices)."
+    )
+    assert [c.label for c in reason.citations] == [
+        "Annual report · Annual Report 2024 · p.21",
+        "Annual report · Annual Report 2025 · p.7",
+        "Annual report · Annual Report 2026 · p.8",
+    ]
+    assert grow.status == "match"
+
+
+def test_earnings_momentum_misses_when_profit_growth_slows() -> None:
+    demo, *_ = match_all(profile(investment_style="momentum"), demo_stocks(), today=TODAY)
+    reason = only(demo, "momentum")
+    assert reason.outcome == "miss"
+    assert reason.text == (
+        "Net profit changed by 4% in FY2026 against 4.2% in FY2025: earnings are not speeding "
+        "up (earnings momentum; the app has no share prices)."
+    )
+    assert demo.status == "partial"
+
+
+def test_earnings_momentum_needs_three_years_in_a_row() -> None:
+    match = run(profile(investment_style="momentum"), *pair(1, "net_profit", "10", "12"))
+    reason = only(match, "momentum")
+    assert reason.outcome == "no_data"
+    assert reason.text == (
+        "Earnings momentum needs three years of net profit in a row from one source, which "
+        "are not in the data."
+    )
+    assert match.status == "not_enough_data"
+
+
+def test_earnings_momentum_from_a_loss_year_cannot_be_judged() -> None:
+    facts = [*pair(1, "net_profit", "-5", "12"), fact(3, "net_profit", "FY2024", "8")]
+    reason = only(run(profile(investment_style="momentum"), *facts), "momentum")
+    assert reason.outcome == "no_data"
+    assert "zero or negative" in reason.text
 
 
 def test_a_bank_is_not_assessable_for_debt_and_not_a_fail() -> None:

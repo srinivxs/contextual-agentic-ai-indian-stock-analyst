@@ -33,11 +33,11 @@ Outcome = Literal["pass", "miss", "fail", "not_assessable", "no_data"]
 Criterion = Literal[
     "debt",  # debt to equity: avoid_high_debt (hard, <= 1.0); conservative (soft, <= 0.5)
     "dividend",  # income style: the latest dividend per share is above zero
-    "revenue_growth",  # growth style: latest revenue (or, for a bank, net interest income) growth
+    "revenue_growth",  # growth style or aggressive: latest revenue (a bank: net interest income)
     "profit_growth",  # growth style: >= 10%; stability and conservative: >= 0% (no fall)
     "quality",  # quality style: latest return on equity >= 15%
     "value",  # value style: not assessable (no prices)
-    "momentum",  # momentum style: not assessable (no prices)
+    "momentum",  # momentum style: EARNINGS momentum (profit growth speeding up), not prices
     "horizon",  # long or short term: not assessable (no price history), shown once
     "sentiment",  # cautions only: the rolling news sentiment is negative
 ]

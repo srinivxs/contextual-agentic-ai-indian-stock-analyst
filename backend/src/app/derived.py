@@ -303,6 +303,42 @@ def growth_yoy(rows: list[FactRow], metric: str) -> Derived:
     return Derived(status="ok", value=value, reason=reason, fact_ids=ids)
 
 
+def growth_chain(rows: list[FactRow], metric: str) -> tuple[FactRow, FactRow, FactRow] | None:
+    """The latest three consecutive full years of one metric from ONE kind of source, on one
+    basis, in one currency and unit: two growth rates that compare like with like, as growth_yoy's
+    pairs do (used for earnings momentum, ADR 023). Prefers the latest year, then the whole group
+    (consolidated), then the better-ranked source, then INR. None when no such chain exists."""
+    chains: list[tuple[tuple[int, int, int, int], FactRow, FactRow, FactRow]] = []
+    for source, rank in SOURCE_RANK.items():
+        chosen = choose_all([row for row in rows if row.metric == metric and row.source == source])
+        for later in (winner.fact for winner in chosen.values()):
+            parsed = parse_period(later.period)
+            if parsed is None or parsed[1] != 0:
+                continue  # full years only
+            year = parsed[0]
+            year_before = chosen.get(
+                (metric, format_period(year - 1, 0), later.basis, later.currency)
+            )
+            two_before = chosen.get(
+                (metric, format_period(year - 2, 0), later.basis, later.currency)
+            )
+            if year_before is None or two_before is None:
+                continue
+            if year_before.fact.unit != later.unit or two_before.fact.unit != later.unit:
+                continue
+            preference = (
+                year,
+                -BASIS_PREFERENCE.index(later.basis),
+                -rank,
+                -CURRENCY_PREFERENCE.index(later.currency),
+            )
+            chains.append((preference, two_before.fact, year_before.fact, later))
+    if not chains:
+        return None
+    _, first, middle, latest = max(chains, key=lambda chain: chain[0])
+    return first, middle, latest
+
+
 # --- dividend -------------------------------------------------------------------------------------
 
 

@@ -22,6 +22,66 @@ const LOAD_FAILED = "We couldn't load the match. Reload the page to try again.";
 const EMPTY_PROFILE =
   "Tell the chat your preferences first, for example: I'm conservative, dividend-focused and I avoid high debt.";
 
+/** Preferences no stock can be judged on (they need share prices): shown once, above the cards. */
+const PROFILE_WIDE = new Set(['value', 'horizon']);
+const NOTHING_TO_CHECK =
+  "Nothing in your profile can be checked against the filings yet. Value and a time horizon need share prices, which this app doesn't have. Add a debt or risk preference, or a dividend, growth, quality or momentum style, in the chat or its profile panel.";
+
+/** The stocks without the profile-wide reasons, and those reasons once each. */
+export function splitProfileWide(stocks: StockMatch[]): {
+  cards: StockMatch[];
+  wide: MatchReason[];
+} {
+  const wide = new Map<string, MatchReason>();
+  const cards = stocks.map((stock) => ({
+    ...stock,
+    reasons: stock.reasons.filter((reason) => {
+      if (!PROFILE_WIDE.has(reason.criterion)) return true;
+      wide.set(reason.criterion, reason);
+      return false;
+    }),
+  }));
+  return { cards, wide: [...wide.values()] };
+}
+
+function WideNote({ reasons }: { reasons: MatchReason[] }) {
+  if (reasons.length === 0) return null;
+  return (
+    <aside role="note" aria-label="Not judged for any stock" className="match-note">
+      <h2>Not judged for any stock</h2>
+      <ul>
+        {reasons.map((reason) => (
+          <li key={reason.criterion}>{reason.text}</li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+
+function MatchList({ stocks }: { stocks: StockMatch[] }) {
+  const { cards, wide } = splitProfileWide(stocks);
+  const nothingJudged = cards.every((stock) => stock.reasons.length === 0);
+  return (
+    <>
+      <WideNote reasons={wide} />
+      {nothingJudged ? (
+        <div className="match-empty">
+          <p>{NOTHING_TO_CHECK}</p>
+          <a className="button" href="/chat/">
+            Open the chat
+          </a>
+        </div>
+      ) : (
+        <div className="match-list">
+          {cards.map((stock) => (
+            <StockCard key={stock.symbol} stock={stock} />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 /** A small mark per outcome; the words beside it carry the meaning, the mark only backs them up. */
 const OUTCOME_MARKS: Record<MatchOutcome, string> = {
   pass: '✓',
@@ -166,11 +226,7 @@ export function MatchView() {
               </a>
             </div>
           ) : (
-            <div className="match-list">
-              {result.stocks.map((stock) => (
-                <StockCard key={stock.symbol} stock={stock} />
-              ))}
-            </div>
+            <MatchList stocks={result.stocks} />
           )}
           <p className="muted match-disclaimer">{result.disclaimer}</p>
         </>

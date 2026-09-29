@@ -88,7 +88,14 @@ describe('the match page', () => {
               citations: [],
             }),
             demoReason({ criterion: 'quality', hard: false, outcome: 'fail', text: 'Q.' }),
-            demoReason({ criterion: 'value', hard: false, outcome: 'not_assessable', text: 'V.' }),
+            // a stock-specific "can't be judged" (debt for a bank) stays in its card
+            demoReason({
+              criterion: 'debt',
+              preference: 'conservative',
+              hard: false,
+              outcome: 'not_assessable',
+              text: 'V.',
+            }),
             demoReason({ criterion: 'momentum', hard: false, outcome: 'no_data', text: 'M.' }),
           ],
         }),
@@ -191,5 +198,60 @@ describe('the match page', () => {
     api.failWith('GET /api/v1/me', 500);
     render(<MatchView />);
     expect(await screen.findByRole('alert')).toHaveTextContent(/couldn.t load/i);
+  });
+
+  it('shows preferences no stock can be judged on once, above the cards', async () => {
+    const horizon = demoReason({
+      criterion: 'horizon',
+      preference: 'short_term',
+      hard: false,
+      outcome: 'not_assessable',
+      text: 'The app has no price history, so a horizon does not change the result.',
+      citations: [],
+    });
+    installFakeApi({
+      matches: profiled(
+        demoStockMatch({ reasons: [demoReason(), horizon] }),
+        demoStockMatch({ symbol: 'DEMOB', name: 'DemoCo Beta', reasons: [demoReason(), horizon] }),
+      ),
+    });
+    render(<MatchView />);
+    const note = await screen.findByRole('note', { name: 'Not judged for any stock' });
+    expect(note).toHaveTextContent(/no price history/);
+    expect(screen.getAllByText(/no price history/)).toHaveLength(1);
+    const alpha = screen.getByRole('region', { name: 'DemoCo Alpha Limited' });
+    expect(within(alpha).queryByText(/no price history/)).toBeNull();
+    expect(within(alpha).getByText(/within the 1.0 limit/)).toBeInTheDocument();
+  });
+
+  it('says plainly when nothing in the profile can be checked, instead of empty cards', async () => {
+    const value = demoReason({
+      criterion: 'value',
+      preference: 'value',
+      hard: false,
+      outcome: 'not_assessable',
+      text: 'Value needs share prices, which this app does not have.',
+      citations: [],
+    });
+    installFakeApi({
+      matches: profiled(
+        demoStockMatch({ status: 'not_enough_data', reasons: [value] }),
+        demoStockMatch({
+          symbol: 'DEMOB',
+          name: 'DemoCo Beta',
+          status: 'not_enough_data',
+          reasons: [value],
+        }),
+      ),
+    });
+    render(<MatchView />);
+    expect(
+      await screen.findByText(/Nothing in your profile can be checked against the filings yet/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'DemoCo Alpha Limited' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open the chat' })).toHaveAttribute('href', '/chat/');
+    expect(screen.getByRole('note', { name: 'Not judged for any stock' })).toHaveTextContent(
+      /Value needs share prices/,
+    );
   });
 });

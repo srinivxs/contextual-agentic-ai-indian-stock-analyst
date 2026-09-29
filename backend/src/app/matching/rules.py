@@ -17,13 +17,16 @@ and never change it.
                                                      fail, 0.5 to 1.0 miss, <= 0.5 pass)
     dividend        income                           latest dividend per share > 0         soft
                                                      (no prices: paid or not, not a yield)
-    revenue_growth  growth                           revenue growth >= GROWTH_MIN 10%      soft
+    revenue_growth  growth, or aggressive            revenue growth >= GROWTH_MIN 10%      soft
                                                      (a bank: net interest income growth)
     profit_growth   growth                           net profit growth >= 10%              soft
                     stability or conservative        net profit growth >= 0% (no fall)     soft
                     (several ask: the strictest)
     quality         quality                          latest full-year ROE >= 15%           soft
-    value, momentum value, momentum                  not assessable: needs share prices
+    momentum        momentum                         earnings momentum: net profit growth  soft
+                                                     this year above last year's, three
+                                                     years in a row from one source
+    value           value                            not assessable: needs share prices
     horizon         long_term or short_term          not assessable: no price history
     sentiment       (always, as a caution)           rolling news sentiment is negative
 
@@ -32,15 +35,16 @@ stored rows it comes from. Money is shown as reported, never converted.
 """
 
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from app.chat.evidence import _plain, format_amount
-from app.derived import rolling_sentiment
+from app.derived import growth_chain, rolling_sentiment
 from app.insights import (
     Citation,
     DerivedView,
     KeyFact,
     StoredEvent,
+    StoredFact,
     derived_views,
     key_facts,
     recent_events,
@@ -161,10 +165,13 @@ def _growth(
 
 
 def _revenue_growth(wanted: set[str], views: list[DerivedView]) -> Reason | None:
-    if "growth" not in wanted:
-        return None
     view = _view(views, "revenue_growth")
-    return _growth("revenue_growth", "growth", view, GROWTH_MIN, "wanted for a growth style")
+    if "growth" in wanted:
+        return _growth("revenue_growth", "growth", view, GROWTH_MIN, "wanted for a growth style")
+    if "aggressive" in wanted:
+        need = "wanted for an aggressive investor"
+        return _growth("revenue_growth", "aggressive", view, GROWTH_MIN, need)
+    return None
 
 
 def _profit_growth(wanted: set[str], views: list[DerivedView]) -> Reason | None:
@@ -196,6 +203,42 @@ def _quality(wanted: set[str], facts: list[KeyFact]) -> Reason | None:
     return _reason(
         "quality", "quality", _judge(roe.value >= QUALITY_ROE_MIN), text, (roe.citation,)
     )
+
+
+# --- momentum: earnings, not share prices ---------------------------------------------------------
+
+
+def _rate(before: Decimal, after: Decimal) -> Decimal:
+    return ((after - before) / before * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+
+
+def _momentum(wanted: set[str], facts: list[StoredFact]) -> Reason | None:
+    """Earnings momentum: net profit growth this year faster than the year before, from three
+    years in a row of one source (derived.growth_chain). Share-price momentum needs prices."""
+    if "momentum" not in wanted:
+        return None
+    chain = growth_chain([stored.row for stored in facts], "net_profit")
+    if chain is None:
+        text = (
+            "Earnings momentum needs three years of net profit in a row from one source, which "
+            "are not in the data."
+        )
+        return _reason("momentum", "momentum", "no_data", text)
+    first, middle, latest = chain
+    citations = {stored.row.id: stored.citation for stored in facts}
+    cites = tuple(citations[row.id] for row in chain)
+    if first.value <= 0 or middle.value <= 0:
+        text = "Net profit was zero or negative in one of the years, so growth rates mean nothing."
+        return _reason("momentum", "momentum", "no_data", text, cites)
+    before, after = _rate(first.value, middle.value), _rate(middle.value, latest.value)
+    speeding = after > before
+    text = (
+        f"Net profit changed by {_percent(after)} in {latest.period} against "
+        f"{_percent(before)} in {middle.period}: earnings are "
+        f"{'speeding up' if speeding else 'not speeding up'} (earnings momentum; the app has no "
+        "share prices)."
+    )
+    return _reason("momentum", "momentum", _judge(speeding), text, cites)
 
 
 # --- styles that cannot be judged -----------------------------------------------------------------
@@ -261,7 +304,7 @@ def match_stock(profile: list[StoredPreference], stock: StockRows, *, today: dat
         _profit_growth(wanted, views),
         _quality(wanted, facts),
         _unassessable("value", wanted),
-        _unassessable("momentum", wanted),
+        _momentum(wanted, stock.facts),
         _horizon(wanted),
     )
     reasons = tuple(reason for reason in candidates if reason is not None)

@@ -22,6 +22,7 @@ from app.derived import (
     choose_all,
     choose_fact,
     debt_to_equity,
+    growth_chain,
     growth_yoy,
     latest_dividend,
     rolling_sentiment,
@@ -613,3 +614,69 @@ def test_the_window_half_life_and_minimum_are_parameters() -> None:
     assert result.status == "ok"
     assert result.score == -1.0
     assert result.event_ids == (1,)
+
+
+# --- three years in a row, for earnings momentum (the owner's Match fix) -------------------------
+
+
+def years(source: Source, values: dict[str, str], start_id: int = 1, **kw: str) -> list[FactRow]:
+    return [
+        fact(start_id + n, value, metric="net_profit", period=period, source=source, **kw)  # type: ignore[arg-type]
+        for n, (period, value) in enumerate(values.items())
+    ]
+
+
+def test_a_chain_is_three_consecutive_full_years_from_one_source() -> None:
+    rows = years("screener", {"FY2024": "90", "FY2025": "100", "FY2026": "130"})
+    chain = growth_chain(rows, "net_profit")
+    assert chain is not None
+    assert [row.period for row in chain] == ["FY2024", "FY2025", "FY2026"]
+
+
+def test_no_chain_when_a_year_is_missing_or_only_two_exist() -> None:
+    gap = years("screener", {"FY2023": "80", "FY2025": "100", "FY2026": "130"})
+    assert growth_chain(gap, "net_profit") is None
+    assert growth_chain(years("screener", {"FY2025": "1", "FY2026": "2"}), "net_profit") is None
+
+
+def test_a_chain_never_mixes_sources() -> None:
+    """An annual report's FY2026 with screener.in's FY2024 and FY2025 is not a chain: two sources
+    can count a figure differently (the P12c lesson)."""
+    rows = [
+        *years("screener", {"FY2024": "90", "FY2025": "100"}),
+        *years("annual_report", {"FY2026": "130"}, start_id=10),
+    ]
+    assert growth_chain(rows, "net_profit") is None
+
+
+def test_the_latest_chain_wins_and_consolidated_over_standalone() -> None:
+    rows = [
+        *years("screener", {"FY2023": "1", "FY2024": "2", "FY2025": "3"}),
+        *years("screener", {"FY2024": "5", "FY2025": "6", "FY2026": "7"}, start_id=10),
+        *years(
+            "screener",
+            {"FY2024": "50", "FY2025": "60", "FY2026": "70"},
+            start_id=20,
+            basis="standalone",
+        ),
+    ]
+    chain = growth_chain(rows, "net_profit")
+    assert chain is not None
+    assert [(row.period, row.basis, str(row.value)) for row in chain] == [
+        ("FY2024", "consolidated", "5"),
+        ("FY2025", "consolidated", "6"),
+        ("FY2026", "consolidated", "7"),
+    ]
+
+
+def test_quarters_never_make_a_chain() -> None:
+    rows = years("screener", {"Q1FY2026": "1", "Q2FY2026": "2", "Q3FY2026": "3"})
+    assert growth_chain(rows, "net_profit") is None
+
+
+def test_a_change_of_unit_breaks_the_chain() -> None:
+    rows = [
+        *years("screener", {"FY2024": "90", "FY2026": "130"}),
+        fact(9, "1", metric="net_profit", period="FY2025", source="screener", unit="USD_MILLION"),
+    ]
+    assert growth_chain(rows, "net_profit") is None

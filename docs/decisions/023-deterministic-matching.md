@@ -19,14 +19,15 @@ stocks would be neither repeatable nor provable, and would be investment advice 
    | debt to equity | avoid high debt | ≤ 1.0 | **hard** |
    | debt to equity | conservative | ≤ 0.5 | soft (with avoid high debt: one reason, > 1.0 fail, 0.5–1.0 miss) |
    | dividend | income style | latest dividend per share > 0 (no yield: no prices) | soft |
-   | revenue (a bank: net interest income) growth | growth style | ≥ 10% | soft |
+   | revenue (a bank: net interest income) growth | growth style, or aggressive | ≥ 10% | soft |
    | net profit growth | growth ≥ 10%; stability or conservative ≥ 0% (strictest wins) | | soft |
    | return on equity | quality style | ≥ 15% | soft |
-   | value, momentum | styles | not assessable: needs share prices | — |
+   | earnings momentum | momentum style | net profit growth this year above last year's, three years in a row from one source (`derived.growth_chain`) | soft |
+   | value | style | not assessable: needs share prices | — |
    | horizon | long or short term | not assessable: no price history | — |
    | news sentiment | always | negative rolling sentiment is a **caution** only | — |
 
-   Aggressive, moderate and "debt is fine" add no rule. Debt to equity is not assessable for a
+   Moderate and "debt is fine" add no rule. Debt to equity is not assessable for a
    bank (ADR 009).
 2. **Hard filters versus soft scores.** A failed hard filter is *no match*. A hard filter with no
    data is *not enough data* (we cannot say a stock avoids high debt without its debt). Otherwise
@@ -40,6 +41,14 @@ stocks would be neither repeatable nor provable, and would be investment advice 
    checker holds it to the same rules as any answer (it must show the verdict's figures, and the
    prompt forbids changing a status). Without a stored profile the question is answered from the
    figures as before.
+
+**Amended 2026-09-29 (the owner's first look).** A profile of aggressive, debt is fine,
+momentum and short term gave "not enough data" for every stock with nothing but "can't be judged"
+lines. Momentum is now **earnings momentum** (profit growth speeding up, from stored figures of
+one source, labelled as such: share-price momentum still needs prices); **aggressive** asks for
+revenue growth of at least 10%; and the Match page shows preferences no stock can be judged on
+(value, a horizon) once above the cards, and says plainly when nothing in the profile can be
+checked, suggesting what to add.
 
 ## Consequences
 

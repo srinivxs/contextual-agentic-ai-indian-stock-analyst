@@ -1801,6 +1801,27 @@ a.chip:hover {
   margin-top: 0.75rem;
 }
 
+/* Preferences no stock can be judged on, shown once above the cards. */
+.match-note {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1.1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  color: var(--muted);
+}
+
+.match-note h2 {
+  margin-bottom: 0.2rem;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.match-note ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
 .match-head {
   display: flex;
   gap: 0.75rem;
