@@ -294,15 +294,15 @@ describe('the investor profile on the match page', () => {
   const profile = (): HTMLElement => screen.getByRole('region', { name: 'Your investor profile' });
   const findProfile = () => screen.findByRole('region', { name: 'Your investor profile' });
 
-  it('sits above the results under a line saying the matches use it', async () => {
+  it('sits above the results with one heading and a note saying the matches use it', async () => {
     installFakeApi({ profileFields: [demoProfileField()], matches: profiled(demoStockMatch()) });
     render(<MatchView />);
 
     const card = await screen.findByRole('region', { name: 'DemoCo Alpha Limited' });
     expect(await within(profile()).findByText('Conservative')).toBeInTheDocument();
-    expect(
-      screen.getByText('Your investor profile — the matches below use it'),
-    ).toBeInTheDocument();
+    expect(within(profile()).getByText('The matches below use it.')).toBeInTheDocument();
+    expect(screen.getAllByText(/Your investor profile/)).toHaveLength(1); // no doubled heading
+    expect(profile().closest('.match-profile')).not.toBeNull(); // laid out as tiles on Match
     expect(profile().compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

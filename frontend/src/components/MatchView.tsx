@@ -218,9 +218,11 @@ export function MatchView() {
       <p className="muted match-lede">
         Fixed rules over stored figures, each reason with its source.
       </p>
-      <p className="match-profile-line">Your investor profile — the matches below use it</p>
       <div className="match-profile">
-        <MemoryPanel onChange={() => setReload((version) => version + 1)} />
+        <MemoryPanel
+          note="The matches below use it."
+          onChange={() => setReload((version) => version + 1)}
+        />
       </div>
       {result === null && (
         <p role="status" className="muted">

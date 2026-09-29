@@ -173,8 +173,11 @@ function Remembered({
 export function MemoryPanel({
   refreshSignal = 0,
   onChange,
+  note,
 }: {
   refreshSignal?: number;
+  /** A short line under the heading, e.g. on Match: "The matches below use it." */
+  note?: string;
   /** Called after the user's own save or forget went through, so a page using the profile can reload. */
   onChange?: () => void;
 }) {
@@ -259,6 +262,7 @@ export function MemoryPanel({
   return (
     <section className="memory-panel" aria-label={HEADING}>
       <h2>{HEADING}</h2>
+      {note && <p className="muted memory-note">{note}</p>}
       {error && (
         <p role="alert" className="alert">
           {error}

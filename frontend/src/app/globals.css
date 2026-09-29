@@ -1914,6 +1914,11 @@ a.chat-source-chip:hover {
   margin-bottom: 0.25rem;
 }
 
+.memory-note {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
 .memory-list {
   list-style: none;
   margin: 0.5rem 0 0;
@@ -2110,14 +2115,52 @@ a.chat-source-chip:hover {
   margin-bottom: 1rem;
 }
 
-.match-profile-line {
-  margin: 0 0 0.6rem;
-  font-weight: 600;
+/* On Match the profile runs across the page: one tile per field, four in a row. */
+.match-profile {
+  margin-bottom: 1.5rem;
 }
 
-.match-profile {
-  max-width: 42rem;
-  margin-bottom: 1.5rem;
+.match-profile .memory-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.match-profile .memory-item,
+.match-profile .memory-item:last-child {
+  padding: 0.85rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+}
+
+.match-profile .memory-row {
+  flex-wrap: wrap;
+}
+
+.match-profile .memory-chips {
+  flex-basis: 100%;
+  justify-content: flex-start;
+  max-width: none;
+  margin-top: 0.4rem;
+  text-align: left;
+}
+
+.match-profile .memory-detail {
+  padding-left: 0;
+}
+
+@media (max-width: 64rem) {
+  .match-profile .memory-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 40rem) {
+  .match-profile .memory-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .match-list {

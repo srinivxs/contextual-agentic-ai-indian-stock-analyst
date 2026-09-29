@@ -16,6 +16,12 @@ describe('the memory panel', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows a short note under the heading when a page gives one', async () => {
+    installFakeApi();
+    render(<MemoryPanel note="The matches below use it." />);
+    expect(await within(panel()).findByText('The matches below use it.')).toBeInTheDocument();
+  });
+
   it('says so when nothing is remembered yet', async () => {
     installFakeApi();
     render(<MemoryPanel />);
