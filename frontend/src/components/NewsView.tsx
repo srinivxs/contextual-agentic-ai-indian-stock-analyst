@@ -27,7 +27,6 @@ import { listStocks } from '@/lib/stocks';
  * comes from a stored row, and a headline links only to an address we accept.
  */
 
-const ALL_TAB = 'all';
 const RBI_TAB = 'rbi';
 const SAMPLE_PILL = 'Sample item (offline fixture)';
 
@@ -137,7 +136,8 @@ export function NewsView() {
   const me = useMe();
   const router = useRouter();
   const signedIn = me.status === 'signed-in';
-  const [selected, setSelected] = useState(ALL_TAB);
+  // Opens on the first stock; there is no "All" tab (the owner's choice).
+  const [selected, setSelected] = useState<string>(STOCKS[0]?.symbol ?? RBI_TAB);
   const [stocks, setStocks] = useState<StockNews[] | null>(null);
   const [failedStocks, setFailedStocks] = useState<string[]>([]);
   const [listFailed, setListFailed] = useState(false);
@@ -226,7 +226,6 @@ export function NewsView() {
   }
 
   const tabs = [
-    { id: ALL_TAB, label: 'All' },
     ...STOCKS.map((s) => ({ id: s.symbol, label: shortName(s.symbol) })),
     { id: RBI_TAB, label: 'RBI' },
   ];
@@ -248,22 +247,18 @@ export function NewsView() {
 
   const loading = stocks === null || (feed === null && !feedFailed);
   const all = [...(stocks ?? []).flatMap((s) => s.items), ...(feed ? feedItems(feed) : [])];
-  const shown = newestFirst(selected === ALL_TAB ? all : all.filter((i) => i.tab === selected));
+  const shown = newestFirst(all.filter((i) => i.tab === selected));
   const current = stocks?.find((s) => s.symbol === selected);
   const summary = sentimentSummary(current?.sentiment ?? null);
   const selectedLabel = tabs.find((t) => t.id === selected)?.label ?? '';
   const emptyText =
-    selected === ALL_TAB
-      ? 'No news yet.'
-      : selected === RBI_TAB
-        ? 'No RBI press releases yet.'
-        : `No news for ${selectedLabel} yet.`;
+    selected === RBI_TAB ? 'No RBI press releases yet.' : `No news for ${selectedLabel} yet.`;
 
   const problems = [
     ...(listFailed ? ['the stocks'] : failedStocks),
     ...(feedFailed ? ['RBI'] : []),
   ];
-  const showAttribution = feed !== null && (selected === ALL_TAB || selected === RBI_TAB);
+  const showAttribution = feed !== null && selected === RBI_TAB;
 
   return (
     <AppShell

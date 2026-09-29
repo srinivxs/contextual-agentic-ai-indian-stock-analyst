@@ -50,7 +50,7 @@ const RELIANCE_NEWS = demoInsights({
 const tab = (name: string) => screen.getByRole('tab', { name });
 
 describe('the news page', () => {
-  it('is in the menu as News, marked current, with the heading and five tabs', async () => {
+  it('is in the menu as News, marked current, with the heading and four tabs', async () => {
     install();
     render(<NewsView />);
     const main = await screen.findByRole('navigation', { name: 'Main' });
@@ -61,28 +61,22 @@ describe('the news page', () => {
     );
     expect(await screen.findByRole('heading', { level: 1, name: 'News' })).toBeInTheDocument();
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
-      'All',
       'Reliance',
       'TCS',
       'HDFC Bank',
       'RBI',
     ]);
-    expect(tab('All')).toHaveAttribute('aria-selected', 'true');
+    expect(tab('Reliance')).toHaveAttribute('aria-selected', 'true'); // no "All": the owner's call
   });
 
-  it('merges every source on All, newest first', async () => {
-    install({
-      insights: { TCS: TCS_NEWS, RELIANCE: RELIANCE_NEWS },
-      feed: [demoFeedItem({ title: 'RBI middle item', published_at: '2026-08-10T10:00:00Z' })],
-    });
+  it('lists the items of one tab, newest first', async () => {
+    install({ insights: { TCS: TCS_NEWS, RELIANCE: RELIANCE_NEWS } });
     render(<NewsView />);
+    await userEvent.click(await screen.findByRole('tab', { name: 'TCS' }));
     await screen.findByText('TCS rating was reaffirmed.');
-    await screen.findByText('RBI middle item');
     const items = within(screen.getByRole('tabpanel')).getAllByRole('listitem');
     expect(items.map((i) => i.querySelector('.news-headline')?.textContent)).toEqual([
       'TCS rating was reaffirmed.',
-      'RBI middle item',
-      'Reliance item.',
       'An older TCS item.',
     ]);
   });
@@ -160,8 +154,6 @@ describe('the news page', () => {
     await userEvent.click(tab('Reliance'));
     expect(await screen.findByText('Reliance item.')).toBeInTheDocument();
     expect(screen.queryByText(/News sentiment/)).toBeNull();
-    await userEvent.click(tab('All'));
-    expect(screen.queryByText(/News sentiment/)).toBeNull();
   });
 
   it('says so when a tab has no news', async () => {
@@ -171,8 +163,6 @@ describe('the news page', () => {
     expect(await screen.findByText('No news for TCS yet.')).toBeInTheDocument();
     await userEvent.click(tab('RBI'));
     expect(await screen.findByText('No RBI press releases yet.')).toBeInTheDocument();
-    await userEvent.click(tab('All'));
-    expect(await screen.findByText('No news yet.')).toBeInTheDocument();
   });
 
   it('names a failed source without hiding the others', async () => {
@@ -183,7 +173,8 @@ describe('the news page', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent("couldn't load");
     expect(alert).toHaveTextContent('TCS');
-    expect(screen.getByText(demoFeedItem().title)).toBeInTheDocument();
+    await userEvent.click(tab('RBI'));
+    expect(await screen.findByText(demoFeedItem().title)).toBeInTheDocument();
   });
 
   it('names the RBI feed when only it fails', async () => {
@@ -197,18 +188,18 @@ describe('the news page', () => {
   it('moves between the tabs with the arrow keys, Home and End', async () => {
     install();
     render(<NewsView />);
-    (await screen.findByRole('tab', { name: 'All' })).focus();
+    (await screen.findByRole('tab', { name: 'Reliance' })).focus();
     await userEvent.keyboard('{ArrowRight}');
-    expect(tab('Reliance')).toHaveAttribute('aria-selected', 'true');
-    expect(tab('Reliance')).toHaveFocus();
+    expect(tab('TCS')).toHaveAttribute('aria-selected', 'true');
+    expect(tab('TCS')).toHaveFocus();
     await userEvent.keyboard('{End}');
     expect(tab('RBI')).toHaveAttribute('aria-selected', 'true');
     await userEvent.keyboard('{ArrowRight}');
-    expect(tab('All')).toHaveAttribute('aria-selected', 'true');
+    expect(tab('Reliance')).toHaveAttribute('aria-selected', 'true');
     await userEvent.keyboard('{ArrowLeft}');
     expect(tab('RBI')).toHaveAttribute('aria-selected', 'true');
     await userEvent.keyboard('{Home}');
-    expect(tab('All')).toHaveAttribute('aria-selected', 'true');
+    expect(tab('Reliance')).toHaveAttribute('aria-selected', 'true');
   });
 
   it('sends a signed-out visitor to the sign-in page', async () => {
@@ -220,6 +211,7 @@ describe('the news page', () => {
   it('never claims live data or gives advice', async () => {
     install({ insights: { TCS: TCS_NEWS }, feed: [demoFeedItem()] });
     render(<NewsView />);
+    await userEvent.click(await screen.findByRole('tab', { name: 'TCS' }));
     await screen.findByText('TCS rating was reaffirmed.');
     const text = document.body.textContent ?? '';
     expect(text).not.toMatch(/\b(buy|sell)\b/i);
