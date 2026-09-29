@@ -8,7 +8,6 @@ show and attaches the citations. Amounts travel as strings, so a float never rou
 Nothing here calls an LLM: the page is computed on read from what the worker already verified.
 """
 
-from datetime import date
 from decimal import Decimal
 from typing import Annotated
 
@@ -18,6 +17,7 @@ from pydantic import BaseModel
 from app.api.stocks import Symbol
 from app.auth.deps import current_user
 from app.auth.sessions import CurrentUser
+from app.clock import india_today
 from app.core.errors import AppError
 from app.derived import rolling_sentiment
 from app.insights import (
@@ -107,7 +107,7 @@ async def insights(
         raise AppError(status_code=404, code="not_found", message="No such stock")
     facts, events = stock.facts, stock.events
 
-    sentiment = rolling_sentiment([event.row for event in events], as_of=date.today())
+    sentiment = rolling_sentiment([event.row for event in events], as_of=india_today())
     return InsightsOut(
         symbol=stock.symbol,
         name=stock.name,

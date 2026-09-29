@@ -12,7 +12,6 @@ link: never the stored file or the whole passage.
 """
 
 import logging
-from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -20,6 +19,7 @@ from pydantic import BaseModel
 
 from app.auth.deps import current_user
 from app.auth.sessions import CurrentUser
+from app.clock import india_today
 from app.core.errors import AppError
 from app.documents import stock_id
 from app.retrieval import excerpt, search
@@ -73,7 +73,7 @@ async def search_filings(
             embedder,
             q.strip(),
             symbol=symbol,
-            today=date.today(),
+            today=india_today(),
         )
     except Exception as error:
         # Logged by type only: the message may carry AWS details, and the question is the

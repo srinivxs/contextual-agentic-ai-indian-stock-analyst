@@ -8,7 +8,6 @@ stock outside it. No LLM: every reason is a stored figure against a stated prefe
 """
 
 from dataclasses import asdict
-from datetime import date
 from typing import Annotated
 from uuid import UUID
 
@@ -19,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import current_user
 from app.auth.sessions import CurrentUser
+from app.clock import india_today
 from app.insights_store import StockRows, load_stock
 from app.matching.model import Reason, StockMatch
 from app.matching.rules import match_all
@@ -97,7 +97,7 @@ async def _load(db: AsyncSession, user_id: UUID) -> tuple[list[StoredPreference]
 async def match(request: Request, user: Annotated[CurrentUser, Depends(current_user)]) -> MatchOut:
     async with request.app.state.session_factory() as db:
         profile, stocks = await _load(db, user.id)
-    matches = match_all(profile, stocks, today=date.today())
+    matches = match_all(profile, stocks, today=india_today())
     return MatchOut(
         profile_empty=not profile,
         stocks=[_match_out(m) for m in matches],

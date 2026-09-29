@@ -74,3 +74,14 @@ waits for about three months of prices (volatility needs 60 daily returns).
 - The rate limit's exact threshold is unknown; the pause is a setting and the stop rule keeps us
   within it.
 - End-of-day only; a price can be a day old, and the page says so.
+
+## Amendment (2026-09-30): "today" is India's date
+
+The owner saw the 28 Sep close at 01:50 on 30 Sep. The rule "fetch every weekday up to
+yesterday" was right, but "today" came from the server's clock, which in a container runs on
+UTC: until 05:30 in India it still said 29 Sep, so "yesterday" was the 28th. Every "today" in
+the app (the price days, the Update data button, sentiment, matching, search recency, the chat,
+an undated RBI item) now comes from one function, `app/clock.py`'s `india_today()` (UTC+05:30,
+India has no daylight saving), and a guard test fails if any other code reads the date from the
+server's clock. The day's own file is still not asked for until the next day: BSE publishes it
+after the close, and asking early would earn "slow down" strikes.

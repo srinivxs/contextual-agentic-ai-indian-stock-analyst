@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import filings
 from app.blobs import BlobStore, FilesystemBlobStore
+from app.clock import india_today
 from app.core.config import get_worker_settings
 from app.core.logging import configure_logging
 from app.db.engine import create_db_engine, create_session_factory
@@ -74,7 +75,7 @@ class WorkerContext:
     fetch_pause_seconds: float = 2.0
     # How many years of filings to fetch (FILINGS_YEARS), and what "today" is (tests fix it).
     filings_years: int = 3
-    today: Callable[[], date] = date.today
+    today: Callable[[], date] = india_today
     # Only when EMBEDDINGS_ENABLED is on (P10): the one thing here that calls Bedrock.
     embedder: Embedder | None = None
     embedding_token_budget: int = 10_000_000

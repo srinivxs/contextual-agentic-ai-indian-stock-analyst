@@ -9,7 +9,6 @@ Signed-in only; the POST also needs the same Origin (ADR 013). The api never fet
 queues jobs the worker runs, and only for sources switched on.
 """
 
-from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
@@ -17,6 +16,7 @@ from pydantic import BaseModel
 
 from app.auth.deps import current_user, require_same_origin
 from app.auth.sessions import CurrentUser
+from app.clock import india_today
 from app.core.errors import AppError
 from app.data_status import (
     DataStatus,
@@ -85,7 +85,7 @@ async def start_refresh(
     settings = request.app.state.settings
     async with request.app.state.session_factory() as db:
         try:
-            done = await refresh(db, settings, today=datetime.now(UTC).date(), user_id=user.id)
+            done = await refresh(db, settings, today=india_today(), user_id=user.id)
         except TooSoon as error:
             await db.rollback()
             raise AppError(

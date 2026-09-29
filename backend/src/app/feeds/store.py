@@ -14,6 +14,7 @@ from typing import Any, cast
 from sqlalchemy import CursorResult, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clock import india_today
 from app.feeds.model import FEED_SOURCE, FeedItem
 from app.feeds.tagging import ALIASES, stocks_named, tag
 
@@ -151,7 +152,7 @@ async def add_feed_events(
         if item.published_at is not None:
             day, date_source = item.published_at.astimezone(UTC).date(), "document"
         else:
-            day, date_source = today or datetime.now(UTC).date(), "fetched"
+            day, date_source = today or india_today(), "fetched"
         for symbol in symbols:
             result = cast(
                 "CursorResult[Any]",

@@ -94,6 +94,7 @@ from app.chat.prompts import SYSTEM_PROMPT, Outcome, answer_tool, parse_answer, 
 from app.chat.render import disclosures, every_disclosure, render
 from app.chat.tables import SERIES_METRICS, build_table, fits_answer
 from app.chat.understand import Question, understand
+from app.clock import india_today
 from app.derived import Sentiment, rolling_sentiment
 from app.embeddings import Embedder
 from app.insights import DerivedView, KeyFact, StoredEvent, derived_views, key_facts
@@ -190,7 +191,7 @@ class GraphChatEngine:
         session_factory: async_sessionmaker[AsyncSession],
         embedder: Embedder | None,
         llm: StructuredLlm,
-        today: Callable[[], date] = date.today,
+        today: Callable[[], date] = india_today,
     ) -> None:
         self._session_factory = session_factory
         self._embedder = embedder
