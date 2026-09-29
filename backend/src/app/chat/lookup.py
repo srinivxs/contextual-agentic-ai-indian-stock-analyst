@@ -37,9 +37,10 @@ def _sentence(item: EvidenceItem) -> str:
     basis = "basis not stated" if figure.basis == "unspecified" else figure.basis
     source = source_word(item.label)
     source = source if source.startswith("screener") else source.lower()
+    called = f', reported as "{item.reported_as}"' if item.reported_as else ""
     return (
         f"{SHORT_NAMES.get(item.symbol, item.symbol)}'s {what} for {figure.period} was "
-        f"{item.amount} ({basis}; {source})."
+        f"{item.amount} ({basis}; {source}{called})."
     )
 
 

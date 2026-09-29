@@ -20,9 +20,15 @@ show two figures for one thing:
 - another source's figure for the same year that differs by more than 1% is kept as a rival,
   so the answer can say so instead of choosing silently;
 - change_views computes the change between consecutive years of that one source (never across
-  two sources: that would measure a change of definition, ADR 020).
+  two sources: that would measure a change of definition, ADR 020), and its difference.
+
+What a source calls a figure (``reported_as``, the owner's second review): screener.in's row
+("Sales", "Net Profit") or a filing's own line, read from the stored quote up to its first number
+("Revenue from Operations 25 9,80,136" -> "Revenue from Operations"). Two sources that disagree
+are then told apart by their own words, never assumed to measure the same thing.
 """
 
+import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from itertools import pairwise
@@ -86,6 +92,7 @@ class Citation:
 class StoredFact:
     row: FactRow
     citation: Citation
+    reported_as: str | None = None  # what the source calls it: "Sales", "Revenue from Operations"
 
 
 @dataclass(frozen=True)
@@ -103,6 +110,7 @@ class Rival:
     citation: Citation
     value: Decimal
     unit: str
+    reported_as: str | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +128,7 @@ class KeyFact:
     disputed_by: tuple[Citation, ...]
     rivals: tuple[Rival, ...] = ()
     row: FactRow | None = None  # the stored row, for computing changes
+    reported_as: str | None = None  # what its source calls it
 
 
 @dataclass(frozen=True)
@@ -131,6 +140,24 @@ class DerivedView:
     reason: str
     citations: tuple[Citation, ...]
     inputs: tuple[FactRow, ...] = ()  # the stored figures it was computed from
+    difference: Decimal | None = None  # a change: the later figure minus the earlier one
+
+
+_FIRST_NUMBER = re.compile(r"[\d₹(]")
+# Left over at the end of a label: a mis-read rupee sign ("PAT at H 95,754"), a currency word,
+# or a word that only leads into the number.
+_LABEL_TAIL = {"rs", "rs.", "inr", "at", "of", "was", "is", "to", "were", "stood", "by"}
+
+
+def reported_label(quote: str | None) -> str | None:
+    """A filing's own name for a figure: its quote up to the first number, or None."""
+    if not quote:
+        return None
+    words = _FIRST_NUMBER.split(quote, maxsplit=1)[0].split()
+    while words and (len(words[-1]) <= 1 or words[-1].lower() in _LABEL_TAIL):
+        words.pop()
+    label = " ".join(words).strip(" :-,.")
+    return label[:80] or None
 
 
 def filing_citation(
@@ -246,7 +273,12 @@ def _latest_years(rows: list[FactRow], years: int) -> list[str]:
     return full_years[:years]
 
 
-def _measured(fact: FactRow, view_rows: list[FactRow], citations: dict[int, Citation]) -> KeyFact:
+def _measured(
+    fact: FactRow,
+    view_rows: list[FactRow],
+    citations: dict[int, Citation],
+    labels: dict[int, str | None],
+) -> KeyFact:
     """The figure shown, with every other source's best figure for its period: agreeing ones
     counted, differing ones kept as rivals."""
     agreeing = 0
@@ -259,7 +291,8 @@ def _measured(fact: FactRow, view_rows: list[FactRow], citations: dict[int, Cita
         if agrees(best.value, fact.value):
             agreeing += 1
         else:
-            rivals.append(Rival(citation=citations[best.id], value=best.value, unit=best.unit))
+            rival = Rival(citations[best.id], best.value, best.unit, labels.get(best.id))
+            rivals.append(rival)
     status = "disputed" if rivals else ("agreed" if agreeing else "single")
     return KeyFact(
         metric=fact.metric,
@@ -275,6 +308,7 @@ def _measured(fact: FactRow, view_rows: list[FactRow], citations: dict[int, Cita
         disputed_by=tuple(rival.citation for rival in rivals),
         rivals=tuple(rivals),
         row=fact,
+        reported_as=labels.get(fact.id),
     )
 
 
@@ -304,6 +338,7 @@ def measure_facts(
     named periods, else the latest ``years`` full years, in the first view (consolidated ₹ first,
     or the basis asked for) that has any of them."""
     citations = {stored.row.id: stored.citation for stored in facts}
+    labels = {stored.row.id: stored.reported_as for stored in facts}
     rows = [stored.row for stored in facts if stored.row.metric == metric]
     views = sorted(_VIEWS, key=lambda view: view[0] != basis) if basis else _VIEWS
     for view_basis, view_currency in views:
@@ -311,7 +346,7 @@ def measure_facts(
         wanted = list(periods) if periods else _latest_years(view_rows, years)
         picked = sorted(_one_source(view_rows, wanted), key=lambda r: r.period_end, reverse=True)
         if picked:
-            return [_measured(fact, view_rows, citations) for fact in picked]
+            return [_measured(fact, view_rows, citations, labels) for fact in picked]
     return []
 
 
@@ -343,7 +378,9 @@ def _change(earlier: KeyFact, later: KeyFact) -> DerivedView | None:
         f"Change in {words} from {first.period} to {second.period}, {second.basis} figures "
         f"from {SOURCE_WORDS[second.source]}."
     )
-    return DerivedView("change", label, "ok", value, reason, citations, (first, second))
+    difference = second.value - first.value
+    inputs = (first, second)
+    return DerivedView("change", label, "ok", value, reason, citations, inputs, difference)
 
 
 def change_views(picked: list[KeyFact]) -> list[DerivedView]:

@@ -121,6 +121,7 @@ class EvidenceItem:
     amount: str | None = None  # facts: the figure as written, "₹1,234 crore"
     rivals: tuple[str, ...] = ()  # facts: the IDs of other sources' differing figures
     rival_of: str | None = None  # another source's figure: the ID of the fact it differs from
+    reported_as: str | None = None  # facts: what the source calls the figure
 
 
 # --- writing numbers ------------------------------------------------------------------------------
@@ -202,10 +203,14 @@ def source_word(label: str) -> str:
     return label.split(" · ")[0]
 
 
+def _as_reported(label: str | None) -> str:
+    return f', reported as "{label}"' if label else ""
+
+
 def _fact_item(number: int, symbol: str, fact: KeyFact) -> EvidenceItem:
     amount = format_amount(fact.value, fact.unit)
     text = f"{symbol} · {fact.label} · {fact.period} · {fact.basis} · {amount}"
-    text += f" · {source_word(fact.citation.label)}"
+    text += f" · {source_word(fact.citation.label)}{_as_reported(fact.reported_as)}"
     if fact.status == "disputed" and not fact.rivals:  # with rivals, they are listed instead
         text += " (disputed: another source differs)"
     return EvidenceItem(
@@ -221,6 +226,7 @@ def _fact_item(number: int, symbol: str, fact: KeyFact) -> EvidenceItem:
         period=fact.period,
         figures=(Figure(symbol, fact.metric, fact.period, fact.basis, fact.value),),
         amount=amount,
+        reported_as=fact.reported_as,
     )
 
 
@@ -232,7 +238,7 @@ def _rival_item(symbol: str, fact: KeyFact, rival: Rival) -> EvidenceItem:
         id="F0",  # numbered, and linked to its fact, by _numbered_facts
         kind="fact",
         symbol=symbol,
-        text=f"{text} · {source_word(rival.citation.label)}",
+        text=f"{text} · {source_word(rival.citation.label)}{_as_reported(rival.reported_as)}",
         source=rival.citation.source,
         label=rival.citation.label,
         url=rival.citation.url,
@@ -241,6 +247,7 @@ def _rival_item(symbol: str, fact: KeyFact, rival: Rival) -> EvidenceItem:
         period=fact.period,
         figures=(Figure(symbol, fact.metric, fact.period, fact.basis, rival.value),),
         amount=amount,
+        reported_as=rival.reported_as,
     )
 
 
@@ -287,6 +294,18 @@ def _figures_used(inputs: tuple[FactRow, ...]) -> str:
     return f"Figures used: {', '.join(parts)}."
 
 
+def _calculation(inputs: tuple[FactRow, ...], percent: Decimal, difference: Decimal) -> str:
+    """How a change was worked out, in the figures' own unit, for example "Calculation:
+    (₹1,055 crore - ₹962 crore) / ₹962 crore x 100 = 9.7%; up ₹93 crore." """
+    earlier, later = (format_amount(row.value, row.unit) for row in inputs)
+    moved = "up" if difference >= 0 else "down"
+    size = format_amount(abs(difference), inputs[0].unit)
+    return (
+        f"Calculation: ({later} - {earlier}) / {earlier} x 100 = {_plain(percent)}%; "
+        f"{moved} {size}."
+    )
+
+
 def _derived_item(
     number: int, symbol: str, view: DerivedView, facts: list[KeyFact]
 ) -> EvidenceItem:
@@ -295,6 +314,8 @@ def _derived_item(
     else:
         shown = view.status.replace("_", " ")  # "not applicable": no number
     how = f"{view.reason} {_figures_used(view.inputs)}" if view.inputs else view.reason
+    if view.name == "change" and view.value is not None and view.difference is not None:
+        how += f" {_calculation(view.inputs, view.value, view.difference)}"
     return EvidenceItem(
         id=f"D{number}",
         kind="derived",
@@ -399,6 +420,7 @@ def _computed(symbol: str, label: str, shown: str, reason: str | None = None) ->
         label=label,
         url=None,
         quote=reason,
+        amount=shown,
     )
 
 

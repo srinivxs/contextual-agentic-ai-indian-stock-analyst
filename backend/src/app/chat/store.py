@@ -18,7 +18,7 @@ from uuid import UUID
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chat.contract import DataTable, Reply, ReplyStatus, Turn
+from app.chat.contract import DataTable, Reply, ReplyStatus, Source, Turn
 
 TITLE_LENGTH = 80  # the database's limit too (ck_conversations_title_length)
 _PER_MILLION = Decimal(1_000_000)
@@ -46,8 +46,8 @@ _MESSAGES = text(
 
 # The last ``limit`` messages, then turned back to oldest first.
 _HISTORY = text(
-    "SELECT role, text FROM ("
-    "  SELECT role, text, created_at, role = 'assistant' AS is_reply FROM messages"
+    "SELECT role, text, sources::text AS sources FROM ("
+    "  SELECT role, text, sources, created_at, role = 'assistant' AS is_reply FROM messages"
     "  WHERE conversation_id = :id ORDER BY created_at DESC, is_reply DESC LIMIT :limit"
     ") AS last ORDER BY created_at, is_reply"
 )
@@ -152,7 +152,14 @@ async def history(db: AsyncSession, conversation_id: UUID, limit: int = 10) -> l
 
     Takes no user id: the caller has already checked the conversation is the user's own."""
     result = await db.execute(_HISTORY, {"id": conversation_id, "limit": limit})
-    return [Turn(role=row.role, text=row.text) for row in result]
+    return [
+        Turn(
+            role=row.role,
+            text=row.text,
+            sources=tuple(Source(**source) for source in json.loads(row.sources)),
+        )
+        for row in result
+    ]
 
 
 def table_json(table: DataTable) -> dict[str, Any]:

@@ -294,7 +294,7 @@ async def test_a_follow_up_passes_the_history_oldest_first(
     assert second.json()["conversation_id"] == conversation_id
     assert engine.calls[1][1] == [
         Turn(role="user", text=QUESTION),
-        Turn(role="assistant", text=f"About: {QUESTION}"),
+        Turn(role="assistant", text=f"About: {QUESTION}", sources=(DEMO_SOURCE,)),
     ]
     assert [turn.text for turn in engine.calls[2][1]] == [
         QUESTION,
@@ -589,9 +589,9 @@ async def test_the_history_is_the_last_messages_oldest_first(
 
     assert last_four == [
         Turn(role="user", text="Question 2"),
-        Turn(role="assistant", text="Answer 2"),
+        Turn(role="assistant", text="Answer 2", sources=(DEMO_SOURCE,)),  # "where from?"
         Turn(role="user", text="Question 3"),
-        Turn(role="assistant", text="Answer 3"),
+        Turn(role="assistant", text="Answer 3", sources=(DEMO_SOURCE,)),
     ]
     assert len(everything) == 8
 

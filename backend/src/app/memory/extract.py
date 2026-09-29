@@ -26,6 +26,11 @@ short, fixed set of rules, applied per sentence:
        (its values, its quote). Multi-valued fields keep every value found in that last sentence,
        in the vocabulary's order.
     h. Nothing found means an empty list.
+    i. A request for information is not a statement about the investor (the owner's second
+       review: "I want to know whether TCS is undervalued." once set the value style). A sentence
+       with "I want/would like/need to know (understand, see, find out, check, learn)", "I
+       wonder", "I'm curious/wondering", "tell me", "show me", "can/could/would you" or "please
+       tell/show/explain/find" is skipped like a question.
 
 Cue phrases, in the order the table lists them (whole words, any case):
 
@@ -70,6 +75,14 @@ _SENTENCE = re.compile(r"[^.!?;\n]+[.!?;\n]*")
 # apostrophes of "I'm aggressive and I'd like growth" are never read as a quotation).
 _DOUBLE_QUOTED = re.compile(r'"[^"]*"|“[^”]*”')
 _SINGLE_QUOTED_LONG = re.compile(r"(?<![A-Za-z])'(?:[^'\s]+\s+){2,}[^'\s]+'(?![A-Za-z])")
+
+# A sentence asking for information (rule i).
+_REQUEST = re.compile(
+    r"\b(?:i\s+(?:want|need|wish)\s+to|i(?:'d|\s+would)\s+like\s+to)\s+(?:know|understand|see|"
+    r"find\s+out|check|learn|ask)\b|\bi\s+wonder\b|\bi'?m\s+(?:curious|wondering|asking)\b|"
+    r"\b(?:tell|show)\s+me\b|\b(?:can|could|would)\s+you\b|\bplease\s+(?:tell|show|explain|find)\b",
+    re.IGNORECASE,
+)
 
 _FIRST_PERSON = re.compile(r"\b(?:i|i'm|im|i am|my|me|i've|i'd|i'll|myself)\b", re.IGNORECASE)
 
@@ -187,8 +200,8 @@ def extract_preferences(message: str) -> list[Preference]:
             continue  # rule b
         # Curly apostrophes and quotes, as phones type them, read as straight ones (same length).
         cleaned = _remove_quotes(sentence.replace("\u2019", "'").replace("\u2018", "'"))
-        if not _FIRST_PERSON.search(cleaned):
-            continue  # rule d
+        if not _FIRST_PERSON.search(cleaned) or _REQUEST.search(cleaned):
+            continue  # rules d and i
         matches = _find_cues(cleaned)
         for field in FIELDS:
             field_matches = matches[field]
@@ -209,6 +222,29 @@ def describe(preferences: list[Preference]) -> str:
         f"{FIELD_LABELS[p.field]}: {', '.join(labels(p.field, p.values))}" for p in preferences
     ]
     return "Noted. I'll remember: " + "; ".join(parts) + "."
+
+
+def recall(stored: list[StoredPreference]) -> str:
+    """What the chat answers to "what do you remember about my preferences?": every remembered
+    field with the user's own words, read by code (the owner's second review)."""
+    if not stored:
+        return (
+            "I don't have any investment preferences saved for you yet. Tell me, for example, "
+            "\"I'm a conservative investor who avoids high debt\", and I'll remember it."
+        )
+    by_field = {p.field: p for p in stored}
+    # Fields one sentence set share its quote, given once after them.
+    groups: dict[str, list[str]] = {}
+    for field in FIELDS:
+        if field in by_field:
+            chosen = ", ".join(labels(field, by_field[field].values))
+            groups.setdefault(by_field[field].quote, []).append(f"{FIELD_LABELS[field]}: {chosen}")
+    parts = [f'{"; ".join(named)} (you said: "{quote}")' for quote, named in groups.items()]
+    return (
+        "Here is what I remember about your investment preferences: "
+        + "; ".join(parts)
+        + ". You can change or delete them on the Match page."
+    )
 
 
 def profile_summary(stored: list[StoredPreference]) -> str:

@@ -3,8 +3,13 @@
     analyze ─> update_memory ─┬─> retrieve ─> grade ─┬─> generate ─> validate ─┬─> respond
                               │                      │                         ├─> generate (retry)
                               │                      ├─> lookup ─> respond     ├─> abstain
-                              │                      └─> abstain <─────────────┴─> out_of_scope
+                              │                      ├─> valuation             └─> out_of_scope
+                              │                      └─> abstain
+                              ├─> out_of_scope (another company: before any retrieval)
+                              ├─> recall (what is remembered)
                               ├─> forecast
+                              ├─> sources (where the last answer came from)
+                              ├─> no_profile (a personal question with no preferences saved)
                               └─> remembered
 
 - analyze (code): which stocks, metrics, periods (app/chat/understand.py). No LLM: rule 8.
@@ -12,24 +17,30 @@
   are saved, and the profile is loaded. It reads state["question"] and nothing else: never the
   history, the evidence or a reply, so no document can write memory (ADR 022). A message that
   only states preferences ends at remembered: "Noted. I'll remember: ...", with no LLM call.
-- forecast (code): a question about a future share price, for a stock named, is refused with
-  FORECAST_TEXT and no LLM call: end-of-day closes cannot predict a price.
+- The question's intent (app/chat/understand.py) picks the route after update_memory, all by
+  code and without the model (the owner's second review): another company named ->
+  out_of_scope, before anything is retrieved, so no other stock's figures can stand in for it;
+  "what do you remember?" -> recall (app/memory/extract.py); a future share price -> forecast;
+  "where did you get that?" -> sources (the previous answer's own sources); a personal question
+  with no preferences saved -> no_profile.
 - retrieve (code): each asked measure's figures from one source and the changes between them
   (app/chat/evidence.py's measures_for), debt to equity and the latest dividend (app/insights.py),
   the passages closest in meaning (app/retrieval.py) and, for news questions, the events and the
   rolling news sentiment, and for "Match me" questions the verdicts of app/matching/rules.py,
   numbered F#, D#, M#, N#, E# (app/chat/evidence.py).
 - grade (code): a question that only asks for stored figures, all present, goes to lookup
-  (app/chat/lookup.py: code states them, no LLM call); no evidence at all means "I don't have
-  that in the data", without an LLM call.
+  (app/chat/lookup.py: code states them, no LLM call); a valuation question goes to valuation
+  (the stored price-to-earnings figures and what a verdict would need, app/chat/code_answers.py);
+  no evidence at all means "I don't have that in the data", without an LLM call.
 - generate (LLM): one call, a forced tool filling a fixed form (app/chat/prompts.py).
 - validate (code): every claim cites real evidence and every number is in what it cites
   (app/chat/answer_check.py). A failure gets one retry, told what failed; a second failure abstains.
   The model's "out of scope" stands only when the question names none of our stocks; for a named
   stock it becomes "I don't have that in the data" (the owner's review, 2026-09-29).
 - respond (code): another source's differing figure is disclosed with its own source
-  (app/chat/render.py's disclosures), then the [n] markers and the numbered sources; a "why"
-  answer citing no filing passage or event says the data cannot establish why; and for a
+  (app/chat/render.py's disclosures; every disagreement when the question asks about them),
+  then the [n] markers and the numbered sources; a "why" answer that gives no cause a cited
+  filing passage or event states says the data cannot establish why; and for a
   question about one stock's profit or revenue a year-by-year table built from stored screener.in
   figures (app/chat/tables.py), only when it agrees with the answer's own figures.
 
@@ -48,28 +59,46 @@ from langgraph.graph import END, START, StateGraph
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.chat.answer_check import Claim, Problem, check_answer
+from app.chat.code_answers import (
+    explained,
+    previous_sources,
+    source_claims,
+    source_items,
+    valuation_claims,
+)
 from app.chat.contract import (
     ABSTAIN_TEXT,
+    AGREE_TEXT,
     FORECAST_TEXT,
     NO_EXPLANATION_TEXT,
+    NO_SOURCES_TEXT,
+    VALUATION_GAP_TEXT,
+    VALUATION_NO_DATA_TEXT,
     DataTable,
     Reply,
     Turn,
     out_of_scope_text,
 )
+from app.chat.entities import symbols_in
 from app.chat.evidence import EvidenceItem, build_evidence, evidence_block, measures_for
 from app.chat.lookup import lookup_claims
 from app.chat.prompts import SYSTEM_PROMPT, Outcome, answer_tool, parse_answer, user_message
-from app.chat.render import disclosures, render
+from app.chat.render import disclosures, every_disclosure, render
 from app.chat.tables import SERIES_METRICS, build_table, fits_answer
-from app.chat.understand import Question, symbols_in, understand
+from app.chat.understand import Question, understand
 from app.derived import Sentiment, rolling_sentiment
 from app.embeddings import Embedder
 from app.insights import DerivedView, KeyFact, StoredEvent, derived_views, key_facts
 from app.insights_store import StockRows, load_stock
 from app.llm import LlmError, StructuredLlm
 from app.matching.rules import match_all
-from app.memory.extract import describe, extract_preferences, preferences_text, profile_summary
+from app.memory.extract import (
+    describe,
+    extract_preferences,
+    preferences_text,
+    profile_summary,
+    recall,
+)
 from app.memory.store import get_profile, remember
 from app.memory.vocabulary import Preference, StoredPreference
 from app.prices.derived import PriceSnapshot, snapshot
@@ -88,11 +117,17 @@ _ASKS = re.compile(
 MAX_ATTEMPTS = 2  # the first answer and one retry
 MIN_SIMILARITY = 0.35  # a passage less similar than this to the question is not evidence
 PASSAGES = 8
+# A "why" question searches for what explains a change, not only for its words.
+REASON_SEARCH = " What drove the change: segment and business performance, volumes, prices, demand."
+
 OTHER_DERIVED = ("debt_to_equity", "latest_dividend")  # growth comes from measures_for's changes
 _COMPANY_NAME = re.compile(r"[A-Za-z][A-Za-z0-9 .&'-]{0,59}")
 _NOT_A_NAME = {"a", "an", "the", "what", "which", "who", "how", "why", "is", "was", "it", "its"}
 
 Verdict = Literal["respond", "retry", "abstain", "out_of_scope"]
+Route = Literal[
+    "remembered", "out_of_scope", "recall", "forecast", "sources", "no_profile", "retrieve"
+]
 
 
 def _named_in(question: str, company: str | None) -> str | None:
@@ -155,17 +190,27 @@ class GraphChatEngine:
         graph.add_node("remembered", self.remembered)
         graph.add_node("forecast", self.forecast)
         graph.add_node("lookup", self.lookup)
+        graph.add_node("recall", self.recall)
+        graph.add_node("sources", self.sources)
+        graph.add_node("no_profile", self.no_profile)
+        graph.add_node("valuation", self.valuation)
         graph.add_edge(START, "analyze")
         graph.add_edge("analyze", "update_memory")
+        routes = ("remembered", "out_of_scope", "recall", "forecast", "sources", "no_profile")
         graph.add_conditional_edges(
             "update_memory",
             self.after_memory,
-            {"remembered": "remembered", "forecast": "forecast", "retrieve": "retrieve"},
+            {**{route: route for route in routes}, "retrieve": "retrieve"},
         )
         graph.add_conditional_edges(
             "retrieve",
             self.grade,
-            {"lookup": "lookup", "generate": "generate", "abstain": "abstain"},
+            {
+                "lookup": "lookup",
+                "valuation": "valuation",
+                "generate": "generate",
+                "abstain": "abstain",
+            },
         )
         graph.add_edge("lookup", "respond")
         graph.add_edge("generate", "validate")
@@ -179,7 +224,8 @@ class GraphChatEngine:
                 "out_of_scope": "out_of_scope",
             },
         )
-        for last in ("respond", "abstain", "out_of_scope", "remembered", "forecast"):
+        ends = ("respond", "abstain", "out_of_scope", "remembered", "forecast", "recall")
+        for last in (*ends, "sources", "no_profile", "valuation"):
             graph.add_edge(last, END)
         return graph.compile()
 
@@ -211,17 +257,24 @@ class GraphChatEngine:
             profile = await get_profile(db, state["user_id"])
         return {"stated": stated, "profile": profile}
 
-    def after_memory(self, state: ChatState) -> Literal["remembered", "forecast", "retrieve"]:
+    def after_memory(self, state: ChatState) -> Route:
         """A message that states preferences and asks nothing (no "?", no stock named, no
-        sentence opening with a question or request word) is only confirmed; a future share
-        price of a named stock is refused by code; anything else is answered, with the profile
-        as context."""
+        sentence opening with a question or request word) is only confirmed. Otherwise the
+        intent decides: the routes answered by code, or retrieve (with the profile as context)."""
         question = state["question"]
         asks = "?" in question or symbols_in(question) or _ASKS.search(question)
         if state["stated"] and not asks:
             return "remembered"
-        understood = state["understood"]
-        return "forecast" if understood.wants_forecast and understood.named else "retrieve"
+        intent = state["understood"].intent
+        if intent == "personalized" and not state["profile"]:
+            return "no_profile"
+        by_intent: dict[str, Route] = {
+            "unsupported_company": "out_of_scope",
+            "memory_read": "recall",
+            "future_unsupported": "forecast",
+            "source_request": "sources",
+        }
+        return by_intent.get(intent, "retrieve")
 
     async def retrieve(self, state: ChatState) -> ChatState:
         question = state["understood"]
@@ -252,9 +305,8 @@ class GraphChatEngine:
                         for metric in SERIES_METRICS:
                             if metric in question.metrics:
                                 series[metric] = await load_series(db, stock.id, metric)
-        passages = await self._passages(
-            state["question"], question, profile_summary(state["profile"])
-        )
+        text = state["question"] + (REASON_SEARCH if question.wants_reason else "")
+        passages = await self._passages(text, question, profile_summary(state["profile"]))
         # "Match me" (P14): the verdicts are code's (app/matching/rules.py); the model explains.
         profile = state["profile"]
         wants_match = question.wants_match and bool(profile)
@@ -296,7 +348,9 @@ class GraphChatEngine:
             if r.passage.symbol in question.symbols and r.passage.similarity >= MIN_SIMILARITY
         ]
 
-    def grade(self, state: ChatState) -> Literal["lookup", "generate", "abstain"]:
+    def grade(self, state: ChatState) -> Literal["lookup", "valuation", "generate", "abstain"]:
+        if state["understood"].intent == "valuation":
+            return "valuation"
         if lookup_claims(state["understood"], state["evidence"]) is not None:
             return "lookup"
         return "generate" if state["evidence"] else "abstain"
@@ -355,15 +409,19 @@ class GraphChatEngine:
         return {"verdict": verdict, "problems": problems}
 
     async def respond(self, state: ChatState) -> ChatState:
-        evidence, question = state["evidence"], state["understood"]
-        claims = [*state["claims"], *disclosures(state["claims"], evidence)]
-        text, sources = render(claims, evidence)
+        evidence, question, own_claims = state["evidence"], state["understood"], state["claims"]
+        disclose = every_disclosure if question.wants_conflicts else disclosures
+        added = disclose(own_claims, evidence)
+        text, sources = render([*own_claims, *added], evidence)
         by_id = {item.id: item for item in evidence}
         # what the answer itself cites; code's disclosures name other sources on purpose
-        own = dict.fromkeys(cid for claim in state["claims"] for cid in claim.citations)
+        own = dict.fromkeys(cid for claim in own_claims for cid in claim.citations)
         cited = [by_id[cid] for cid in own]
-        documented = ("passage", "event", "match")  # a match verdict carries code's reasons
-        if question.wants_reason and not any(i.kind in documented for i in cited):
+        cites_figures = any(item.kind == "fact" for item in cited)
+        if question.intent == "source_conflict" and cites_figures and not added:
+            text = f"{text} {AGREE_TEXT}"
+        verdicts = any(item.kind == "match" for item in cited)  # code's reasons, not causes
+        if question.wants_reason and not verdicts and not explained(own_claims, evidence):
             text = f"{text} {NO_EXPLANATION_TEXT}"
         fits = fits_answer(question, state["series"], cited)
         table = build_table(question, state["series"]) if fits else None
@@ -372,6 +430,30 @@ class GraphChatEngine:
     async def forecast(self, state: ChatState) -> ChatState:
         return {"reply": self._reply(state, FORECAST_TEXT, "abstained", ())}
 
+    async def recall(self, state: ChatState) -> ChatState:
+        """What is remembered about the investor, read back by code (ADR 022)."""
+        return {"reply": self._reply(state, recall(state["profile"]), "remembered", ())}
+
+    async def no_profile(self, state: ChatState) -> ChatState:
+        return {"reply": self._reply(state, recall([]), "abstained", ())}
+
+    async def sources(self, state: ChatState) -> ChatState:
+        """The previous answer's sources, numbered and linked again, from the stored answer."""
+        items = source_items(previous_sources(state["history"]))
+        if not items:
+            return {"reply": self._reply(state, NO_SOURCES_TEXT, "abstained", ())}
+        text, sources = render(source_claims(items), items)
+        return {"reply": self._reply(state, f"That answer rests on: {text}", "answered", sources)}
+
+    async def valuation(self, state: ChatState) -> ChatState:
+        """The stored price-to-earnings figures, then what a verdict would need."""
+        claims = valuation_claims(state["understood"], state["evidence"])
+        if not claims:
+            return {"reply": self._reply(state, VALUATION_NO_DATA_TEXT, "abstained", ())}
+        text, sources = render(claims, state["evidence"])
+        reply = self._reply(state, f"{text} {VALUATION_GAP_TEXT}", "answered", sources)
+        return {"reply": reply}
+
     async def abstain(self, state: ChatState) -> ChatState:
         return {"reply": self._reply(state, ABSTAIN_TEXT, "abstained", ())}
 
@@ -379,8 +461,11 @@ class GraphChatEngine:
         return {"reply": self._reply(state, describe(state["stated"]), "remembered", ())}
 
     async def out_of_scope(self, state: ChatState) -> ChatState:
-        company = _named_in(state["question"], state.get("other_company"))
-        return {"reply": self._reply(state, out_of_scope_text(company), "out_of_scope", ())}
+        """Names the other companies code found, else the one the model read, if the question
+        writes it."""
+        others = state["understood"].others
+        names = others or (_named_in(state["question"], state.get("other_company")),)
+        return {"reply": self._reply(state, out_of_scope_text(*names), "out_of_scope", ())}
 
     def _reply(
         self,

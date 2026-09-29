@@ -15,7 +15,8 @@ from uuid import UUID
 # abstained:    one of our stocks, but the data does not answer it: ABSTAIN_TEXT, or
 #               FORECAST_TEXT for a future share price
 # out_of_scope: names none of our three stocks (another company, or not about companies)
-# remembered:   the message only stated preferences (P13): saved, and confirmed with no LLM call
+# remembered:   the message only stated preferences (P13): saved, and confirmed with no LLM
+#               call; or it asked what is remembered, and the profile is read back by code
 ReplyStatus = Literal["answered", "abstained", "out_of_scope", "remembered"]
 
 ABSTAIN_TEXT = "I don't have that in the data."
@@ -24,18 +25,34 @@ FORECAST_TEXT = (
     "I don't have a verified future share-price prediction in the available data, so I can't "
     "provide one."
 )
-# Added by code under a "why" answer that cites no filing passage or event.
+# Added by code under a "why" answer whose causes no cited filing passage or event states.
 NO_EXPLANATION_TEXT = (
-    "The available data shows the change, but I don't have sufficient source material to "
-    "establish why it occurred."
+    "The available data confirms the change, but I don't have sufficient source material to "
+    "establish the specific reasons for it."
 )
+# After a valuation question's stored price-to-earnings figures (app/chat/code_answers.py).
+VALUATION_GAP_TEXT = (
+    "Whether that makes a stock undervalued or overvalued needs a comparison basis this data does "
+    "not hold: other companies' or the stock's own long-run valuation multiples, or earnings "
+    "forecasts. So I can't give a verdict."
+)
+VALUATION_NO_DATA_TEXT = (
+    "I don't have enough valuation data to judge whether it is undervalued or overvalued: no "
+    "stored share price and earnings figure give a price-to-earnings ratio, and the data holds no "
+    "comparison basis (other companies' or long-run valuation multiples) or earnings forecasts."
+)
+NO_SOURCES_TEXT = "The previous reply cited no stored source."
+# Added by code to a question about disagreeing sources when none of its figures disagree.
+AGREE_TEXT = "The stored sources agree (within 1%) on every figure given here."
 
 
-def out_of_scope_text(company: str | None) -> str:
-    """OUT_OF_SCOPE_TEXT, naming the other company when the question itself names it."""
-    if not company:
+def out_of_scope_text(*companies: str | None) -> str:
+    """OUT_OF_SCOPE_TEXT, naming the other companies the question itself names."""
+    names = [name for name in companies if name]
+    if not names:
         return OUT_OF_SCOPE_TEXT
-    return f"{OUT_OF_SCOPE_TEXT} I don't have grounded data for {company}."
+    listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
+    return f"{OUT_OF_SCOPE_TEXT} I don't have grounded data for {listed}."
 
 
 @dataclass(frozen=True)
@@ -77,10 +94,12 @@ class DataTable:
 
 @dataclass(frozen=True)
 class Turn:
-    """An earlier message, oldest first: lets a follow-up say "and last year?"."""
+    """An earlier message, oldest first: lets a follow-up say "and last year?", and "where did
+    you get that?" be answered from the last answer's own sources."""
 
     role: Literal["user", "assistant"]
     text: str
+    sources: tuple[Source, ...] = ()
 
 
 class ChatEngine(Protocol):

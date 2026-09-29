@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.memory.extract import describe, extract_preferences, preferences_text, profile_summary
+from app.memory.extract import (
+    describe,
+    extract_preferences,
+    preferences_text,
+    profile_summary,
+    recall,
+)
 from app.memory.vocabulary import MAX_QUOTE_CHARS, Preference, StoredPreference
 
 
@@ -262,3 +268,86 @@ def test_contractions_are_read_as_words(message: str, expected: dict[str, tuple[
 def test_a_quotation_in_single_quotes_is_still_removed() -> None:
     assert values_of("I read 'we are an aggressive lender' in a report.") == {}
     assert values_of("I read \u2018we are an aggressive lender\u2019 in a report.") == {}
+
+
+# --- the owner's second review (2026-09-29) -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "I want to know whether TCS is undervalued.",
+        "I'd like to know if TCS pays dividends.",
+        "I need to understand HDFC Bank's growth.",
+        "I wonder whether Reliance is a value stock.",
+        "Tell me whether TCS has low debt.",
+        "Can you show me the dividend history.",
+        "I'm curious about momentum in Reliance.",
+    ],
+)
+def test_asking_for_information_is_not_a_preference(message: str) -> None:
+    assert extract_preferences(message) == []
+
+
+def test_a_preference_beside_a_request_still_counts() -> None:
+    message = "I'm a conservative investor. I want to know whether TCS is undervalued."
+    assert [p.field for p in extract_preferences(message)] == ["risk_preference"]
+
+
+def test_the_challenge_style_message_is_remembered() -> None:
+    message = (
+        "Remember that I'm a conservative investor who prefers stable growth and avoids highly "
+        "leveraged companies."
+    )
+    found = {p.field: p.values for p in extract_preferences(message)}
+    assert found == {
+        "risk_preference": ("conservative",),
+        "debt_preference": ("avoid_high_debt",),
+        "investment_style": ("growth",),
+        "other_preferences": ("stability",),
+    }
+
+
+def stored(field: str, values: tuple[str, ...], quote: str) -> StoredPreference:
+    return StoredPreference(
+        field=field,  # type: ignore[arg-type]
+        values=values,
+        quote=quote,
+        source="chat",
+        updated_at=datetime(2026, 9, 29, tzinfo=UTC),
+    )
+
+
+def test_recall_lists_each_remembered_field_with_the_user_s_own_words() -> None:
+    text = recall(
+        [
+            stored("risk_preference", ("conservative",), "I'm a conservative investor."),
+            stored("debt_preference", ("avoid_high_debt",), "I avoid high debt."),
+        ]
+    )
+    assert text == (
+        "Here is what I remember about your investment preferences: Risk: Conservative "
+        '(you said: "I\'m a conservative investor."); Debt: Avoid high debt (you said: "I avoid '
+        'high debt."). You can change or delete them on the Match page.'
+    )
+
+
+def test_recall_with_nothing_remembered_says_so() -> None:
+    assert recall([]) == (
+        "I don't have any investment preferences saved for you yet. Tell me, for example, "
+        "\"I'm a conservative investor who avoids high debt\", and I'll remember it."
+    )
+
+
+def test_recall_gives_a_sentence_that_set_several_fields_once() -> None:
+    said = "I'm a conservative investor who avoids high debt."
+    text = recall(
+        [
+            stored("risk_preference", ("conservative",), said),
+            stored("debt_preference", ("avoid_high_debt",), said),
+        ]
+    )
+    assert text == (
+        "Here is what I remember about your investment preferences: Risk: Conservative; Debt: "
+        f'Avoid high debt (you said: "{said}"). You can change or delete them on the Match page.'
+    )

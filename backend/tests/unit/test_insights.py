@@ -5,8 +5,11 @@ one view per metric (consolidated ₹ first), the latest three years, each with 
 Derived values and sentiment are computed on read (ADR 009) and cite the facts they used.
 """
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+
+import pytest
 
 from app.derived import EventRow, FactRow
 from app.insights import (
@@ -19,6 +22,7 @@ from app.insights import (
     key_facts,
     measure_facts,
     recent_events,
+    reported_label,
     screener_citation,
 )
 
@@ -335,3 +339,43 @@ def test_derived_values_carry_the_stored_figures_they_were_computed_from() -> No
 def test_no_change_is_computed_from_figures_without_their_stored_rows() -> None:
     # the stock page's key facts carry no row: a change needs the rows' source and basis
     assert change_views(key_facts(TWO_SOURCES)) == []
+
+
+# --- what each source calls its figure (the owner's second review) --------------------------------
+
+
+@pytest.mark.parametrize(
+    ("quote", "label"),
+    [
+        ("Revenue from Operations 25 9,80,136 9,14,472", "Revenue from Operations"),
+        ("Profit for the year 81,309 79,020", "Profit for the year"),
+        ("PAT at H 95,754 crore (US$ 10.1 billion), was up 17.8%", "PAT"),
+        (
+            "Net Profit Attributable to:\na) Owners of the Company 69,621 66,702",
+            "Net Profit Attributable to: a) Owners of the Company",
+        ),
+        ("9,80,136", None),
+        (None, None),
+    ],
+)
+def test_a_filing_s_own_label_is_its_quote_up_to_the_first_number(
+    quote: str | None, label: str | None
+) -> None:
+    assert reported_label(quote) == label
+
+
+def test_each_figure_and_its_rival_keep_what_their_source_calls_them() -> None:
+    labelled = [
+        replace(stored, reported_as="Revenue from Operations")
+        if stored.citation.source == "filing"
+        else replace(stored, reported_as="Sales")
+        for stored in TWO_SOURCES
+    ]
+    [only] = measure_facts(labelled, REVENUE, periods=("FY2024",))
+    assert only.reported_as == "Revenue from Operations"
+    assert [rival.reported_as for rival in only.rivals] == ["Sales"]
+
+
+def test_a_change_carries_its_difference() -> None:
+    [latest, _] = change_views(measure_facts(TWO_SOURCES, REVENUE))
+    assert latest.difference == Decimal("93")

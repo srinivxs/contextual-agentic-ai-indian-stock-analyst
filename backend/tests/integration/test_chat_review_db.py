@@ -18,7 +18,7 @@ import hashlib
 import re
 from datetime import date
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -26,17 +26,24 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.chat.contract import (
     ABSTAIN_TEXT,
+    AGREE_TEXT,
     FORECAST_TEXT,
     NO_EXPLANATION_TEXT,
+    NO_SOURCES_TEXT,
     OUT_OF_SCOPE_TEXT,
+    VALUATION_GAP_TEXT,
+    VALUATION_NO_DATA_TEXT,
     Reply,
+    Source,
     Turn,
 )
 from app.chat.graph import GraphChatEngine
 from app.embeddings import vector_literal
 from app.llm import ToolSpec
+from app.memory.store import get_profile
 from tests.fake_llm import FakeLlm
 from tests.fakes import FakeEmbedder
+from tests.integration.conftest import MakeUser
 
 pytestmark = pytest.mark.usefixtures("migrated_db", "clean_document_tables")
 
@@ -155,7 +162,11 @@ def claim(text: str, *citations: str) -> dict[str, Any]:
 
 
 async def ask(
-    session_factory: Factory, llm: FakeLlm, question: str, history: list[Turn] | None = None
+    session_factory: Factory,
+    llm: FakeLlm,
+    question: str,
+    history: list[Turn] | None = None,
+    user_id: UUID | None = None,
 ) -> Reply:
     engine = GraphChatEngine(
         session_factory=session_factory,
@@ -163,7 +174,7 @@ async def ask(
         llm=llm,
         today=lambda: date(2026, 9, 29),
     )
-    return await engine.answer(question=question, history=history or [], user_id=uuid4())
+    return await engine.answer(question=question, history=history or [], user_id=user_id or uuid4())
 
 
 # --- 1. a stored figure is answered by code -------------------------------------------------------
@@ -181,8 +192,10 @@ async def test_a_year_s_revenue_is_stated_by_code_with_its_source_and_the_other_
     assert (reply.status, reply.model) == ("answered", None)
     assert reply.text == (
         "Reliance's revenue from operations for FY2024 was ₹1,000 crore (consolidated; annual "
-        "report). [1] screener.in gives ₹985 crore for FY2024; sources can count revenue from "
-        "operations differently. [2]"
+        'report, reported as "Revenue from Operations"). [1] screener.in gives ₹985 crore for '
+        'FY2024 (reported as "Sales"), against ₹1,000 crore in the annual report (reported as '
+        '"Revenue from Operations"); the stored data does not establish that the two measure the '
+        "same thing, so they are not treated as interchangeable. [2]"
     )
     assert [(s.source, s.label) for s in reply.sources] == [
         ("filing", "Annual report · Annual Report 2025 · p.127"),
@@ -196,12 +209,14 @@ async def test_a_year_s_revenue_is_stated_by_code_with_its_source_and_the_other_
     [
         (
             "What was TCS's net profit in FY2025?",
-            "TCS's net profit for FY2025 was ₹200 crore (consolidated; screener.in). [1]",
+            "TCS's net profit for FY2025 was ₹200 crore (consolidated; screener.in, reported "
+            'as "Net Profit"). [1]',
             ("205", "200", "190"),
         ),
         (
             "What was HDFC Bank's net profit in FY2025?",
-            "HDFC Bank's net profit for FY2025 was ₹300 crore (consolidated; screener.in). [1]",
+            "HDFC Bank's net profit for FY2025 was ₹300 crore (consolidated; screener.in, "
+            'reported as "Net Profit"). [1]',
             ("310", "300", "290"),
         ),
     ],
@@ -252,8 +267,8 @@ async def test_a_comparison_takes_both_years_and_their_change_from_one_source(
     # the change is computed from the very figures the answer gives, and says so
     assert "Figures used: ₹1,000 crore (FY2024), ₹1,100 crore (FY2025)." in llm.calls[0][1]
     # screener.in's differing figures are named with their source, never passed off as the same
-    assert "screener.in gives ₹1,080 crore for FY2025" in reply.text
-    assert "screener.in gives ₹985 crore for FY2024" in reply.text
+    assert 'screener.in gives ₹1,080 crore for FY2025 (reported as "Sales")' in reply.text
+    assert 'screener.in gives ₹985 crore for FY2024 (reported as "Sales")' in reply.text
     assert reply.table is None  # its figures would contradict the text
 
 
@@ -301,7 +316,8 @@ async def test_a_trend_from_one_source_comes_with_the_table_of_that_source(
     assert tuple(row[1] for row in reply.table.rows) == ("1,210", "1,080", "985")
     assert reply.sources[0].quote == (
         "Change in revenue from operations from FY2025 to FY2026, consolidated figures from "
-        "screener.in. Figures used: ₹1,080 crore (FY2025), ₹1,210 crore (FY2026)."
+        "screener.in. Figures used: ₹1,080 crore (FY2025), ₹1,210 crore (FY2026). Calculation: "
+        "(₹1,210 crore - ₹1,080 crore) / ₹1,080 crore x 100 = 12%; up ₹130 crore."
     )
 
 
@@ -378,7 +394,8 @@ async def test_a_company_the_question_does_not_name_is_never_repeated(
     await seed(admin_engine)
     llm = FakeLlm([{"outcome": "out_of_scope", "claims": [], "other_company": "Wipro <b>"}])
 
-    reply = await ask(session_factory, llm, "What is Infosys's latest revenue?")
+    # code finds no company here; the model names one the question does not contain
+    reply = await ask(session_factory, llm, "What is the weather in Mumbai?")
 
     assert (reply.status, reply.text) == ("out_of_scope", OUT_OF_SCOPE_TEXT)
 
@@ -450,3 +467,332 @@ async def test_an_earnings_call_question_gets_no_net_profit_table(
 
     assert reply.status == "answered"
     assert reply.table is None
+
+
+# --- the owner's second review (2026-09-29) -------------------------------------------------------
+
+ABOUT_TCS = [
+    Turn(role="user", text="Calculate the net profit growth for TCS from FY2025 to FY2026.")
+]
+
+
+@pytest.mark.parametrize(
+    ("question", "named"),
+    [
+        ("What is Infosys's FY2025 revenue?", "Infosys"),  # A: after a question about TCS
+        ("What is ICICI Bank's net profit?", "ICICI Bank"),  # B
+        ("What is Apple revenue?", "Apple"),
+        ("Compare TCS with Infosys.", "Infosys"),
+    ],
+)
+async def test_another_company_is_refused_before_retrieval_never_answered_with_ours(
+    session_factory: Factory, admin_engine: AsyncEngine, question: str, named: str
+) -> None:
+    await seed(admin_engine)
+    llm = FakeLlm()
+
+    reply = await ask(session_factory, llm, question, ABOUT_TCS)
+
+    assert llm.calls == []
+    assert (reply.status, reply.sources, reply.table) == ("out_of_scope", (), None)
+    assert reply.text == f"{OUT_OF_SCOPE_TEXT} I don't have grounded data for {named}."
+    assert "₹" not in reply.text  # no figure of ours stands in for theirs
+
+
+async def test_c_a_share_price_a_year_from_now_is_refused_by_code(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    llm = FakeLlm()
+    reply = await ask(session_factory, llm, "What will TCS's share price be one year from now?")
+    assert (reply.status, reply.text, llm.calls) == ("abstained", FORECAST_TEXT, [])
+
+
+REMEMBER = (
+    "Remember that I'm a conservative investor who prefers stable growth and avoids highly "
+    "leveraged companies."
+)
+
+
+async def test_d_e_a_stated_profile_is_stored_and_read_back_by_code(
+    session_factory: Factory, admin_engine: AsyncEngine, make_user: MakeUser
+) -> None:
+    await seed(admin_engine)
+    user = await make_user()
+    llm = FakeLlm()
+
+    stored = await ask(session_factory, llm, REMEMBER, user_id=user)
+    asked = await ask(
+        session_factory,
+        llm,
+        "What information do you remember about my investment preferences?",
+        user_id=user,
+    )
+
+    assert stored.status == "remembered"
+    async with session_factory() as db:
+        profile = {p.field: p.values for p in await get_profile(db, user)}
+    assert profile == {
+        "risk_preference": ("conservative",),
+        "debt_preference": ("avoid_high_debt",),
+        "investment_style": ("growth",),
+        "other_preferences": ("stability",),
+    }
+    assert asked.status == "remembered"
+    assert asked.text.startswith(
+        "Here is what I remember about your investment preferences: Risk: Conservative"
+    )
+    assert "Debt: Avoid high debt" in asked.text
+    assert llm.calls == []
+
+
+async def test_asking_for_information_leaves_the_profile_unchanged(
+    session_factory: Factory, admin_engine: AsyncEngine, make_user: MakeUser
+) -> None:
+    await seed(admin_engine)
+    user = await make_user()
+    await ask(session_factory, FakeLlm(), REMEMBER, user_id=user)
+
+    await ask(
+        session_factory, FakeLlm(), "I want to know whether TCS is undervalued.", user_id=user
+    )
+
+    async with session_factory() as db:
+        style = [p.values for p in await get_profile(db, user) if p.field == "investment_style"]
+    assert style == [("growth",)]  # not "value"
+
+
+async def test_f_a_personal_question_is_answered_from_the_profile_and_the_match_verdicts(
+    session_factory: Factory, admin_engine: AsyncEngine, make_user: MakeUser
+) -> None:
+    await seed(admin_engine)
+    user = await make_user()
+    await ask(session_factory, FakeLlm(), REMEMBER, user_id=user)
+
+    def explains(system: str, user_text: str, tool: ToolSpec) -> dict[str, Any]:
+        verdict = evidence_id(user_text, "TCS · Match for your profile")
+        return {
+            "outcome": "answer",
+            "claims": [claim("TCS's verdict follows its figures.", verdict)],
+        }
+
+    llm = FakeLlm(explains)
+    question = "Which of TCS, HDFC Bank, and Reliance fits my stated preferences?"
+    reply = await ask(session_factory, llm, question, user_id=user)
+
+    assert "- Risk: Conservative" in llm.calls[0][1]  # the profile, as context
+    assert "[M1]" in llm.calls[0][1]  # the verdicts, computed by code
+    assert reply.status in ("answered", "abstained")  # the checker decides; the route is shown
+
+
+async def test_a_personal_question_with_no_profile_says_how_to_give_one(
+    session_factory: Factory, admin_engine: AsyncEngine, make_user: MakeUser
+) -> None:
+    await seed(admin_engine)
+    user = await make_user()
+    llm = FakeLlm()
+    question = "Which of TCS, HDFC Bank, and Reliance should I research further?"
+    reply = await ask(session_factory, llm, question, user_id=user)
+    assert reply.status == "abstained"
+    assert reply.text.startswith("I don't have any investment preferences saved for you yet.")
+    assert llm.calls == []
+
+
+async def test_g_h_every_reported_figure_is_given_with_what_its_source_calls_it(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    llm = FakeLlm()
+
+    canonical = await ask(session_factory, llm, "What was Reliance's FY2025 revenue?")
+    different = await ask(
+        session_factory, llm, "What are the different reported FY2025 Reliance revenue figures?"
+    )
+
+    assert llm.calls == []
+    for reply in (canonical, different):
+        assert reply.text.startswith(
+            "Reliance's revenue from operations for FY2025 was ₹1,100 crore (consolidated; annual "
+            'report, reported as "Revenue from Operations"). [1] screener.in gives ₹1,080 crore'
+        )
+        assert "not treated as interchangeable" in reply.text
+        assert [s.source for s in reply.sources] == ["filing", "screener"]
+
+
+async def test_i_a_passage_that_states_no_cause_does_not_explain_a_change(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    passage = "Reliance revenue change between FY2024 and FY2025 in a resilient year for the group."
+    await seed(admin_engine, passages={"RELIANCE": passage})
+
+    def paraphrases(system: str, user: str, tool: ToolSpec) -> dict[str, Any]:
+        source = evidence_id(user, "resilient year")
+        return {"outcome": "answer", "claims": [claim("The year was resilient.", source)]}
+
+    reply = await ask(session_factory, FakeLlm(paraphrases), WHY)
+
+    assert reply.status == "answered"
+    assert reply.text.endswith(NO_EXPLANATION_TEXT)
+
+
+async def test_j_news_sentiment_is_never_evidence_about_the_results(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    calls = 0
+
+    def leaps_then_reports(system: str, user: str, tool: ToolSpec) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        mood = evidence_id(user, "News sentiment")
+        text = (
+            "TCS's news sentiment supports its latest performance."
+            if calls == 1
+            else "TCS's news sentiment is shown for the last year."
+        )
+        return {"outcome": "answer", "claims": [claim(text, mood)]}
+
+    llm = FakeLlm(leaps_then_reports)
+    question = (
+        "Find a recent TCS news item and explain whether it supports or contradicts the latest "
+        "financial performance."
+    )
+    reply = await ask(session_factory, llm, question)
+
+    assert "sentiment_as_evidence" in llm.calls[1][1]
+    assert reply.status == "answered"
+    assert NO_EXPLANATION_TEXT not in reply.text  # "explain whether" is not a why question
+
+
+async def test_k_a_calculation_shows_its_inputs_and_is_marked_computed(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+
+    def calculates(system: str, user: str, tool: ToolSpec) -> dict[str, Any]:
+        change = evidence_id(user, "Net profit change, FY2025 to FY2026")
+        text = "TCS's net profit grew 2.5% from ₹200 crore in FY2025 to ₹205 crore in FY2026."
+        return {"outcome": "answer", "claims": [claim(text, change)]}
+
+    question = "Calculate TCS net profit growth from FY2025 to FY2026."
+    reply = await ask(session_factory, FakeLlm(calculates), question)
+
+    assert reply.status == "answered"
+    [computed] = reply.sources
+    assert computed.source == "derived"  # the page marks it "Computed"
+    assert computed.quote is not None
+    assert "Calculation: (₹205 crore - ₹200 crore) / ₹200 crore x 100 = 2.5%" in computed.quote
+
+
+async def test_where_an_answer_came_from_is_its_own_stored_sources(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    earlier = (
+        Source(1, "filing", "Annual report · Annual Report 2025 · p.127", f"{BSE}#page=127", "q"),
+        Source(2, "screener", "screener.in · profit-loss · Sales · Mar 2025", None, None),
+    )
+    history = [
+        Turn(role="user", text="What happened to Reliance's revenue in FY2025?"),
+        Turn(role="assistant", text="It was reported ... [1][2]", sources=earlier),
+    ]
+    llm = FakeLlm()
+
+    reply = await ask(session_factory, llm, "Where exactly did you get that information?", history)
+
+    assert llm.calls == []
+    assert reply.text == (
+        "That answer rests on: Annual report · Annual Report 2025 · p.127 (official filing on "
+        "BSE). [1] screener.in · profit-loss · Sales · Mar 2025 (screener.in's fundamentals "
+        "table). [2]"
+    )
+    assert [s.label for s in reply.sources] == [source.label for source in earlier]
+
+
+async def test_a_valuation_question_without_a_stored_price_says_what_is_missing(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    llm = FakeLlm()
+    question = "I want to know whether TCS is undervalued. Give me a definitive answer."
+    reply = await ask(session_factory, llm, question)
+    assert (reply.status, reply.text, llm.calls) == ("abstained", VALUATION_NO_DATA_TEXT, [])
+
+
+async def test_an_unknown_company_code_misses_is_left_to_the_model_and_named_from_the_question(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    llm = FakeLlm([{"outcome": "out_of_scope", "claims": [], "other_company": "Quuxcorp"}])
+
+    # lower case and on no list: code cannot tell it is a company, and after a question about
+    # TCS it does not borrow TCS (it does not refer back); the model says out of scope
+    reply = await ask(session_factory, llm, "what is quuxcorp revenue", ABOUT_TCS)
+
+    assert "TCS" not in llm.calls[0][1].split("Evidence:")[0].split("Question:")[1]
+    assert (reply.status, reply.text) == (
+        "out_of_scope",
+        f"{OUT_OF_SCOPE_TEXT} I don't have grounded data for quuxcorp.",
+    )
+
+
+async def test_where_from_with_no_earlier_answer_says_so(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    reply = await ask(session_factory, FakeLlm(), "Where exactly did you get that information?")
+    assert (reply.status, reply.text) == ("abstained", NO_SOURCES_TEXT)
+
+
+async def test_a_question_about_disagreeing_sources_says_when_they_agree(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+
+    def lists(system: str, user: str, tool: ToolSpec) -> dict[str, Any]:
+        fy2026 = evidence_id(user, "TCS · Net profit · FY2026")
+        return {"outcome": "answer", "claims": [claim("FY2026 net profit was ₹205 crore.", fy2026)]}
+
+    question = "TCS net profit for FY2024 to FY2026: any inconsistencies between your sources?"
+    reply = await ask(session_factory, FakeLlm(lists), question)
+
+    assert reply.text.endswith(AGREE_TEXT)
+
+
+async def test_a_valuation_question_gets_the_stored_price_to_earnings_and_what_is_missing(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    async with admin_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO facts (stock_id, source, source_url, source_section, source_row, "
+                "source_column, metric, period, period_end, basis, currency, unit, value) "
+                "SELECT id, 'screener', :url, 'profit-loss', 'EPS in Rs', 'Mar 2026', "
+                "'eps_basic', 'FY2026', DATE '2026-03-31', 'consolidated', 'INR', "
+                "'INR_PER_SHARE', 10 FROM stocks WHERE symbol = 'TCS'"
+            ),
+            {"url": SCREENER.format("TCS")},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO prices (stock_id, trade_date, open, high, low, close, prev_close, "
+                "volume) SELECT id, DATE '2026-09-28', 210, 210, 210, 210, 200, 1 FROM stocks "
+                "WHERE symbol = 'TCS'"
+            )
+        )
+    try:
+        llm = FakeLlm()
+        reply = await ask(session_factory, llm, "Is TCS undervalued?")
+    finally:
+        async with admin_engine.begin() as connection:
+            await connection.execute(text("DELETE FROM prices"))
+
+    assert llm.calls == []
+    assert reply.status == "answered"
+    assert reply.text.startswith(
+        "TCS's price to earnings is 21: Share price ₹210 (28 Sep 2026) divided by basic EPS of "
+        "₹10 for FY2026"
+    )
+    assert reply.text.endswith(VALUATION_GAP_TEXT)
+    assert [s.source for s in reply.sources] == ["derived"]

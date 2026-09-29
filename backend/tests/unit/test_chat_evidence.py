@@ -844,3 +844,45 @@ def test_a_bank_s_revenue_is_its_net_interest_income_and_a_company_s_is_not() ->
     assert [f.metric for f in measures_for(nii, both, is_financial=False)[0]] == [
         "net_interest_income"
     ]
+
+
+def test_a_figure_names_what_its_source_calls_it_and_so_does_its_rival() -> None:
+    fact = replace(
+        key_fact(status="disputed"),
+        reported_as="Profit for the year",
+        rivals=(
+            Rival(
+                citation=SCREENER_CITATION,
+                value=Decimal("1200"),
+                unit="INR_CRORE",
+                reported_as="Net Profit",
+            ),
+        ),
+    )
+    main, rival = build_evidence(
+        question=question(), facts={"TCS": [fact]}, derived={}, passages=[]
+    )
+    assert main.text == (
+        "TCS · Net profit · FY2026 · consolidated · ₹1,234 crore · Annual report, reported as "
+        '"Profit for the year" (another source differs: F2)'
+    )
+    assert rival.text.startswith(
+        "TCS · Net profit · FY2026 · consolidated · ₹1,200 crore · screener.in, reported as "
+        '"Net Profit"'
+    )
+    assert (main.reported_as, rival.reported_as) == ("Profit for the year", "Net Profit")
+
+
+def test_a_change_shows_its_calculation_and_difference() -> None:
+    change = replace(
+        view("change", "Net profit change, FY2025 to FY2026", value="9.7", reason="Change."),
+        inputs=(row(1, "FY2025", "962"), row(2, "FY2026", "1055")),
+        difference=Decimal("93"),
+    )
+    [item] = build_evidence(
+        question=question(wants_growth=True), facts={}, derived={"TCS": [change]}, passages=[]
+    )
+    assert item.text.endswith(
+        "Figures used: ₹962 crore (FY2025), ₹1,055 crore (FY2026). Calculation: (₹1,055 crore "
+        "- ₹962 crore) / ₹962 crore x 100 = 9.7%; up ₹93 crore."
+    )

@@ -15,13 +15,13 @@ the caller, so it raises instead of being skipped.
 
 disclosures (the owner's review, 2026-09-29): when a cited figure has another source's differing
 figure (its ``rivals``) and the answer does not cite it, code adds one sentence naming it, cited
-to that source, so a figure is never chosen silently.
+to that source, so a figure is never chosen silently. The sentence gives what each source calls
+its figure (the second review): they are never assumed to measure the same thing.
 """
 
 from app.chat.answer_check import Claim, without_markers
 from app.chat.contract import Source
 from app.chat.evidence import EvidenceItem, source_word
-from app.insights import METRIC_LABELS
 from app.retrieval import excerpt
 
 
@@ -35,13 +35,38 @@ def disclosures(claims: list[Claim], evidence: list[EvidenceItem]) -> list[Claim
             rival = by_id[rid]
             if rid in cited or rival.metric is None:
                 continue
-            what = METRIC_LABELS[rival.metric].lower()
-            text = (
-                f"{source_word(rival.label)} gives {rival.amount} for {rival.period}; sources "
-                f"can count {what} differently."
-            )
-            added.append(Claim(text=text, citations=(rid,)))
+            added.append(Claim(text=_disclosure(by_id[cid], rival), citations=(rid,)))
     return added
+
+
+def every_disclosure(claims: list[Claim], evidence: list[EvidenceItem]) -> list[Claim]:
+    """For a question about disagreeing sources: every stored figure that another source
+    disputes, disclosed whether the answer cites it or not (each once)."""
+    cited = {cid for claim in claims for cid in claim.citations}
+    by_id = {item.id: item for item in evidence}
+    return [
+        Claim(text=_disclosure(item, by_id[rid]), citations=(rid,))
+        for item in evidence
+        for rid in item.rivals
+        if rid not in cited
+    ]
+
+
+def _called(item: EvidenceItem) -> str:
+    return f' (reported as "{item.reported_as}")' if item.reported_as else ""
+
+
+def _disclosure(main: EvidenceItem, rival: EvidenceItem) -> str:
+    """'screener.in gives ₹899 crore for FY2024 (reported as "Sales"), against ₹914 crore in the
+    annual report (reported as "Revenue from Operations"); ...'."""
+    main_source = source_word(main.label)
+    main_source = main_source if main_source.startswith("screener") else main_source.lower()
+    return (
+        f"{source_word(rival.label)} gives {rival.amount} for {rival.period}{_called(rival)}, "
+        f"against {main.amount} in the {main_source}{_called(main)}; the stored data does not "
+        "establish that the two measure the same thing, so they are not treated as "
+        "interchangeable."
+    )
 
 
 def render(claims: list[Claim], evidence: list[EvidenceItem]) -> tuple[str, tuple[Source, ...]]:

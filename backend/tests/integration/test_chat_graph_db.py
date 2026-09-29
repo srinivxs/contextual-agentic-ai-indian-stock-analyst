@@ -549,13 +549,16 @@ async def test_a_match_question_gets_the_code_s_verdicts_to_explain(
     ]  # one per stock
 
 
-async def test_without_a_profile_a_match_question_gets_no_verdicts(
+async def test_without_a_profile_a_match_question_says_how_to_give_one(
     session_factory: Factory, admin_engine: AsyncEngine
 ) -> None:
     await seed(admin_engine)
     llm = FakeLlm(grounded)
-    await ask(session_factory, llm, "Which stock suits me? What was TCS's net profit in FY2026?")
-    assert "Match for your profile" not in llm.calls[0][1]
+    question = "Which stock suits me? What was TCS's net profit in FY2026?"
+    reply = await ask(session_factory, llm, question)
+    assert reply.status == "abstained"
+    assert reply.text.startswith("I don't have any investment preferences saved for you yet.")
+    assert llm.calls == []  # no verdicts without preferences, and no model call
 
 
 # --- share prices (ADR 025) -----------------------------------------------------------------------

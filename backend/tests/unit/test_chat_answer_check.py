@@ -482,3 +482,29 @@ def test_more_ways_of_giving_a_cause_need_a_document(text: str) -> None:
     assert [p.code for p in check_answer([Claim(text, ("D1",))], RIVALS)] == [
         "cause_without_source"
     ]
+
+
+# --- news sentiment is not evidence about results (the owner's second review) ---------------------
+
+SENTIMENT = replace(
+    item("D9", "TCS · News sentiment · positive (score 0.76, from 21 events in the last year)"),
+    label="News sentiment",
+)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The news sentiment is positive (score 0.76), which supports the latest performance.",
+        "Positive sentiment (score 0.76) is consistent with the strong results.",
+        "The 0.76 sentiment score confirms the growth.",
+    ],
+)
+def test_news_sentiment_cannot_vouch_for_the_results(text: str) -> None:
+    problems = check_answer([Claim(text, ("D9",))], [SENTIMENT])
+    assert [p.code for p in problems] == ["sentiment_as_evidence"]
+
+
+def test_news_sentiment_may_be_reported_as_what_it_is() -> None:
+    claim = Claim("TCS's news sentiment is positive (score 0.76, from 21 events).", ("D9",))
+    assert check_answer([claim], [SENTIMENT]) == []

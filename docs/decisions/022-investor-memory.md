@@ -47,6 +47,18 @@ investor" must never change what the assistant believes about the user.
   then fails, the stated preference is still kept (it was the user's own statement).
 - Nothing about memory costs money except the profile's fingerprint for search (a few tokens).
 
+## Amendment: reading memory back, and requests (2026-09-29)
+
+The owner's pressure test found two faults. "I want to know whether TCS is undervalued." set the
+value style: a request for information is not a statement about the investor, so a sentence with
+"I want/would like/need to know (understand, see, find out)", "I wonder", "I'm curious", "tell
+me", "show me", "can/could/would you" is now skipped like a question (rule i). And "What do you
+remember about my preferences?" got "I don't have that in the data": the chat model may cite only
+evidence, and the profile is context, not evidence. Such a question (intent `memory_read`) is now
+answered by code (`recall`): each remembered field with the user's own words, and where to edit
+them. A personal question ("which should I research further?") with no profile saved is told how
+to give one, with no LLM call.
+
 ## What it does not do
 
 - It does not understand free prose: "I lost money in 2008 so I'm careful now" sets nothing

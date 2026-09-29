@@ -14,7 +14,14 @@ from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.derived import EventRow, FactRow, Source
-from app.insights import Citation, StoredEvent, StoredFact, filing_citation, screener_citation
+from app.insights import (
+    Citation,
+    StoredEvent,
+    StoredFact,
+    filing_citation,
+    reported_label,
+    screener_citation,
+)
 from app.prices.model import DailyPrice
 from app.prices.store import load_prices
 from app.retrieval import filing_date
@@ -59,13 +66,16 @@ _EVENTS = text(
 def _stored_fact(row: Row[Any]) -> StoredFact:
     source: Source
     source_date: date | None
+    reported_as: str | None
     if row.source == "screener":
+        reported_as = row.source_row  # "Sales", "Net Profit"
         updated: datetime = row.updated_at
         source, source_date = "screener", updated.date()
         citation = screener_citation(
             row.source_url, row.source_section, row.source_row, row.source_column
         )
     else:
+        reported_as = reported_label(row.quote)  # the filing's own line
         source, source_date = row.kind or "announcement", filing_date(row.document_period)
         citation = filing_citation(
             row.kind, row.document_period, row.title, row.document_url, row.page_number, row.quote
@@ -82,7 +92,7 @@ def _stored_fact(row: Row[Any]) -> StoredFact:
         source=source,
         source_date=source_date,
     )
-    return StoredFact(row=fact, citation=citation)
+    return StoredFact(row=fact, citation=citation, reported_as=reported_as)
 
 
 def feed_citation(

@@ -1,5 +1,7 @@
 """Turning checked claims into the answer text and its numbered sources (P12)."""
 
+from dataclasses import replace
+
 import pytest
 
 from app.chat.answer_check import Claim
@@ -150,18 +152,14 @@ RIVAL = EvidenceItem(
 
 def test_a_cited_figure_another_source_disputes_is_disclosed_with_that_source() -> None:
     claims = [Claim("Revenue was ₹914 crore.", ("F1",))]
-    assert disclosures(claims, [MAIN, RIVAL]) == [
-        Claim(
-            "screener.in gives ₹899 crore for FY2024; sources can count revenue from operations "
-            "differently.",
-            ("F2",),
-        )
-    ]
-    text, sources = render([*claims, *disclosures(claims, [MAIN, RIVAL])], [MAIN, RIVAL])
-    assert text == (
-        "Revenue was ₹914 crore. [1] screener.in gives ₹899 crore for FY2024; sources can count "
-        "revenue from operations differently. [2]"
+    disclosure = (
+        "screener.in gives ₹899 crore for FY2024, against ₹914 crore in the annual report; the "
+        "stored data does not establish that the two measure the same thing, so they are not "
+        "treated as interchangeable."
     )
+    assert disclosures(claims, [MAIN, RIVAL]) == [Claim(disclosure, ("F2",))]
+    text, sources = render([*claims, *disclosures(claims, [MAIN, RIVAL])], [MAIN, RIVAL])
+    assert text == f"Revenue was ₹914 crore. [1] {disclosure} [2]"
     assert [s.label for s in sources] == [MAIN.label, RIVAL.label]
 
 
@@ -169,3 +167,15 @@ def test_nothing_is_added_when_the_answer_already_cites_the_other_source() -> No
     claims = [Claim("The annual report gives ₹914 crore, screener.in ₹899 crore.", ("F1", "F2"))]
     assert disclosures(claims, [MAIN, RIVAL]) == []
     assert disclosures([Claim("Other.", ("F2",))], [MAIN, RIVAL]) == []
+
+
+def test_a_disclosure_names_what_each_source_calls_its_figure() -> None:
+    main = replace(MAIN, reported_as="Revenue from Operations")
+    rival = replace(RIVAL, reported_as="Sales")
+    [added] = disclosures([Claim("Revenue was ₹914 crore.", ("F1",))], [main, rival])
+    assert added.text == (
+        'screener.in gives ₹899 crore for FY2024 (reported as "Sales"), against ₹914 crore in '
+        'the annual report (reported as "Revenue from Operations"); the stored data does not '
+        "establish that the two measure the same thing, so they are not treated as "
+        "interchangeable."
+    )

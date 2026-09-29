@@ -9,9 +9,13 @@ Stocks (whole words, any case), in the order the question mentions them:
     TCS        tcs, tata consultancy, tata consultancy services
     HDFCBANK   hdfc bank, hdfcbank, hdfc
 
-A question naming no stock ("and last year?") is a follow-up: it takes the stocks of the most
-recent earlier USER turn that named some (``from_history``). The assistant's own words never
-count. With no stock anywhere, the question is about all three ("which has the lowest debt?").
+A question naming no stock is a follow-up only if it refers back: it opens with "and",
+"also", "then", "what about" or "how about", or says "its", "it", "their", "they", "them",
+"same" or "the company/stock/bank/firm/group". A follow-up takes the stocks of the most recent
+earlier USER turn that named some (``from_history``); the assistant's own words never count.
+Anything else naming no stock is about all three ("which has the lowest debt?"), so "What is
+zomato revenue?" after a question about TCS can never be answered with TCS's figures (the
+owner's second review).
 
 Metrics (whole words, any case). The longer phrases are read first and then blanked out, so
 "return on equity" is not also "equity" and "earnings per share" is not also "earnings":
@@ -47,8 +51,9 @@ What kind of question it is (the owner's review, 2026-09-29), again by word list
 
     named       a stock is named in the question or an earlier user turn (else all three are
                 searched, and a question about another company can be refused as out of scope)
-    reason      why, reason(s), explain, driver(s), drive(s), driving, drove, driven, cause(d),
-                behind, due to, because: the answer may give only causes a filing states
+    reason      why, reason(s), driver(s), drive(s), driving, drove, driven, cause(d), behind,
+                due to, because, "what explains", "explain why / the change (rise, fall ...)"
+                (not "explain whether"): the answer may give only causes a filing states
     forecast    a share price question that looks ahead: will, going to, next year/quarter/...,
                 forecast, predict, projection, target price, price target, future. Refused by code:
                 end-of-day closes cannot predict a price
@@ -61,22 +66,53 @@ What kind of question it is (the owner's review, 2026-09-29), again by word list
     years       "last/past/previous N years" (at most 5); "latest", "most recent", "current
                 year", "last year" mean 1; otherwise None (the answer takes the latest three)
     basis       "standalone" or "consolidated" when the question says so
+    others      companies that are not ours (app/chat/entities.py): such a question never
+                takes a stock from the conversation, and it is refused before any retrieval
+    qualified   a metric word with a qualifier we do not store ("AI revenue", "retail revenue",
+                "operating profit"): never a lookup of the total
+
+The intent (the owner's second review): one per question, the first that applies, in this order.
+It decides the route (app/chat/graph.py); the flags above still decide what evidence is loaded.
+
+    unsupported_company   another company is named                       refused, no retrieval
+    memory_read           "what do you remember about my preferences",   the profile, by code
+                          "what are my preferences"
+    future_unsupported    a future share price (forecast)                refused by code
+    source_request        "where did you get that", "what is the         the last answer's
+                          source" (no stock or metric named)             sources, by code
+    personalized          "which suits/fits my preferences", "which      matching (P14)
+                          should I research/consider/buy"
+    valuation             undervalued, overvalued, fair value, worth     P/E and what is
+                          buying, valuation, "is/looks cheap",           missing, by code
+                          "is/looks expensive" (before explanation:
+                          "why is TCS undervalued?" gets the P/E and
+                          what a verdict would need)
+    explanation           why, what drove ... (reason)                   model, causes only
+                                                                         from documents
+    source_conflict       inconsistencies, discrepancies, disagree,      model, and every
+                          different figures, differ between sources      disagreement by code
+    fact_lookup           lookup (above)                                 stated by code
+    calculation           calculate, compute, work out                   model + computed values
+    comparison            compare, vs, versus, higher, lower, better     model
+    trend                 growth words, or a window of years             model
+    news                  news, events, sentiment                        model
+    price                 share prices                                   model
+    general               anything else                                  model
+
+A message may also state preferences (memory is written from any message, app/memory/extract.py);
+one that only states them ends at "remembered" before any of this.
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Literal
 
 from app.chat.contract import Turn
+from app.chat.entities import ends_with_our_name, other_companies, symbols_in
 from app.fact_validation import parse_period
 from app.vocabulary import METRICS
 
 ALL_SYMBOLS = ("RELIANCE", "TCS", "HDFCBANK")
-
-_STOCK_NAMES = {
-    "RELIANCE": re.compile(r"\b(?:reliance industries|reliance|ril)\b", re.IGNORECASE),
-    "TCS": re.compile(r"\b(?:tata consultancy services|tata consultancy|tcs)\b", re.IGNORECASE),
-    "HDFCBANK": re.compile(r"\b(?:hdfc bank|hdfcbank|hdfc)\b", re.IGNORECASE),
-}
 
 # Read in this order; each match is blanked out before the next pattern looks.
 _METRIC_WORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -110,16 +146,70 @@ _EVENTS = re.compile(r"\b(?:news|events?|sentiment|announcements?|announced)\b",
 # "return on equity" is a fundamentals ratio, not a price return.
 _PRICE = re.compile(
     r"\b(?:share|stock)\s+prices?\b|\bprices?\b|\bclos(?:e|ed|ing)\b|\btrad(?:ing|ed)\s+at\b"
-    r"|\bp\s*/\s*e\b|\bpe\s+ratio\b|\bprice\s+to\s+earnings\b|\bvaluation\b|\bexpensive\b"
-    r"|\bcheap\b|\breturns?\b(?!\s+on\s+equity)|\bvolatil\w*|\bdividend\s+yield\b",
+    r"|\bp\s*/\s*e\b|\bpe\s+ratio\b|\bprice\s+to\s+earnings\b|\bvaluation\b"
+    r"|\breturns?\b(?!\s+on\s+equity)|\bvolatil\w*|\bdividend\s+yield\b",
     re.IGNORECASE,
 )
 # "Match me" (P14): the investor asks how the stocks fit them, not what a figure is.
 _MATCH = re.compile(
     r"\bmatch(?:es)?\s+(?:me|my)\b|\b(?:suits?|fits?)\s+(?:me|my)\b|\bfit\s+for\s+me\b"
-    r"|\b(?:best|right|good)\s+for\s+me\b|\bwhich\b[^.?!]*\b(?:suits?|fits?|aligns?|matches)\b",
+    r"|\b(?:best|right|good)\s+for\s+me\b|\bwhich\b[^.?!]*\b(?:suits?|fits?|aligns?|matches)\b"
+    r"|\bmy\s+(?:stated\s+|investment\s+|investor\s+|own\s+)*(?:preferences|profile|criteria)\b"
+    r"|\bshould\s+i\s+(?:research|consider|look\s+(?:at|into)|focus\s+on|buy|invest\s+in|pick|"
+    r"choose|prefer|shortlist)\b",
     re.IGNORECASE,
 )
+# What the investor asks us to recall (P13 memory, read back by code).
+_MEMORY_ASK = re.compile(
+    r"\b(?:do|did|have|can)\s+you\s+(?:remember|recall|know|keep|store|stored|save|saved)\b",
+    re.IGNORECASE,
+)
+_ABOUT_ME = re.compile(r"\b(?:me|my|preferences|profile)\b", re.IGNORECASE)
+_MY_PROFILE = re.compile(
+    r"\b(?:what\s+(?:are|is)|what's|show(?:\s+me)?|list|tell\s+me)\s+my\s+(?:\w+\s+){0,2}"
+    r"(?:preferences|profile)\b|\bwhat\s+my\s+(?:\w+\s+){0,2}(?:preferences|profile)\s+(?:are|is)\b"
+    r"|^\s*what\s+(?:do|did)\s+you\s+(?:remember|recall)\b",
+    re.IGNORECASE,
+)
+# A question that refers back to the stock of an earlier turn.
+_FOLLOW_UP = re.compile(
+    r"^\s*(?:and|also|plus|then|so|what\s+about|how\s+about)\b|\b(?:its|it|it's|their|they|them|"
+    r"same)\b|\bthe\s+(?:company|stock|bank|firm|group|business)(?:'s)?\b",
+    re.IGNORECASE,
+)
+# Where the last answer came from.
+_SOURCES_ASK = re.compile(
+    r"\bwhere\s+(?:exactly\s+)?(?:did|do|does)\s+(?:you|that|this|it|these|those)\s+"
+    r"(?:get|find|come|obtain|take)\b|\b(?:what|which)\s+(?:is|are|was|were)?\s*(?:the|your)?\s*"
+    r"(?:exact\s+)?sources?\b|\bcite\s+(?:your|the)\s+sources?\b",
+    re.IGNORECASE,
+)
+_VALUATION = re.compile(
+    r"\b(?:under|over)[- ]?valued\b|\bfair(?:ly)?[- ]valued\b|\bfair\s+value\b|"
+    r"\bintrinsic\s+value\b|\bworth\s+(?:buying|investing\s+in|it)\b|\bvaluations?\b|"
+    r"\b(?:is|are|looks?|seems?)\s+(?:\w+\s+){0,3}?(?:cheap|expensive)\b",
+    re.IGNORECASE,
+)
+_CONFLICTS = re.compile(
+    r"\b(?:inconsisten\w*|discrepanc\w*|disagree\w*|conflict\w*)\b"
+    r"|\bdiffer\w*\s+(?:between|across|among)\s+(?:the\s+|your\s+)?sources\b"
+    r"|\bdifferent\s+(?:\w+\s+){0,4}(?:figures|values|numbers)\b",
+    re.IGNORECASE,
+)
+_CALCULATION = re.compile(r"\b(?:calculate|calculation|compute|work\s+out)\b", re.IGNORECASE)
+_COMPARISON = re.compile(
+    r"\b(?:compare\w*|comparison|vs\.?|versus|higher|lower|bigger|smaller|better|worse)\b",
+    re.IGNORECASE,
+)
+# Words that may stand right before a metric word without changing what it measures. Any other
+# word ("AI revenue", "retail revenue", "operating profit") asks for a part we do not store.
+_PLAIN_BEFORE_METRIC = {
+    *("the", "its", "their", "total", "net", "gross", "consolidated", "standalone", "reported"),
+    *("annual", "yearly", "overall", "latest", "full", "full-year", "year", "company", "group"),
+    *("basic", "diluted", "per", "what", "what's", "is", "was", "are", "were", "much", "many"),
+    *("of", "in", "and", "or", "for", "on", "a", "an", "my", "your", "same", "bank", "this"),
+    *("that", "these", "those", "company's"),
+}
 
 # A fiscal year, with an optional quarter or part-of-a-year in front ("Q3 FY26", "3QFY26",
 # "H1 FY26"), or a year range ("2025-26"). Also used by app/chat/answer_check.py to set periods
@@ -139,8 +229,9 @@ _YEAR_IN_WORDS = re.compile(
 )
 _QUARTER_BEFORE = re.compile(r"\b(?:quarters?|qtr|q[1-4]|[1-4]q)\b[\w\s,]{0,15}$", re.I)
 _REASON = re.compile(
-    r"\b(?:why|reasons?|explain(?:s|ed|ing)?|drivers?|drives?|driving|drove|driven|caused?|"
-    r"behind|due\s+to|because)\b",
+    r"\b(?:why|reasons?|drivers?|drives?|driving|drove|driven|caused?|behind|due\s+to|because|"
+    r"what\s+explains?|explain\w*\s+(?:why|how\s+come|the\s+(?:change|rise|fall|increase|"
+    r"decrease|drop|growth|decline|jump)))\b",
     re.IGNORECASE,
 )
 _FUTURE = re.compile(
@@ -154,7 +245,8 @@ _LOOKUP_START = re.compile(r"^\s*(?:what(?:'s|\s+(?:is|was|were|are)\b)|how\s+mu
 _NOT_A_LOOKUP = re.compile(
     r"\b(?:good|bad|high|higher|highest|low|lower|lowest|strong|stronger|weak|weaker|stable|"
     r"healthy|better|worse|best|worst|enough|trends?|since|between|over\s+the|history|"
-    r"historical|sources?\s+of|breakdown|mix|segments?|split|composition|"
+    r"historical|sources?\s+of(?![^?.]*\b(?:figure|number|value|data)\b)|breakdown|mix|"
+    r"segments?|split|composition|"
     r"debt\s*(?:to|-to-|/)\s*equity)\b",
     re.IGNORECASE,
 )
@@ -192,16 +284,31 @@ class Question:
     lookup: bool = False  # asks for a stored figure, nothing more
     years: int | None = None  # "last 3 years" -> 3, "latest" -> 1; None: not said
     basis: str | None = None  # "standalone" / "consolidated" when the question says so
+    others: tuple[str, ...] = ()  # companies that are not ours, as the question writes them
+    wants_memory: bool = False  # "what do you remember about my preferences?"
+    wants_sources: bool = False  # "where did you get that?"
+    wants_valuation: bool = False  # "is TCS undervalued?"
+    wants_conflicts: bool = False  # "any inconsistencies between your sources?"
+    intent: "Intent" = "general"
 
 
-def symbols_in(text: str) -> tuple[str, ...]:
-    """The stocks a text names, in order of first mention."""
-    found = {
-        symbol: match.start()
-        for symbol, name in _STOCK_NAMES.items()
-        if (match := name.search(text))
-    }
-    return tuple(sorted(found, key=found.__getitem__))
+Intent = Literal[
+    "unsupported_company",
+    "memory_read",
+    "future_unsupported",
+    "source_request",
+    "personalized",
+    "valuation",
+    "explanation",
+    "source_conflict",
+    "fact_lookup",
+    "calculation",
+    "comparison",
+    "trend",
+    "news",
+    "price",
+    "general",
+]
 
 
 def _metrics_in(text: str) -> tuple[str, ...]:
@@ -211,6 +318,25 @@ def _metrics_in(text: str) -> tuple[str, ...]:
         if count:
             found.update(metrics)
     return tuple(name for name in METRICS if name in found)
+
+
+def _qualified(text: str) -> bool:
+    """True when a metric word has a word before it that narrows what it measures."""
+    for pattern, _ in _METRIC_PATTERNS:
+        for match in pattern.finditer(text):
+            before = text[: match.start()].replace("\u2019", "'")
+            words = before.split()
+            word = words[-1].lower().strip(",;:") if words else ""
+            plain = (  # a possessive counts only when it is ours ("Reliance's revenue")
+                not word
+                or word in _PLAIN_BEFORE_METRIC
+                or ends_with_our_name(before)
+                or _OTHER_PERIOD.fullmatch(word) is not None
+                or PERIOD_TEXT.fullmatch(word) is not None
+            )
+            if not plain:
+                return True
+    return False
 
 
 def _periods_in(text: str) -> tuple[str, ...]:
@@ -235,37 +361,81 @@ def _years_in(text: str) -> int | None:
     return 1 if _LATEST.search(text) else None
 
 
-def _symbols_from(question: str, history: list[Turn]) -> tuple[tuple[str, ...], bool, bool]:
-    """(the stocks meant, whether they came from the history, whether any were named)."""
+def _symbols_from(
+    question: str, history: list[Turn], others: tuple[str, ...]
+) -> tuple[tuple[str, ...], bool, bool]:
+    """(the stocks meant, whether they came from the history, whether any were named). A
+    question naming another company never takes our stocks from the conversation."""
     named = symbols_in(question)
     if named:
         return named, False, True
-    for turn in reversed(history):
+    refers_back = not others and _FOLLOW_UP.search(question) is not None
+    for turn in reversed(history if refers_back else []):
         if turn.role == "user" and (earlier := symbols_in(turn.text)):
             return earlier, True, True
     return ALL_SYMBOLS, False, False
 
 
+def _intent(question: Question, text: str) -> Intent:
+    """The first intent that applies, in the order of the table in the module docstring."""
+    if question.others:
+        return "unsupported_company"
+    if question.wants_memory:
+        return "memory_read"
+    if question.wants_forecast:
+        return "future_unsupported"
+    if question.wants_sources:
+        return "source_request"
+    if question.wants_match:
+        return "personalized"
+    if question.wants_valuation:
+        return "valuation"
+    if question.wants_reason:
+        return "explanation"
+    if question.wants_conflicts and not question.lookup:
+        return "source_conflict"
+    if question.lookup:
+        return "fact_lookup"
+    if _CALCULATION.search(text):
+        return "calculation"
+    if _COMPARISON.search(text):
+        return "comparison"
+    if question.wants_growth or (question.years or 0) > 1:
+        return "trend"
+    if question.wants_events:
+        return "news"
+    return "price" if question.wants_price else "general"
+
+
 def understand(question: str, *, history: list[Turn]) -> Question:
-    symbols, from_history, named = _symbols_from(question, history)
+    others = other_companies(question)
+    symbols, from_history, named = _symbols_from(question, history, others)
     metrics = _metrics_in(question)
     wants_growth = _GROWTH.search(question) is not None
     wants_events = _EVENTS.search(question) is not None
     wants_match = _MATCH.search(question) is not None
-    wants_price = _PRICE.search(question) is not None
+    wants_valuation = _VALUATION.search(question) is not None
+    wants_price = wants_valuation or _PRICE.search(question) is not None
     wants_reason = _REASON.search(question) is not None
+    wants_memory = bool(
+        (_MEMORY_ASK.search(question) and _ABOUT_ME.search(question))
+        or _MY_PROFILE.search(question)
+    )
     years = _years_in(question)
     unread = _YEAR_IN_WORDS.sub(" ", PERIOD_TEXT.sub(" ", question))  # the periods we read, gone
     lookup = (
-        bool(metrics)
+        named
+        and bool(metrics)
         and _LOOKUP_START.search(question) is not None
         and _NOT_A_LOOKUP.search(question) is None
         and _OTHER_PERIOD.search(unread) is None
         and (years or 1) == 1
+        and not _qualified(question)
         and not (wants_growth or wants_events or wants_match or wants_price or wants_reason)
+        and not (others or wants_memory)
     )
     basis = _BASIS.search(question)
-    return Question(
+    read = Question(
         symbols=symbols,
         metrics=metrics,
         wants_growth=wants_growth,
@@ -280,4 +450,12 @@ def understand(question: str, *, history: list[Turn]) -> Question:
         lookup=lookup,
         years=years,
         basis=basis.group(1).lower() if basis else None,
+        others=others,
+        wants_memory=wants_memory,
+        wants_sources=(
+            _SOURCES_ASK.search(question) is not None and not metrics and not symbols_in(question)
+        ),
+        wants_valuation=wants_valuation,
+        wants_conflicts=_CONFLICTS.search(question) is not None,
     )
+    return replace(read, intent=_intent(read, question))

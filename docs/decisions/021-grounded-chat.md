@@ -110,6 +110,25 @@ data lacks the answer (the project notes quotes it). Trade-off: preferring one s
 trend may use screener.in's figure for a year where the annual report ranks first; the annual
 report's figure is then disclosed beside it, never dropped silently.
 
+## Second amendment: the owner's pressure test (2026-09-29, evening)
+
+| Seen | Cause | Fix |
+|---|---|---|
+| "What is Infosys's FY2025 revenue?" answered with TCS's revenue | a question naming none of our stocks took TCS from the previous turn, and the lookup stated it | `app/chat/entities.py` finds other companies **before retrieval**: well-known names in any case, and capitalised names where a company stands (possessive + financial word, name + financial word, "net profit of X", comparison lists); longer names containing ours ("HDFC Life", "Reliance Power") are others. Such a question never takes stocks from the conversation and is refused with no retrieval and no LLM call. And a question naming none of our stocks borrows one from the conversation **only when it refers back** ("its", "their", "the company", "and ...", "what about ..."): so an unknown company no list holds ("what is zomato revenue") reaches the model with all three stocks, and the model's "out of scope" stands. A name right after one of ours ("Reliance's Consolidated", "Jio's ARPU") is never taken for another company: refusing our own question is worse than the leak |
+| No route by kind of question | flags only | `understand.py` assigns one **intent** (unsupported company, memory read, future, source request, personalised, valuation, explanation, source conflict, lookup, calculation, comparison, trend, news, price, general); the graph routes on it |
+| "What do you remember about my preferences?" → "not in the data" | nothing read memory back; the model may cite only evidence | a `recall` node reads the profile back by code (ADR 022 amendment) |
+| "Which ... should I research further?" → "not in the data" | not read as a personal question | "should I research/consider/buy", "my (stated) preferences" route to matching; with no profile saved, code says how to give one |
+| The two Reliance revenue figures given without a reason | a figure carried no definition | each figure carries what its source calls it: screener.in's row ("Sales") or the filing's own line, read from the stored quote ("Revenue from Operations"); disclosures name both and say the data does not establish they measure the same thing |
+| "Why did revenue change?" answered with "resilient performance" | any cited passage counted as an explanation | a why answer counts as explained only when a claim gives a cause (because, due to, driven by ...) that a cited passage or event states; the search for a why question adds "what drove the change"; otherwise code adds "The available data confirms the change, but I don't have sufficient source material to establish the specific reasons for it." |
+| "Is TCS undervalued?" and "what would you need?" → "not in the data" | no valuation route | a `valuation` node gives the stored price-to-earnings with its inputs, then what a verdict needs that the data does not hold (other companies' or long-run multiples, forecasts) |
+| "Positive sentiment supports the performance" | no rule | `sentiment_as_evidence`: a claim citing the news sentiment may not say it supports, confirms or is consistent with anything |
+| "Where exactly did you get that?" re-asked the model | history held text only | the history carries each answer's sources; a `sources` node lists the previous answer's own sources |
+| "Reliance's AI revenue" answered with total revenue | the lookup ignored the qualifier | a metric word with a qualifier ("AI revenue", "operating profit") is never a lookup of the total |
+
+Also: "I want to know whether ..." is never stored as a preference (ADR 022); computed changes
+show their calculation and difference; a question about disagreeing sources gets every
+disagreement disclosed by code, or "The stored sources agree (within 1%)".
+
 ## What it does not prove (the known limits)
 
 - **Entailment.** The checker proves the numbers are in the cited evidence, not that the sentence
@@ -118,5 +137,11 @@ report's figure is then disclosed beside it, never dropped silently.
   passage, including one a hostile document planted. The mitigation is the source itself (only
   official BSE filings are ingested) and that the answer shows the passage it cites.
 - **Two cheap concurrent questions** can both pass the cap check; the overshoot is one question each.
+- **Company detection is by list and position**, not understanding: an unknown company written in
+  lower case and not on the list is not caught by code; the model's "out of scope" is then the
+  fallback, and it cannot borrow our stock from the conversation unless the question refers
+  back. A proper name in a company position that is not a company may still be refused.
+- **A cause that a passage states is not proven to be the cause**: the check proves a "because"
+  cites a document, not that the document says exactly that (no entailment).
 - Nova 2 Lite's chat quality is judged on real questions at the end of P12; Nova Pro is the backup
   (ADR 010).

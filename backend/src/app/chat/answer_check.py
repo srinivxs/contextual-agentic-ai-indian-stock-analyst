@@ -32,6 +32,10 @@ Nothing it writes is trusted. This code decides, and an empty list of problems i
                             computed value whose reason is its whole content (one with no
                             number, "does not apply to banks"): figures show THAT something
                             changed, never WHY
+    sentiment_as_evidence   a claim citing the news sentiment that says it supports,
+                            contradicts, is consistent with, confirms, reflects or
+                            indicates something (the owner's second review): sentiment
+                            counts good and bad news; it is not evidence about the results
     conflicting_figures     across the whole answer, two cited items rest on different stored
                             figures for one stock, measure, period and basis (an annual
                             report's FY2025 revenue in one claim, a change computed from
@@ -76,12 +80,19 @@ _URL = re.compile(r"https?://|www\.", re.IGNORECASE)
 _BARE_PERIOD = re.compile(r"(?<![a-z0-9])(?:q[1-4]|[1-4]q|h[12]|9m)(?![a-z0-9])", re.IGNORECASE)
 _YEAR = re.compile(r"(?<![\d,.])(?:199\d|20\d\d)(?![\d%]|[.,]\d)")
 _MONEY_BEFORE = re.compile(r"(?:₹|\$|\busd|\brs\.?|\binr)\s*$", re.IGNORECASE)
-_CAUSE = re.compile(
+CAUSE = re.compile(
     r"\b(?:because|due\s+(?:\w+\s+)?to|driven\s+by|led\s+by|owing\s+to|on\s+account\s+of|"
     r"as\s+a\s+result\s+of|thanks\s+to|attributed\s+to|on\s+the\s+back\s+of|helped\s+by|"
     r"caused\s+by|boosted\s+by|fu?ell?ed\s+by|stems?\s+from|resulting\s+from)\b",
     re.IGNORECASE,
 )
+_RELATION = re.compile(
+    r"\b(?:support\w*|contradict\w*|consistent|inconsistent|confirm\w*|validat\w*|reflect\w*|"
+    r"indicat\w*|suggest\w*|impl(?:y|ies|ied)|shows?\s+that|proves?|in\s+line\s+with|"
+    r"backs?\s+up)\b",
+    re.IGNORECASE,
+)
+SENTIMENT_LABEL = "News sentiment"  # app/chat/evidence.py's label for the rolling sentiment
 _MONEY_AFTER = re.compile(
     r"\s*(?:crores?|cr|lakhs?|lacs?|millions?|mn|billions?|bn|per share)\b", re.IGNORECASE
 )
@@ -200,9 +211,12 @@ def _claim_problems(index: int, claim: Claim, evidence: dict[str, EvidenceItem])
     for metric in _mixed_metrics(cited):
         detail = f"{metric} over time from different sources; cite the growth value"
         problems.append(Problem("mixed_sources", index, detail))
-    if _CAUSE.search(claim.text) and not any(_states_reasons(item) for item in cited):
+    if CAUSE.search(claim.text) and not any(_states_reasons(item) for item in cited):
         detail = "a reason needs a cited filing passage (N) or event (E) that states it"
         problems.append(Problem("cause_without_source", index, detail))
+    if _RELATION.search(claim.text) and any(i.label == SENTIMENT_LABEL for i in cited):
+        detail = "news sentiment is not evidence about the results; report it on its own"
+        problems.append(Problem("sentiment_as_evidence", index, detail))
     if not problems and _figure_missing(claim.text, cited):  # only once nothing else is wrong
         detail = "show at least one figure from the cited facts or values"
         problems.append(Problem("figure_missing", index, detail))
