@@ -337,6 +337,33 @@ describe('the stock in the panel', () => {
     expect(api.requests).toContain('GET /api/v1/stocks/TCS/insights');
   });
 
+  it('switches between stocks at once, with no reload flash, asking each only once', async () => {
+    const api = install({
+      prices: { RELIANCE: demoPrices('RELIANCE'), TCS: demoPrices('TCS') },
+    });
+    render(<ChatView />);
+    await within(await screen.findByRole('complementary', { name: 'Stock context' })).findByRole(
+      'heading',
+      { name: 'Reliance overview' },
+    );
+    // every stock's panel figures are asked for once, up front
+    await waitFor(() => {
+      for (const symbol of ['RELIANCE', 'TCS', 'HDFCBANK']) {
+        expect(api.requests).toContain(`GET /api/v1/stocks/${symbol}/prices`);
+        expect(api.requests).toContain(`GET /api/v1/stocks/${symbol}/insights`);
+      }
+    });
+    const flashes = () =>
+      within(panel()).queryByText('Loading prices…') ?? within(panel()).queryByText('Loading…');
+    for (const name of ['TCS', 'HDFC Bank', 'Reliance', 'TCS']) {
+      await userEvent.click(within(panel()).getByRole('button', { name }));
+      expect(flashes()).toBeNull(); // shown at once: nothing is loaded again
+    }
+    const asked = (path: string) => api.requests.filter((r) => r === `GET ${path}`).length;
+    expect(asked('/api/v1/stocks/TCS/prices')).toBe(1);
+    expect(asked('/api/v1/stocks/TCS/insights')).toBe(1);
+  });
+
   it('follows the latest question of a conversation that is opened', async () => {
     const stored = demoConversation({
       messages: [demoQuestion({ text: 'What does HDFCBANK earn?' }), demoAnswer()],

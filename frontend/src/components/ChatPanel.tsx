@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { Monogram } from '@/components/Monogram';
+import { Monogram, preloadLogos } from '@/components/Monogram';
 import { PriceChart } from '@/components/PriceChart';
 import { STOCKS } from '@/components/StockJump';
 import { historyStillFilling, keyMetrics, shortName } from '@/lib/chatContext';
@@ -25,24 +25,29 @@ import { direction } from '@/lib/series';
 /** What one call to the server gave for one symbol: null while it is still loading. */
 type Fetched<T> = { data: T | null; failed: boolean } | null;
 
-/** Load something for a symbol; the answer of a stock we have moved away from is ignored. */
-function useForStock<T>(symbol: string, load: (symbol: string) => Promise<T>): Fetched<T> {
-  const [result, setResult] = useState<{ symbol: string; data: T | null } | null>(null);
+/**
+ * Load one thing for every stock, once, when the page opens (three stocks, so a few small
+ * requests). Switching between the tabs then shows what is already here: nothing is loaded again
+ * and nothing collapses to "Loading…" and back, which the owner saw as a flash on every switch.
+ */
+function useForEveryStock<T>(load: (symbol: string) => Promise<T>): Record<string, Fetched<T>> {
+  const [results, setResults] = useState<Record<string, Fetched<T>>>({});
   useEffect(() => {
     let cancelled = false;
-    load(symbol).then(
-      (data) => {
-        if (!cancelled) setResult({ symbol, data });
-      },
-      () => {
-        if (!cancelled) setResult({ symbol, data: null });
-      },
-    );
+    const keep = (symbol: string, data: T | null) => {
+      if (!cancelled) setResults((all) => ({ ...all, [symbol]: { data, failed: data === null } }));
+    };
+    for (const { symbol } of STOCKS) {
+      load(symbol).then(
+        (data) => keep(symbol, data),
+        () => keep(symbol, null),
+      );
+    }
     return () => {
       cancelled = true;
     };
-  }, [symbol, load]);
-  return result?.symbol === symbol ? { data: result.data, failed: result.data === null } : null;
+  }, [load]);
+  return results;
 }
 
 const TONE_CLASS = { rise: 'rise', fall: 'fall', flat: 'flat' } as const;
@@ -76,8 +81,7 @@ function SourceChip({ citation }: { citation: Citation }) {
   );
 }
 
-function Overview({ symbol }: { symbol: string }) {
-  const fetched = useForStock<Prices>(symbol, getPrices);
+function Overview({ symbol, fetched }: { symbol: string; fetched: Fetched<Prices> }) {
   const stock = STOCKS.find((s) => s.symbol === symbol);
   const title = `${shortName(symbol)} overview`;
   const prices = fetched?.data;
@@ -177,7 +181,9 @@ export function ChatPanel({
   symbol: string;
   onPick: (symbol: string) => void;
 }) {
-  const insights = useForStock<StockInsights>(symbol, getInsights);
+  const prices = useForEveryStock<Prices>(getPrices);
+  const insights = useForEveryStock<StockInsights>(getInsights);
+  useEffect(preloadLogos, []);
   return (
     <aside className="chat-panel" aria-label="Stock context">
       <div className="chat-stock-tabs" role="group" aria-label="Stock">
@@ -193,8 +199,8 @@ export function ChatPanel({
           </button>
         ))}
       </div>
-      <Overview symbol={symbol} />
-      <KeyMetrics insights={insights} />
+      <Overview symbol={symbol} fetched={prices[symbol] ?? null} />
+      <KeyMetrics insights={insights[symbol] ?? null} />
     </aside>
   );
 }

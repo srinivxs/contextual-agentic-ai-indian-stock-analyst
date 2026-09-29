@@ -11,6 +11,17 @@ const LOGOS: Record<string, string> = {
   HDFCBANK: '/logos/HDFCBANK.png',
 };
 
+/**
+ * Ask the browser for every logo now, so a stock picked later shows its logo at once instead of a
+ * blank circle while the file downloads (seen when switching stocks on the chat page).
+ */
+export function preloadLogos(): void {
+  for (const src of Object.values(LOGOS)) {
+    const image = new Image();
+    image.src = src;
+  }
+}
+
 export function monogramLetters(symbol: string): string {
   return (
     symbol

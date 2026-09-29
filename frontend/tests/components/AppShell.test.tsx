@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { AppShell, initials } from '@/components/AppShell';
 import { DATA_POLL_MS } from '@/components/DataFreshness';
-import { Monogram, monogramLetters, monogramTint } from '@/components/Monogram';
+import { Monogram, monogramLetters, monogramTint, preloadLogos } from '@/components/Monogram';
 import { findStocks, stockHref } from '@/components/StockJump';
 
 import { installFakeApi } from '../helpers/fakeApi';
@@ -210,5 +210,20 @@ describe('how fresh the data is, on every page', () => {
       await screen.findByText("We couldn't start the update. Try again in a moment."),
     ).toBeInTheDocument();
     expect(screen.queryByRole('note', { name: 'Data freshness' })).toBeNull();
+  });
+});
+
+describe('the logos', () => {
+  it('can be asked for up front, so a stock picked later shows its logo at once', () => {
+    const asked: string[] = [];
+    class FakeImage {
+      set src(value: string) {
+        asked.push(value);
+      }
+    }
+    vi.stubGlobal('Image', FakeImage);
+    preloadLogos();
+    vi.unstubAllGlobals();
+    expect(asked).toEqual(['/logos/RELIANCE.png', '/logos/TCS.png', '/logos/HDFCBANK.png']);
   });
 });
