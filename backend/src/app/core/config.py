@@ -121,8 +121,11 @@ class CommonSettings(BaseSettings):
     # How many days back from today to fill in (one file per trading day).
     prices_history_days: int = Field(default=365, ge=30, le=1100)
     # BSE answers 406 to requests a few seconds apart, so a run fetches a few files, slowly.
-    prices_per_run: int = Field(default=12, ge=1, le=50)
-    prices_pause_seconds: float = Field(default=20, ge=0, le=120)
+    prices_per_run: int = Field(default=5, ge=1, le=50)
+    prices_pause_seconds: float = Field(default=30, ge=0, le=120)
+    # After BSE answers "slow down" (406), no run asks it again for this long (the first real run
+    # asked again 0.2 s later and three quick refusals made a trading day look like a holiday).
+    prices_cooldown_minutes: int = Field(default=20, ge=0, le=240)
     # How often the worker queues a run (one per time slot; the next run continues the work).
     prices_run_minutes: int = Field(default=5, ge=1, le=1440)
 

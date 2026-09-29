@@ -10,9 +10,17 @@ def test_prices_are_off_and_paced_gently_by_default() -> None:
     settings = build_settings()
     assert settings.prices_enabled is False
     assert settings.prices_history_days == 365
-    assert settings.prices_per_run == 12
-    assert settings.prices_pause_seconds == 20
+    # gentler after the first real run: BSE refused the 7th file of a quick run
+    assert settings.prices_per_run == 5
+    assert settings.prices_pause_seconds == 30
     assert settings.prices_run_minutes == 5
+    assert settings.prices_cooldown_minutes == 20
+
+
+@pytest.mark.parametrize("minutes", [-1, 241])
+def test_the_cool_down_is_bounded(minutes: int) -> None:
+    with pytest.raises(ValidationError):
+        build_settings(prices_cooldown_minutes=minutes)
 
 
 def test_prices_are_a_deliberate_choice() -> None:

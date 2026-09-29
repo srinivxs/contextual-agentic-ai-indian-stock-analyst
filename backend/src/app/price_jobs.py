@@ -13,11 +13,15 @@ has no file and answers 404 or 406 too. From outside, "too fast" and "no file" l
   * ONE REFUSAL ENDS THE RUN. The first "slow down" means BSE is asking us to stop: the day gets
     a strike (``price_days.attempts``) and the run finishes. It is not an error and nothing is
     retried at once; the next run, minutes later, continues.
-  * THREE STRIKES = A HOLIDAY. A day that has answered "slow down" three times is marked
-    ``no_file`` and never asked for again. (A day that was only rate-limited three times is lost
-    the same way; the trade is accepted, a missing day in a price history is harmless.)
-  * Days already fetched are never asked for again, so a year fills in over an hour or so and
-    then the timer has nothing to do.
+  * A COOL-DOWN. After any refusal, no run asks BSE for ``PRICES_COOLDOWN_MINUTES`` (20). The
+    first real run showed why: a new time slot started a run 0.2 s after a 406, which asked
+    again at once, and three quick refusals turned a normal Friday into a "holiday".
+  * THREE STRIKES = A HOLIDAY. A day that has answered "slow down" three times, each after a
+    full cool-down, is marked ``no_file`` and never asked for again. (A day that was only
+    rate-limited three times that far apart is lost the same way; the trade is accepted, a
+    missing day in a price history is harmless.)
+  * Days already fetched are never asked for again, so a year fills in overnight (about 8 to
+    12 hours at 5 files a run) and then the timer has one file a day to fetch.
 
 WHY IS A TIMER INSIDE THE WORKER SAFE WITH SEVERAL WORKERS? The same way as the feed poll
 (app/feed_jobs.py): the job's dedupe key names the time slot, ``sync_prices:2026-09-29T10:05:00Z``,
@@ -95,6 +99,7 @@ async def sync_prices(
     history_days: int,
     per_run: int,
     pause_seconds: float,
+    cooldown_minutes: int = 20,
     max_seconds: float | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     clock: Callable[[], float] = time.monotonic,
@@ -108,6 +113,14 @@ async def sync_prices(
     async with session_factory() as db:
         codes = {str(code) for (code,) in await db.execute(text("SELECT bse_code FROM stocks"))}
         days = await store.days_to_fetch(db, today=today, history_days=history_days)
+        cooling = await store.cooling_down(db, minutes=cooldown_minutes)
+    if cooling:  # BSE said "slow down" not long ago: ask nobody until the cool-down has passed
+        async with session_factory() as db:
+            if await still_mine(db, job):
+                await complete(db, job)
+                await db.commit()
+        logger.info("prices_cooling_down", extra={"left": len(days)})
+        return
 
     fetched_days = stored_rows = 0
     stopped = False

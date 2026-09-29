@@ -106,6 +106,23 @@ async def mark_day(db: AsyncSession, day: date, status: Literal["fetched", "miss
     return str((await db.execute(_DAY_STATUS, {"day": day})).scalar_one())
 
 
+_COOLING = text(
+    """
+    SELECT EXISTS (
+        SELECT 1 FROM price_days
+        WHERE status IN ('missing', 'no_file')
+          AND updated_at > now() - make_interval(mins => :minutes)
+    )
+    """
+)
+
+
+async def cooling_down(db: AsyncSession, *, minutes: int) -> bool:
+    """True while BSE's last "slow down" (a strike on any day) is more recent than ``minutes``:
+    no request until it has passed, so strikes only count when they are far apart."""
+    return bool((await db.execute(_COOLING, {"minutes": minutes})).scalar_one())
+
+
 async def days_to_fetch(db: AsyncSession, *, today: date, history_days: int) -> list[date]:
     """Weekdays from ``history_days`` ago to YESTERDAY that are not fetched and not no_file,
     newest first. Today is left out: BSE publishes a day's file only after the close, and a

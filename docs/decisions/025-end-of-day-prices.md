@@ -42,12 +42,20 @@ downloaded after a 30-second pause: a rate limit, which we respect.
 6. **Cited like a filing:** each price cites "BSE daily price file · <date>" and links to that
    day's file on bseindia.com.
 
+**First real run (2026-09-29).** Six files 20 seconds apart downloaded; BSE refused the seventh.
+A new time slot then started a run 0.2 seconds later, which asked for the same day again, and a
+third run five minutes after that made three strikes: a normal Friday was recorded as a holiday
+(the record was corrected by hand). Fix: after any refusal, **no run asks BSE for 20 minutes**
+(`PRICES_COOLDOWN_MINUTES`), so strikes only count when far apart; and each run is gentler, 5
+files 30 seconds apart. The year's first fill therefore takes about 8 to 12 hours (overnight
+locally), then one file a day.
+
 ## Consequences
 
 - The Match page can judge momentum, value and a horizon; the chat can answer price questions
   from stored, cited figures.
-- Local and AWS runs need the backfill once per fresh database (about two hours), or a restored
-  snapshot (a GL decision).
+- Local and AWS runs need the backfill once per fresh database (about 8 to 12 hours at BSE's
+  pace), or a restored snapshot (a GL decision).
 
 ## Limits and risks
 

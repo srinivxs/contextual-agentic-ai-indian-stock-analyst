@@ -103,6 +103,7 @@ def make_context(
         "prices_history_days": HISTORY,
         "prices_per_run": 12,
         "prices_pause_seconds": 20.0,
+        "prices_cooldown_minutes": 20,
         "prices_sleep": pauses,
         "today": lambda: TODAY,
         "lease_seconds": 300,
@@ -223,12 +224,53 @@ async def test_a_404_is_treated_like_a_406(
     assert await rows(admin_engine, PRICE_DAYS) == [(date(2026, 9, 28), "missing", 1)]
 
 
+async def age_refusals(engine: AsyncEngine, minutes: int = 21) -> None:
+    """Let the cool-down pass: the refusals happened ``minutes`` ago."""
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(
+                "UPDATE price_days SET updated_at = now() - make_interval(mins => :m) "
+                "WHERE status <> 'fetched'"
+            ),
+            {"m": minutes},
+        )
+
+
+async def test_after_a_slow_down_no_run_asks_bse_until_the_cool_down_has_passed(
+    context: WorkerContext,
+    bse: FakeBse,
+    admin_engine: AsyncEngine,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Found on the first real run: a new time slot started a run 0.2 s after BSE's 406, which
+    asked again at once, and three quick refusals turned a trading day into a "holiday"."""
+    bse.status[date(2026, 9, 25)] = 406
+    await run_job(context, admin_engine, "sync_prices:first")
+    assert bse.asked == ALL_DAYS[:2]
+
+    bse.asked.clear()
+    with caplog.at_level(logging.INFO, logger="app.price_jobs"):
+        assert await run_job(context, admin_engine, "sync_prices:too-soon") == "completed"
+    assert bse.asked == []  # nobody was asked
+    assert any(r.getMessage() == "prices_cooling_down" for r in caplog.records)
+    assert await rows(admin_engine, PRICE_DAYS) == [
+        (date(2026, 9, 28), "fetched", 0),
+        (date(2026, 9, 25), "missing", 1),  # still one strike, not two
+    ]
+
+    await age_refusals(admin_engine, minutes=21)
+    bse.status.clear()
+    await run_job(context, admin_engine, "sync_prices:later")
+    assert bse.asked[0] == date(2026, 9, 25)  # asked again only after the cool-down
+
+
 async def test_three_strikes_make_a_holiday_and_the_run_moves_past_it(
     context: WorkerContext, bse: FakeBse, admin_engine: AsyncEngine
 ) -> None:
     bse.status[date(2026, 9, 28)] = 406  # the newest day never has a file
     for n in range(3):
         await run_job(context, admin_engine, f"sync_prices:{n}")
+        await age_refusals(admin_engine)  # each strike comes after a full cool-down
     assert bse.asked == [date(2026, 9, 28)] * 3
     assert await rows(admin_engine, PRICE_DAYS) == [(date(2026, 9, 28), "no_file", 3)]
 
@@ -337,6 +379,36 @@ async def test_a_run_that_lost_its_lease_writes_nothing(
     )
     assert await rows(admin_engine, "SELECT count(*) FROM prices") == [(0,)]
     assert await rows(admin_engine, PRICE_DAYS) == []
+
+
+async def test_a_cooling_run_that_lost_its_lease_leaves_the_job_alone(
+    context: WorkerContext, session_factory: Factory, bse: FakeBse, admin_engine: AsyncEngine
+) -> None:
+    async with admin_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO price_days (trade_date, status, attempts) "
+                "VALUES (DATE '2026-09-25', 'missing', 1)"
+            )
+        )
+        await connection.execute(
+            text("INSERT INTO jobs (kind, payload, dedupe_key) VALUES ('sync_prices', '{}', 'k')")
+        )
+    stale = ClaimedJob(id=1, kind="sync_prices", payload={}, attempts=99, max_attempts=3)
+    await sync_prices(
+        session_factory,
+        context.prices_http,
+        stale,
+        today=TODAY,
+        history_days=HISTORY,
+        per_run=12,
+        pause_seconds=0,
+        cooldown_minutes=20,
+    )
+    assert bse.asked == []
+    assert await rows(admin_engine, "SELECT status FROM jobs WHERE dedupe_key = 'k'") == [
+        ("pending",)
+    ]
 
 
 async def test_a_run_with_nothing_left_that_lost_its_lease_completes_nothing(

@@ -95,8 +95,9 @@ class WorkerContext:
     # pause and clock are injectable so tests never wait.
     prices_http: httpx.AsyncClient | None = None
     prices_history_days: int = 365
-    prices_per_run: int = 12
-    prices_pause_seconds: float = 20.0
+    prices_per_run: int = 5
+    prices_pause_seconds: float = 30.0
+    prices_cooldown_minutes: int = 20
     prices_sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
     prices_clock: Callable[[], float] = time.monotonic
 
@@ -155,6 +156,7 @@ async def handle(context: WorkerContext, job: ClaimedJob) -> None:
                 history_days=context.prices_history_days,
                 per_run=context.prices_per_run,
                 pause_seconds=context.prices_pause_seconds,
+                cooldown_minutes=context.prices_cooldown_minutes,
                 max_seconds=context.lease_seconds * LEASE_SHARE,
                 sleep=context.prices_sleep,
                 clock=context.prices_clock,
@@ -382,6 +384,7 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
         prices_history_days=settings.prices_history_days,
         prices_per_run=settings.prices_per_run,
         prices_pause_seconds=settings.prices_pause_seconds,
+        prices_cooldown_minutes=settings.prices_cooldown_minutes,
     )
     stop = asyncio.Event()
     for signal_number in (signal.SIGINT, signal.SIGTERM):
