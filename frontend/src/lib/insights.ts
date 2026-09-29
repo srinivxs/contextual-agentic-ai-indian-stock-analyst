@@ -310,7 +310,9 @@ export function derivedValueLabel(derived: DerivedValue): string {
   }
 }
 
-const capitalise = (words: string): string => words.charAt(0).toUpperCase() + words.slice(1);
+/** "positive" -> "Positive". */
+export const capitalise = (words: string): string =>
+  words.charAt(0).toUpperCase() + words.slice(1);
 
 /** "Positive", "Mixed", "Negative", or "Not enough events". */
 export function sentimentLabel(sentiment: Sentiment): string {

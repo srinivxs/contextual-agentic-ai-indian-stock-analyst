@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react';
 
 import { AppShell } from '@/components/AppShell';
 import { Monogram } from '@/components/Monogram';
-import { SearchBox } from '@/components/SearchBox';
 import {
   DerivedValues,
   KeyFacts,
@@ -210,12 +209,6 @@ export function StockView() {
           <DerivedValues derived={insights.derived} />
           <RecentSentiment sentiment={insights.sentiment} />
           <RecentEvents events={insights.events} />
-          <section aria-labelledby="search-filings" className="stock-section">
-            <h2 id="search-filings">Search the filings</h2>
-            <div className="panel">
-              <SearchBox symbol={symbol} stockName={insights.name} />
-            </div>
-          </section>
         </>
       )}
     </AppShell>

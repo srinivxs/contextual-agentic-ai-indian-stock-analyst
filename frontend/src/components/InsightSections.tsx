@@ -8,6 +8,7 @@
 import { ExternalIcon } from '@/components/Icons';
 import {
   basisNote,
+  capitalise,
   citationLink,
   derivedValueLabel,
   eventDateLabel,
@@ -184,17 +185,43 @@ export function RecentEvents({ events }: { events: StockEvent[] }) {
         <p className="muted">No events extracted yet.</p>
       ) : (
         <ol className="events panel">
-          {events.map((event, index) => (
-            <li key={`${index}-${event.event_date}`} className="event">
-              <p className="event-head">
-                <time dateTime={event.event_date}>{eventDateLabel(event.event_date)}</time>
-                <span className="event-type">{eventTypeLabel(event.event_type)}</span>
-                <span className="muted">{`${event.sentiment} · ${event.impact} impact`}</span>
-              </p>
-              <p className="event-summary">{event.summary}</p>
-              <CitationChip citation={event.citation} icon />
-            </li>
-          ))}
+          {events.map((event, index) => {
+            const date = eventDateLabel(event.event_date); // "22 Sep 2026"
+            const [day, ...monthYear] = date.split(' ');
+            // A day with several events shows its date once, on the first of them.
+            const newDay = index === 0 || events[index - 1]?.event_date !== event.event_date;
+            return (
+              <li
+                key={`${index}-${event.event_date}`}
+                className={newDay ? 'event' : 'event same-day'}
+              >
+                <div className="event-date" aria-hidden="true">
+                  {newDay && (
+                    <>
+                      <span className="event-day">{day}</span>
+                      <span className="event-month">{monthYear.join(' ')}</span>
+                    </>
+                  )}
+                </div>
+                <div className="event-body">
+                  <p className="event-summary">
+                    <span>{event.summary}</span>
+                    <CitationChip citation={event.citation} icon />
+                  </p>
+                  <p className="event-meta">
+                    <time dateTime={event.event_date} className="visually-hidden">
+                      {date}
+                    </time>
+                    <span className="event-type">{eventTypeLabel(event.event_type)}</span>
+                    <span className={`event-tone ${event.sentiment}`}>
+                      {capitalise(event.sentiment)}
+                    </span>
+                    <span className="event-impact">{`${capitalise(event.impact)} impact`}</span>
+                  </p>
+                </div>
+              </li>
+            );
+          })}
         </ol>
       )}
     </section>

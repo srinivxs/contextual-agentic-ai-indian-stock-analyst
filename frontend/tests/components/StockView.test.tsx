@@ -73,13 +73,13 @@ describe('the stock page', () => {
     );
   });
 
-  it('offers a search of this stock’s filings', async () => {
+  it('has no search box: searching the filings lives on the Documents page', async () => {
     installFakeApi({ insights: { DEMOA: demoInsights() } });
     render(<StockView />);
 
-    expect(
-      await screen.findByRole('searchbox', { name: 'Search DemoCo Alpha Limited’s filings' }),
-    ).toBeInTheDocument();
+    await screen.findByRole('heading', { level: 1, name: 'DemoCo Alpha Limited' });
+    expect(screen.queryByRole('searchbox', { name: /filings/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Search the filings' })).not.toBeInTheDocument();
   });
 
   it('shows a loading message until the insights arrive', async () => {
@@ -346,13 +346,45 @@ describe('sentiment and events', () => {
     const events = section('Recent events');
     expect(within(events).getByText('01 Jul 2026')).toBeInTheDocument();
     expect(within(events).getByText('Earnings results')).toBeInTheDocument();
-    expect(within(events).getByText('positive · medium impact')).toBeInTheDocument();
+    expect(within(events).getByText('Positive')).toHaveClass('event-tone', 'positive');
+    expect(within(events).getByText('Medium impact')).toBeInTheDocument();
     expect(
       within(events).getByText('DemoCo Alpha reported higher quarterly revenue.'),
     ).toBeInTheDocument();
     expect(
       within(events).getByRole('link', { name: 'Announcement · Results · p.2' }),
     ).toHaveAttribute('target', '_blank');
+  });
+
+  it('shows each day once, on the left, however many events it had', async () => {
+    const event = (date: string, summary: string, sentiment = 'neutral') => ({
+      event_type: 'other',
+      sentiment,
+      impact: 'low',
+      event_date: date,
+      summary,
+      citation: demoCitation({ label: `Announcement · ${summary}` }),
+    });
+    installFakeApi({
+      insights: {
+        DEMOA: demoInsights({
+          events: [
+            event('2026-09-25', 'First.', 'negative'),
+            event('2026-09-22', 'Second.'),
+            event('2026-09-22', 'Third.'),
+          ],
+        }),
+      },
+    });
+    render(<StockView />);
+
+    await screen.findByRole('heading', { level: 1, name: 'DemoCo Alpha Limited' });
+    const events = section('Recent events');
+    const days = [...events.querySelectorAll('.event-day')].map((day) => day.textContent);
+    expect(days).toEqual(['25', '22']); // the 22nd once, for both of its events
+    expect(within(events).getAllByText('22 Sep 2026')).toHaveLength(2); // still read out for each
+    expect(within(events).getByText('Negative')).toHaveClass('event-tone', 'negative');
+    expect(within(events).getAllByRole('listitem')).toHaveLength(3);
   });
 });
 
