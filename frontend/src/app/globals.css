@@ -3061,3 +3061,75 @@ a.chat-source-chip:hover {
 .chat-points li::marker {
   color: var(--muted);
 }
+
+/* The top bar's left side: the stock search, then "Update data" (the owner, 2026-09-29). */
+.topbar-find {
+  display: flex;
+  flex: 1;
+  gap: 0.6rem;
+  align-items: center;
+  max-width: 46rem;
+  min-width: 0;
+}
+
+.update-data {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Under the top bar on every page: the date the data is updated to. A disclaimer, not an alert. */
+.data-note,
+.data-message {
+  max-width: 76rem;
+  margin: 0 1.75rem 0.35rem;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.data-message {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent-strong);
+}
+
+@media (max-width: 40rem) {
+  .data-note,
+  .data-message {
+    margin: 0 1rem 0.35rem;
+  }
+}
+
+/* A conversation in the list, with its delete button. */
+.chat-item-row {
+  display: flex;
+  gap: 0.25rem;
+  align-items: flex-start;
+}
+
+.chat-item-row .chat-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-item-delete {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-item-delete:hover,
+.chat-item-delete:focus-visible {
+  background: var(--surface-2);
+  color: var(--fall);
+}

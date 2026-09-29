@@ -37,8 +37,14 @@ describe('the stock page', () => {
     const api = installFakeApi({ insights: { DEMOA: demoInsights() } });
     render(<StockView />);
 
+    // The first test of the file loads the page cold: under the full coverage run it can take
+    // longer than the default second.
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'DemoCo Alpha Limited' }),
+      await screen.findByRole(
+        'heading',
+        { level: 1, name: 'DemoCo Alpha Limited' },
+        { timeout: 5000 },
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText('DEMOA')).toBeInTheDocument();
     expect(

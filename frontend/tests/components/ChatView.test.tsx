@@ -517,6 +517,7 @@ describe('conversations', () => {
     await within(list).findByRole('button', { name: 'Newer question' });
     const titles = within(list)
       .getAllByRole('button')
+      .filter((b) => !b.getAttribute('aria-label')?.startsWith('Delete'))
       .map((b) => b.textContent);
     expect(titles).toEqual(['New chat', 'Newer question', 'Older question']);
   });
@@ -697,5 +698,80 @@ describe('safety and sessions', () => {
 
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
     expect(api.requests).toContain('POST /api/v1/auth/logout');
+  });
+});
+
+describe('deleting a conversation', () => {
+  const TITLE = demoConversation().title ?? '';
+  const deleteButton = (menu: HTMLElement) =>
+    within(menu).getByRole('button', { name: `Delete conversation: ${TITLE}` });
+
+  it('deletes it after you confirm, and it leaves the list', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const api = install({ conversations: [demoConversation()] });
+    render(<ChatView />);
+
+    await userEvent.click(await within(await openMenu()).findByRole('button', { name: TITLE }));
+    await screen.findByText(/reported revenue of/);
+    await userEvent.click(deleteButton(await openMenu()));
+
+    expect(confirm).toHaveBeenCalledWith(`Delete "${TITLE}"? This cannot be undone.`);
+    expect(api.requests).toContain(`DELETE /api/v1/chat/conversations/${demoId(1)}`);
+    // the open conversation was the deleted one: the page starts a new chat
+    await waitFor(() => expect(screen.queryByText(/reported revenue of/)).toBeNull());
+    const menu = await openMenu();
+    expect(within(menu).queryByRole('button', { name: TITLE })).toBeNull();
+    expect(within(menu).getByText('No conversations yet.')).toBeInTheDocument();
+    expect(api.conversations.size).toBe(0);
+    confirm.mockRestore();
+  });
+
+  it('keeps it when you cancel', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const api = install({ conversations: [demoConversation()] });
+    render(<ChatView />);
+
+    const menu = await openMenu();
+    await userEvent.click(
+      await within(menu).findByRole('button', { name: `Delete conversation: ${TITLE}` }),
+    );
+
+    expect(api.requests.some((r) => r.startsWith('DELETE'))).toBe(false);
+    expect(within(menu).getByRole('button', { name: TITLE })).toBeInTheDocument();
+    confirm.mockRestore();
+  });
+
+  it('says so when it could not be deleted', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const api = install({ conversations: [demoConversation()] });
+    api.failWith(`DELETE /api/v1/chat/conversations/${demoId(1)}`, 500);
+    render(<ChatView />);
+
+    const menu = await openMenu();
+    await userEvent.click(
+      await within(menu).findByRole('button', { name: `Delete conversation: ${TITLE}` }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "We couldn't delete the conversation. Try again in a moment.",
+    );
+    expect(api.conversations.size).toBe(1);
+    confirm.mockRestore();
+  });
+
+  it('removes one that is already gone from the list', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const api = install({ conversations: [demoConversation()] });
+    api.failWith(`DELETE /api/v1/chat/conversations/${demoId(1)}`, 404);
+    render(<ChatView />);
+
+    const menu = await openMenu();
+    await userEvent.click(
+      await within(menu).findByRole('button', { name: `Delete conversation: ${TITLE}` }),
+    );
+
+    await waitFor(() => expect(within(menu).queryByRole('button', { name: TITLE })).toBeNull());
+    expect(screen.queryByRole('alert')).toBeNull();
+    confirm.mockRestore();
   });
 });

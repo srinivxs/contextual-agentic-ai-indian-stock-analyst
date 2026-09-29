@@ -687,3 +687,53 @@ async def test_the_choices_of_a_question_asked_back_come_with_the_live_reply_onl
     ]
     assert posted["question"]["choices"] == []
     assert [m["choices"] for m in listed["messages"]] == [[], []]  # never stored
+
+
+# --- deleting a conversation (the owner, 2026-09-29) ----------------------------------------------
+
+
+async def test_you_can_delete_your_conversation_and_its_messages_go_with_it(
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    _, headers = await sign_in(make_user, session_factory)
+    async with chat_app(db_config, FakeChatEngine()) as client:
+        posted = (await ask(client, headers)).json()
+        conversation = f"{CONVERSATIONS}/{posted['conversation_id']}"
+        deleted = await client.delete(conversation, headers=headers)
+        read = await client.get(conversation, headers=headers)
+        listed = (await client.get(CONVERSATIONS, headers=headers)).json()
+
+    assert (deleted.status_code, deleted.content) == (204, b"")
+    assert read.status_code == 404
+    assert listed["items"] == []
+    assert await counts(admin_engine) == (0, 0)
+
+
+async def test_someone_else_s_or_a_missing_conversation_cannot_be_deleted(
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    _, owner = await sign_in(make_user, session_factory)
+    other_id = await make_user(sub="someone-else", email="other@example.test")
+    other = {"Cookie": f"session={await open_session(session_factory, other_id)}", **ORIGIN}
+    async with chat_app(db_config, FakeChatEngine()) as client:
+        posted = (await ask(client, owner)).json()
+        theirs = await client.delete(f"{CONVERSATIONS}/{posted['conversation_id']}", headers=other)
+        missing = await client.delete(f"{CONVERSATIONS}/{uuid4()}", headers=owner)
+
+    assert (theirs.status_code, missing.status_code) == (404, 404)
+    assert theirs.json()["error"]["code"] == "not_found"
+    assert await counts(admin_engine) == (1, 2)  # nothing was deleted
+
+
+async def test_deleting_needs_the_same_origin_and_a_session(
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    _, headers = await sign_in(make_user, session_factory)
+    async with chat_app(db_config, FakeChatEngine()) as client:
+        posted = (await ask(client, headers)).json()
+        target = f"{CONVERSATIONS}/{posted['conversation_id']}"
+        foreign = await client.delete(target, headers={**headers, "Origin": "https://evil.example"})
+        anonymous = await client.delete(target, headers=ORIGIN)
+
+    assert (foreign.status_code, anonymous.status_code) == (403, 401)
+    assert await counts(admin_engine) == (1, 2)

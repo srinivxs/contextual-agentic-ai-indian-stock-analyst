@@ -1,10 +1,13 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AppShell, initials } from '@/components/AppShell';
+import { DATA_POLL_MS } from '@/components/DataFreshness';
 import { Monogram, monogramLetters, monogramTint } from '@/components/Monogram';
 import { findStocks, stockHref } from '@/components/StockJump';
+
+import { installFakeApi } from '../helpers/fakeApi';
 
 describe('the app shell', () => {
   it('lists the sections and marks the current one', () => {
@@ -129,5 +132,83 @@ describe('the stock monogram', () => {
     expect(logo).toHaveAttribute('src', src);
     expect(logo).toHaveAttribute('alt', ''); // decorative: the name is always written next to it
     expect(mark).not.toHaveTextContent(/\w/);
+  });
+});
+
+describe('how fresh the data is, on every page', () => {
+  const shell = () =>
+    render(
+      <AppShell email="reader@example.test" onSignOut={() => {}}>
+        <p>content</p>
+      </AppShell>,
+    );
+  const note = () => screen.findByRole('note', { name: 'Data freshness' });
+
+  it('says the date the data is updated to, source by source, and that it is not live', async () => {
+    installFakeApi({
+      dataStatus: {
+        filings_checked_at: '2026-09-29T09:30:00+00:00',
+        prices_to: '2026-09-28',
+        rbi_to: '2026-09-29T06:00:00+00:00',
+      },
+    });
+    shell();
+    expect(await note()).toHaveTextContent(
+      'Data updated to 29 Sep 2026: filings checked 29 Sep 2026, share prices to the 28 Sep ' +
+        '2026 close, RBI releases to 29 Sep 2026. Not live data.',
+    );
+  });
+
+  it('puts Update data right of the stock search and left of the light and dark switch', async () => {
+    installFakeApi();
+    shell();
+    const search = screen.getByRole('search');
+    const update = await screen.findByRole('button', { name: 'Update data' });
+    const theme = screen.getByRole('switch', { name: 'Dark mode' });
+    expect(search.compareDocumentPosition(update) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(update.compareDocumentPosition(theme) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('updates filings, prices and RBI releases in one click, and says so', async () => {
+    const api = installFakeApi();
+    shell();
+    await userEvent.click(await screen.findByRole('button', { name: 'Update data' }));
+    expect(await screen.findByText(/New data appears within a few minutes/)).toHaveTextContent(
+      'Updating filings, share prices and RBI releases. New data appears within a few minutes.',
+    );
+    expect(api.requests).toContain('POST /api/v1/data/refresh');
+    expect(await note()).toHaveTextContent(/^Updating…/);
+  });
+
+  it('keeps asking while an update runs, then stops', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = installFakeApi({ dataStatus: { updating: true } });
+    shell();
+    expect(await note()).toHaveTextContent(/^Updating…/);
+
+    api.setDataStatus({ updating: false, prices_to: '2026-09-29' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DATA_POLL_MS);
+    });
+    await vi.waitFor(() => expect(screen.getByRole('note')).toHaveTextContent(/^Data updated/));
+
+    const settled = api.requests.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DATA_POLL_MS * 3);
+    });
+    expect(api.requests.length).toBe(settled);
+    vi.useRealTimers();
+  });
+
+  it('says so when an update could not be started, and shows nothing it could not read', async () => {
+    const api = installFakeApi();
+    api.failWith('GET /api/v1/data/status', 500);
+    api.failWith('POST /api/v1/data/refresh', 500);
+    shell();
+    await userEvent.click(await screen.findByRole('button', { name: 'Update data' }));
+    expect(
+      await screen.findByText("We couldn't start the update. Try again in a moment."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('note', { name: 'Data freshness' })).toBeNull();
   });
 });

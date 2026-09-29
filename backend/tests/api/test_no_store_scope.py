@@ -23,6 +23,8 @@ from app.api.middleware import is_no_store_path
         "/api/v1/stocks/TCS/follow",  # P5
         "/api/v1/stocks/TCS/documents",  # P9: under /stocks/ already
         "/api/v1/documents/1",  # P9: signed-in only, and its status changes as it is ingested
+        "/api/v1/data/status",  # signed-in only, and it changes while an update runs
+        "/api/v1/data/refresh",
     ],
 )
 def test_authentication_paths_are_no_store(path: str) -> None:

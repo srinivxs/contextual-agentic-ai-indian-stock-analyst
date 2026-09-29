@@ -98,9 +98,11 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
-      # The same switch as the worker's: with it on, a follow or the "Check for new filings" button
-      # queues a check; with it off, the api queues nothing the worker could not run (ADR 018).
+      # The same switches as the worker's: a follow or the "Update data" button queues only what the
+      # worker can run (filings: ADR 018; prices: ADR 025; the RBI feed's mode, for the page).
       FILINGS_DISCOVERY: ${FILINGS_DISCOVERY:-false}
+      PRICES_ENABLED: ${PRICES_ENABLED:-false}
+      FEED_MODE: ${FEED_MODE:-fixture}
       # Search turns each question into a fingerprint on Bedrock (P10b): the same switch and the same
       # temporary pass as the worker (see there). Empty by default.
       EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}

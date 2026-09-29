@@ -99,7 +99,29 @@ forbidden.
 - **Cost:** if screener.in blocks us or its layout changes, no new documents arrive until the parser
   is fixed. Already-ingested documents are unaffected.
 
+## Amendment (2026-09-30): one "Update data" button for everything
+
+The owner asked for one click that brings in every kind of data, and for the date the data is
+updated to on every page. The per-stock **Check for new filings** button and its endpoint
+(`/api/v1/stocks/{symbol}/filings/check`) are removed. In their place:
+
+- **Update data**, in the top bar between the stock search and the light/dark switch:
+  `POST /api/v1/data/refresh` queues, through the timers' own functions and within their limits,
+  a filings check for every stock not checked within the hour (this rule is unchanged, and the
+  same screener.in read refreshes the fundamentals table), a share-price run when a day is
+  missing (ADR 025, BSE's cool-down still applies), and an RBI feed poll at most once per
+  15-minute slot (ADR 024). A source whose switch is off is never queued, so the api now reads
+  `PRICES_ENABLED` and `FEED_MODE` as well as `FILINGS_DISCOVERY` (Compose passes them; the AWS
+  api task needs them at GL). New filings are then fingerprinted and read by the worker's timers.
+- **The data note** under the top bar on every page (`GET /api/v1/data/status`): "Data updated
+  to 29 Sep 2026: filings checked 29 Sep 2026, share prices to the 28 Sep 2026 close, RBI releases
+  to 29 Sep 2026. Not live data.", with "Updating…" while any update job waits or runs.
+
+A follow still checks that stock at once, within the same hour limit.
+
 ## Amendment (P9d, 2026-09-23): a follow and a button check a stock at once
+
+(Superseded in part by the amendment above: the button is now "Update data".)
 
 - **Why:** the challenge names two triggers for ingestion, "a scheduled refresh and a manual
   follow" ("User follows a ticker; the app fetches ..."). The daily timer was the only one.

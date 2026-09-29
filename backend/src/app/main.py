@@ -15,9 +15,9 @@ from app import __version__
 from app.api import (
     auth,
     chat,
+    data,
     documents,
     feed,
-    filing_checks,
     health,
     insights,
     match,
@@ -99,7 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth.router)
     app.include_router(stocks.router)
     app.include_router(documents.router)
-    app.include_router(filing_checks.router)
+    app.include_router(data.router)
     app.include_router(search.router)
     app.include_router(insights.router)
     app.include_router(series.router)

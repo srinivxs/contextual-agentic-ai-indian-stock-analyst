@@ -60,6 +60,9 @@ _ADD_MESSAGE = text(
 )
 
 _TOUCH = text("UPDATE conversations SET updated_at = now() WHERE id = :id")
+# Only the owner's: someone else's conversation matches no row, like one that does not exist.
+# Its messages go with it (ON DELETE CASCADE, migration 0008).
+_DELETE = text("DELETE FROM conversations WHERE id = :id AND user_id = :user_id RETURNING id")
 
 _TOKENS = text(
     "SELECT COALESCE(sum(input_tokens), 0) AS input_tokens, "
@@ -95,6 +98,12 @@ def conversation_title(question: str) -> str:
 async def create_conversation(db: AsyncSession, user_id: UUID, title: str) -> UUID:
     found: UUID = (await db.execute(_CREATE, {"user_id": user_id, "title": title})).scalar_one()
     return found
+
+
+async def delete_conversation(db: AsyncSession, user_id: UUID, conversation_id: UUID) -> bool:
+    """Delete the user's conversation and its messages; False when there is none of theirs."""
+    params = {"id": conversation_id, "user_id": user_id}
+    return (await db.execute(_DELETE, params)).one_or_none() is not None
 
 
 async def owns_conversation(db: AsyncSession, user_id: UUID, conversation_id: UUID) -> bool:

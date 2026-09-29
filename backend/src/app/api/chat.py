@@ -5,6 +5,8 @@
                                                  are stored
     GET  /api/v1/chat/conversations              your conversations, most recent first (20)
     GET  /api/v1/chat/conversations/{id}         one of them, with its messages oldest first
+    DELETE /api/v1/chat/conversations/{id}       delete it and its messages (204; 404 for one that
+                                                 is not yours or does not exist)
 
 Asking, the checks run in this order, each before anything costs money: Origin, session, the body
 (422), the switch (409 without an engine), the spending cap (503 once the stored tokens reach
@@ -38,6 +40,7 @@ from app.chat.store import (
     chat_spent_usd,
     conversation_title,
     create_conversation,
+    delete_conversation,
     get_conversation,
     history,
     list_conversations,
@@ -204,6 +207,22 @@ async def conversations(
     async with request.app.state.session_factory() as db:
         views = await list_conversations(db, user.id)
     return ConversationsOut(items=[_summary_out(view) for view in views])
+
+
+@router.delete(
+    "/chat/conversations/{conversation_id}",
+    status_code=204,
+    summary="Delete one of your conversations and its messages",
+    dependencies=[Depends(require_same_origin)],
+)
+async def remove_conversation(
+    conversation_id: UUID, request: Request, user: Annotated[CurrentUser, Depends(current_user)]
+) -> None:
+    async with request.app.state.session_factory() as db:
+        deleted = await delete_conversation(db, user.id, conversation_id)
+        await db.commit()
+    if not deleted:
+        raise _no_such_conversation()
 
 
 @router.get("/chat/conversations/{conversation_id}", summary="One conversation, oldest first")

@@ -18,14 +18,6 @@ import {
   type DocumentStatus,
   type StockDocument,
 } from '@/lib/documents';
-import {
-  availableLabel,
-  canCheck,
-  getFilingCheck,
-  lastCheckedLabel,
-  startFilingCheck,
-  type FilingCheck,
-} from '@/lib/filingChecks';
 import { feedDateLabel, getFeed, type Feed, type FeedItem } from '@/lib/feed';
 import { stockPageHref } from '@/lib/insights';
 import { signOut, useMe } from '@/lib/session';
@@ -40,8 +32,6 @@ const FEED_EMPTY = "No press releases yet. The worker checks RBI's feed every ho
 /** The selected-tab value of the press-release tab; a stock symbol can never be lowercase. */
 const RBI_TAB = 'rbi';
 
-const CHECK_FAILED = "We couldn't start the check. Try again in a moment.";
-
 const STATUS_BADGES: Record<DocumentStatus, string> = {
   pending: 'Waiting',
   processing: 'Processing',
@@ -49,30 +39,15 @@ const STATUS_BADGES: Record<DocumentStatus, string> = {
   failed: 'Failed',
 };
 
-type Shelf = { stock: Stock; documents: StockDocument[]; check: FilingCheck };
+type Shelf = { stock: Stock; documents: StockDocument[] };
 
 type Loaded = { ok: true; shelves: Shelf[] } | { ok: false; unauthorized: boolean };
-
-/** The earliest time, still ahead, at which some stock's button turns back on. */
-function earliestFutureCheck(shelves: Shelf[] | null): number | null {
-  const now = Date.now();
-  const times = (shelves ?? [])
-    .map((shelf) => (shelf.check.next_check_at ? Date.parse(shelf.check.next_check_at) : NaN))
-    .filter((time) => time > now);
-  return times.length > 0 ? Math.min(...times) : null;
-}
 
 async function readShelves(): Promise<Loaded> {
   try {
     const stocks = await listStocks();
     const shelves = await Promise.all(
-      stocks.map(async (stock) => {
-        const [documents, check] = await Promise.all([
-          listAllDocuments(stock.symbol),
-          getFilingCheck(stock.symbol),
-        ]);
-        return { stock, documents, check };
-      }),
+      stocks.map(async (stock) => ({ stock, documents: await listAllDocuments(stock.symbol) })),
     );
     return { ok: true, shelves };
   } catch (error) {
@@ -106,37 +81,6 @@ function DocumentRow({ document }: { document: StockDocument }) {
         <span className={`pill ${document.status}`}>{badge}</span>
       </span>
     </li>
-  );
-}
-
-/** "Last checked 14:05 (12 minutes ago)" and the "Check for new filings" button. */
-function Freshness({ check, onCheck }: { check: FilingCheck; onCheck: () => void }) {
-  if (!check.enabled) {
-    return (
-      <div className="doc-freshness">
-        <p className="muted">Automatic filing checks are switched off.</p>
-      </div>
-    );
-  }
-  const now = new Date();
-  const waitUntil = !check.checking && !canCheck(check, now) ? check.next_check_at : null;
-  return (
-    <div className="doc-freshness">
-      <p className="muted" role="status">
-        {check.checking ? 'Checking for new filings…' : lastCheckedLabel(check, now)}
-      </p>
-      <span className="doc-check">
-        {waitUntil && <span className="muted">{availableLabel(waitUntil)}</span>}
-        <button
-          type="button"
-          className="button secondary"
-          disabled={!canCheck(check, now)}
-          onClick={onCheck}
-        >
-          {check.checking ? 'Checking…' : 'Check for new filings'}
-        </button>
-      </span>
-    </div>
   );
 }
 
@@ -195,7 +139,7 @@ function FeedPanel({ feed, failed }: { feed: Feed | null; failed: boolean }) {
   );
 }
 
-function StockPanel({ shelf, onCheck }: { shelf: Shelf; onCheck: () => void }) {
+function StockPanel({ shelf }: { shelf: Shelf }) {
   const groups = groupDocuments(shelf.documents);
   return (
     <div
@@ -213,7 +157,6 @@ function StockPanel({ shelf, onCheck }: { shelf: Shelf; onCheck: () => void }) {
           Key facts
         </a>
       </p>
-      <Freshness check={shelf.check} onCheck={onCheck} />
       {groups.length > 0 && (
         // Keyed by stock, so switching tabs starts a fresh search for the new one.
         <SearchBox
@@ -252,10 +195,9 @@ function StockPanel({ shelf, onCheck }: { shelf: Shelf; onCheck: () => void }) {
 
 /**
  * Every stock's documents, one tab per stock: the official filings the worker fetched from BSE
- * (ADR 018), grouped by kind and newest first, with when the stock was last checked and a button
- * to check it again (at most once an hour). While a check runs or a document is still waiting or
- * processing, the page refreshes itself; when the hour is up, it refreshes once to turn the button
- * back on.
+ * (ADR 018), grouped by kind and newest first. While a document is still waiting or processing,
+ * the page refreshes itself. New filings are asked for with "Update data" in the top bar, for
+ * every stock at once (app/data_status.py).
  */
 export function DocumentsView() {
   const me = useMe();
@@ -315,8 +257,7 @@ export function DocumentsView() {
   }, [signedIn]);
 
   // Then load again every REFRESH_MS, but only while something is still being worked on.
-  const working =
-    shelves?.some((shelf) => shelf.check.checking || isStillWorking(shelf.documents)) ?? false;
+  const working = shelves?.some((shelf) => isStillWorking(shelf.documents)) ?? false;
   useEffect(() => {
     if (!signedIn || !working) return;
     let cancelled = false;
@@ -330,35 +271,6 @@ export function DocumentsView() {
       clearInterval(timer);
     };
   }, [signedIn, working, show]);
-
-  // And once more when the earliest cooldown ends, so the button turns itself back on.
-  const nextCheckAt = earliestFutureCheck(shelves);
-  useEffect(() => {
-    if (!signedIn || nextCheckAt === null) return;
-    let cancelled = false;
-    const timer = setTimeout(
-      () => {
-        void readShelves().then((result) => {
-          if (!cancelled) show(result);
-        });
-      },
-      Math.max(0, nextCheckAt - Date.now()) + 1000,
-    );
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [signedIn, nextCheckAt, show]);
-
-  const check = async (symbol: string): Promise<void> => {
-    try {
-      await startFilingCheck(symbol); // "too_soon" needs no message: the new status explains it
-    } catch {
-      setProblem(CHECK_FAILED);
-      return;
-    }
-    show(await readShelves());
-  };
 
   if (me.status === 'error') {
     return (
@@ -408,7 +320,7 @@ export function DocumentsView() {
         <p className="muted">
           Official BSE filings from the last three years (earnings calls, presentations, annual
           reports and announcements), fetched automatically every day, when you follow a stock, and
-          when you ask. Open any one to read the original.
+          with Update data at the top. Open any one to read the original.
         </p>
       </div>
       {problem && (
@@ -464,7 +376,7 @@ export function DocumentsView() {
           {rbiSelected ? (
             <FeedPanel feed={feed} failed={feedFailed} />
           ) : (
-            <StockPanel shelf={current} onCheck={() => void check(current.stock.symbol)} />
+            <StockPanel shelf={current} />
           )}
         </div>
       )}

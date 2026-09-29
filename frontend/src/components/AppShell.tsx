@@ -1,5 +1,8 @@
+'use client';
+
 import type { ReactNode } from 'react';
 
+import { DataNote, UpdateDataButton, useFreshness } from '@/components/DataFreshness';
 import {
   ChatIcon,
   FileIcon,
@@ -37,8 +40,12 @@ export function initials(email: string): string {
   return (name.slice(0, 2) || '?').toUpperCase();
 }
 
-/** The frame around every signed-in page: the menu, the stock search, who you are. */
+/**
+ * The frame around every signed-in page: the menu, the stock search, "Update data", who you are,
+ * and under the top bar the date the data is updated to (a disclaimer: it is not live).
+ */
 export function AppShell({ email, onSignOut, active, children }: Props) {
+  const freshness = useFreshness();
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -70,7 +77,10 @@ export function AppShell({ email, onSignOut, active, children }: Props) {
       </aside>
       <div className="main">
         <header className="topbar">
-          <StockJump />
+          <div className="topbar-find">
+            <StockJump />
+            <UpdateDataButton freshness={freshness} />
+          </div>
           <div className="who">
             <ThemeToggle />
             <span className="avatar" aria-hidden="true">
@@ -82,6 +92,7 @@ export function AppShell({ email, onSignOut, active, children }: Props) {
             </button>
           </div>
         </header>
+        <DataNote freshness={freshness} />
         <main className="page">{children}</main>
       </div>
     </div>

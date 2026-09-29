@@ -6,11 +6,19 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { AppShell, initials } from '@/components/AppShell';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ChatThread } from '@/components/ChatThread';
-import { ArrowRightIcon, ChevronDownIcon, LeafIcon, PlusIcon, SendIcon } from '@/components/Icons';
+import {
+  ArrowRightIcon,
+  ChevronDownIcon,
+  LeafIcon,
+  PlusIcon,
+  SendIcon,
+  TrashIcon,
+} from '@/components/Icons';
 import { STOCKS } from '@/components/StockJump';
 import { ApiError } from '@/lib/api';
 import {
   getConversation,
+  deleteConversation,
   listConversations,
   sendQuestion,
   type ChatMessage,
@@ -88,6 +96,8 @@ function sendFailure(error: unknown): string {
  * The chat page (P12): the user's conversations on one side; on the other, the open conversation
  * and the box to ask the next question. The server does all the answering and checking.
  */
+const DELETE_FAILED = "We couldn't delete the conversation. Try again in a moment.";
+
 export function ChatView() {
   const me = useMe();
   const router = useRouter();
@@ -166,6 +176,26 @@ export function ChatView() {
         else setThread({ id: null, messages: [], phase: 'problem' });
       },
     );
+  };
+
+  /** Delete a conversation after the user confirms; the open one gives way to a new chat. */
+  const remove = async (conversation: ConversationSummary) => {
+    const title = conversation.title || 'Untitled conversation';
+    if (!window.confirm(`Delete "${title}"? This cannot be undone.`)) return;
+    try {
+      await deleteConversation(conversation.id);
+    } catch (error) {
+      if (isStatus(error, 401)) {
+        router.replace('/');
+        return;
+      }
+      if (!isStatus(error, 404)) {
+        setProblem(DELETE_FAILED); // a 404 means it is already gone: remove it from the list
+        return;
+      }
+    }
+    setConversations((list) => list.filter((c) => c.id !== conversation.id));
+    if (thread.id === conversation.id) startNew();
   };
 
   const startNew = () => {
@@ -302,7 +332,7 @@ export function ChatView() {
                   ) : (
                     <ul>
                       {conversations.map((conversation) => (
-                        <li key={conversation.id}>
+                        <li key={conversation.id} className="chat-item-row">
                           <button
                             type="button"
                             className="chat-item"
@@ -310,6 +340,15 @@ export function ChatView() {
                             onClick={() => open(conversation.id)}
                           >
                             {conversation.title || 'Untitled conversation'}
+                          </button>
+                          <button
+                            type="button"
+                            className="chat-item-delete"
+                            aria-label={`Delete conversation: ${conversation.title || 'Untitled conversation'}`}
+                            title="Delete"
+                            onClick={() => void remove(conversation)}
+                          >
+                            <TrashIcon />
                           </button>
                         </li>
                       ))}

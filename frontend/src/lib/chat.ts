@@ -219,6 +219,13 @@ export async function getConversation(id: string): Promise<Conversation> {
   return { ...body, messages: body.messages.map(withCheckedParts) };
 }
 
+/** Delete one of your conversations and its messages; a 404 means it is already gone. */
+export async function deleteConversation(id: string): Promise<void> {
+  await apiFetch(`/api/v1/chat/conversations/${encodeURIComponent(checkedId(id))}`, {
+    method: 'DELETE',
+  });
+}
+
 /**
  * The address a source may link to, or null. A filing may only link to BSE and a screener figure
  * only to a screener.in company page; a computed value has no page of its own. So a bad value can

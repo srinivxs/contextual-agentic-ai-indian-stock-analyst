@@ -104,15 +104,17 @@ async def test_only_the_intended_methods_exist(
     assert response.headers["cache-control"] == "no-store"
 
 
-@pytest.mark.parametrize("method", ["GET", "POST"])
-async def test_the_filing_check_needs_a_session(client: httpx.AsyncClient, method: str) -> None:
-    assert_401(await client.request(method, "/api/v1/stocks/TCS/filings/check"))
+@pytest.mark.parametrize(
+    ("method", "url"), [("GET", "/api/v1/data/status"), ("POST", "/api/v1/data/refresh")]
+)
+async def test_the_data_status_and_update_need_a_session(
+    client: httpx.AsyncClient, method: str, url: str
+) -> None:
+    assert_401(await client.request(method, url))
 
 
-async def test_a_foreign_origin_cannot_start_a_filing_check(client: httpx.AsyncClient) -> None:
-    response = await client.post(
-        "/api/v1/stocks/TCS/filings/check", headers={"Origin": "https://evil.example"}
-    )
+async def test_a_foreign_origin_cannot_start_an_update(client: httpx.AsyncClient) -> None:
+    response = await client.post("/api/v1/data/refresh", headers={"Origin": "https://evil.example"})
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "forbidden"
 

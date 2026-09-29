@@ -50,12 +50,14 @@ _NO_STORE_EXACT = frozenset(
 )
 # `/api/v1/documents/` (P9) needs a session, and a document's status changes as it is ingested.
 # `/api/v1/chat/` (P12) is each user's own questions and answers.
+# `/api/v1/data/` needs a session, and its status changes while an update runs.
 _NO_STORE_PREFIXES = (
     "/api/v1/auth/",
     "/api/v1/stocks/",
     "/api/v1/documents/",
     "/api/v1/chat/",
     "/api/v1/profile/",
+    "/api/v1/data/",
 )
 
 

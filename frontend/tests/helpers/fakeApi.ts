@@ -5,6 +5,7 @@
 import { vi } from 'vitest';
 
 import type { ChatMessage, ChatSource, ChatTable, Conversation } from '@/lib/chat';
+import type { DataStatus, RefreshResult } from '@/lib/dataStatus';
 import type { Citation, DerivedValue, KeyFact, StockInsights } from '@/lib/insights';
 import type { FeedItem } from '@/lib/feed';
 import type { MatchReason, MatchResult, StockMatch } from '@/lib/match';
@@ -384,20 +385,6 @@ export const demoProfileField = (
   ...overrides,
 });
 
-export type FakeCheck = {
-  enabled: boolean;
-  checking: boolean;
-  last_checked_at: string | null;
-  next_check_at: string | null;
-};
-
-const IDLE_CHECK: FakeCheck = {
-  enabled: true,
-  checking: false,
-  last_checked_at: null,
-  next_check_at: null,
-};
-
 export type Options = {
   signedIn?: boolean;
   email?: string;
@@ -406,8 +393,10 @@ export type Options = {
   documents?: FakeDocument[];
   /** How many documents one page of the list holds (the real API allows up to 100). */
   pageSize?: number;
-  /** Each stock's filing-check status; anything left out is enabled, idle, never checked. */
-  checks?: Record<string, Partial<FakeCheck>>;
+  /** What GET /api/v1/data/status answers; anything left out is idle, nothing stored. */
+  dataStatus?: Partial<DataStatus>;
+  /** What POST /api/v1/data/refresh answers per source; by default every source is queued. */
+  refresh?: Partial<Omit<RefreshResult, 'status'>>;
   /** What every search returns (the fake does not rank anything). */
   searchHits?: FakeHit[];
   /** Search switched off on the server (409). */
@@ -565,8 +554,18 @@ export type FakeApi = {
   expireSession: () => void;
   /** Replace the documents the fake serves (to move a status along, for example). */
   setDocuments: (documents: FakeDocument[]) => void;
-  /** Change one stock's filing-check status. */
-  setCheck: (symbol: string, check: Partial<FakeCheck>) => void;
+  /** Change what the data status answers (an update finishing, for example). */
+  setDataStatus: (status: Partial<DataStatus>) => void;
+};
+
+export const IDLE_DATA: DataStatus = {
+  updating: false,
+  filings_checked_at: null,
+  prices_to: null,
+  rbi_to: null,
+  filings_on: true,
+  prices_on: true,
+  rbi_live: true,
 };
 
 export function installFakeApi(options: Options = {}): FakeApi {
@@ -578,12 +577,7 @@ export function installFakeApi(options: Options = {}): FakeApi {
   const gates = new Map<string, Promise<void>>();
   const requests: string[] = [];
   let documents = options.documents ?? [];
-  const checks = new Map<string, FakeCheck>();
-  const checkOf = (symbol: string): FakeCheck => ({
-    ...IDLE_CHECK,
-    ...options.checks?.[symbol],
-    ...checks.get(symbol),
-  });
+  let dataStatus: DataStatus = { ...IDLE_DATA, ...options.dataStatus };
   const bodies: { key: string; body: unknown }[] = [];
   const conversations = new Map((options.conversations ?? []).map((c) => [c.id, c]));
   const profileFields = new Map((options.profileFields ?? []).map((f) => [f.field, f] as const));
@@ -601,6 +595,12 @@ export function installFakeApi(options: Options = {}): FakeApi {
         .slice(0, 20)
         .map(({ id, title, created_at, updated_at }) => ({ id, title, created_at, updated_at }));
       return json(200, { items });
+    }
+    const gone = /^DELETE \/api\/v1\/chat\/conversations\/([^/?]+)$/.exec(key);
+    if (gone) {
+      return conversations.delete(decodeURIComponent(gone[1] ?? ''))
+        ? json(204)
+        : envelope(404, 'not_found');
     }
     const one = /^GET \/api\/v1\/chat\/conversations\/([^/?]+)$/.exec(key);
     if (one) {
@@ -762,21 +762,11 @@ export function installFakeApi(options: Options = {}): FakeApi {
     if (chatted) return chatted;
     const profiled = profile(key, body);
     if (profiled) return profiled;
-    const checking = /^(GET|POST) \/api\/v1\/stocks\/([^/]+)\/filings\/check$/.exec(key);
-    if (checking) {
-      const symbol = decodeURIComponent(checking[2] ?? '');
-      if (!stocks.some((s) => s.symbol === symbol)) return envelope(404, 'not_found');
-      const check = checkOf(symbol);
-      if (checking[1] === 'GET') return json(200, check);
-      // The real rules: switched off, already running, within the hour, or start one now.
-      if (!check.enabled) return envelope(409, 'conflict');
-      if (check.checking) return json(202, check);
-      if (check.next_check_at && Date.parse(check.next_check_at) > Date.now()) {
-        return envelope(429, 'rate_limited');
-      }
-      const next = new Date(Date.now() + 3_600_000).toISOString();
-      checks.set(symbol, { ...check, checking: true, next_check_at: next });
-      return json(202, checkOf(symbol));
+    if (key === 'GET /api/v1/data/status') return json(200, dataStatus);
+    if (key === 'POST /api/v1/data/refresh') {
+      dataStatus = { ...dataStatus, updating: true };
+      const result = { filings: 'queued', prices: 'queued', rbi: 'queued', ...options.refresh };
+      return json(202, { ...result, status: dataStatus });
     }
     const match = /^(PUT|DELETE) \/api\/v1\/stocks\/([^/]+)\/follow$/.exec(key);
     if (match) {
@@ -807,8 +797,8 @@ export function installFakeApi(options: Options = {}): FakeApi {
     setDocuments: (next) => {
       documents = next;
     },
-    setCheck: (symbol, check) => {
-      checks.set(symbol, { ...checkOf(symbol), ...check });
+    setDataStatus: (status) => {
+      dataStatus = { ...dataStatus, ...status };
     },
   };
 }

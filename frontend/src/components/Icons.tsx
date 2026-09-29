@@ -126,6 +126,20 @@ export const ArrowRightIcon = () => (
     <path d="m13 6 6 6-6 6" />
   </Icon>
 );
+export const RefreshIcon = () => (
+  <Icon size={15}>
+    <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+    <path d="M20 4v7h-7" />
+  </Icon>
+);
+export const TrashIcon = () => (
+  <Icon size={15}>
+    <path d="M4 7h16" />
+    <path d="M10 11v6M14 11v6" />
+    <path d="m6 7 1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" />
+    <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+  </Icon>
+);
 export const ChevronDownIcon = () => (
   <Icon size={16}>
     <path d="m6 9 6 6 6-6" />

@@ -178,7 +178,8 @@ leaves a real product.
   worker loop (claim with `SKIP LOCKED`, retries with backoff, leases); automatic official filings
   from BSE (ADR 018); Documents page in the UI. The upload API built first was removed in P9d:
   the challenge asks the app to ingest data itself, and automatic filings do exactly that. A
-  follow, or the "Check for new filings" button, checks that stock at once (once an hour at most).
+  follow checks that stock at once (once an hour at most); since 2026-09-30 the "Update data"
+  button checks every stock, prices and the RBI feed in one click (ADR 018 amendment).
 - **Explain first:** idempotency via unique constraints and `ON CONFLICT`; `SKIP LOCKED`; why no
   transaction spans network I/O.
 - **Done when:** the same file recorded twice or eight times at once gives one document and one set
@@ -304,6 +305,8 @@ leaves a real product.
   permissions for embeddings and chat, for example).
 - **Build (from P15):** the worker needs outbound HTTPS to www.rbi.org.in (it has a public IP; no
   NAT) and a `FEED_MODE` choice for AWS (fixture, or live as the owner decides).
+- **Build (from the "Update data" button, 2026-09-30):** the api task gets the same
+  `PRICES_ENABLED` and `FEED_MODE` as the worker (it queues only what the worker can run).
 - **Done when:** on the live URL a user signs in, follows a stock, sees its filings arrive, and gets
   a cited answer; then `demo-down` leaves only the permanent roots.
 
