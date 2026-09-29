@@ -1774,6 +1774,12 @@ a.chip:hover {
   color: var(--accent-strong);
 }
 
+/* A range the stored history cannot fill yet. */
+.chat-range:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .chat-card {
   min-width: 0;
   padding: 1rem 1.15rem;

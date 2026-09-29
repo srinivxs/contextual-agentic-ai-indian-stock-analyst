@@ -4,6 +4,7 @@ import {
   followUps,
   keyMetrics,
   newestEvents,
+  availableRanges,
   rangeHistory,
   shortName,
   stocksIn,
@@ -78,6 +79,32 @@ describe('rangeHistory', () => {
 
   it('is empty for no history', () => {
     expect(rangeHistory([], '1m')).toEqual([]);
+  });
+});
+
+describe('availableRanges', () => {
+  const days = (dates: string[]) => dates.map((date) => ({ date, close: '100' }));
+
+  it('offers only the shortest range while the history is a few weeks long', () => {
+    // the owner's first look: 16 trading days, so 3M, 6M and 1Y showed the same chart as 1M
+    const weeks = days(['2026-09-04', '2026-09-15', '2026-09-28']);
+    expect(availableRanges(weeks)).toEqual({ '1m': true, '3m': false, '6m': false, '1y': false });
+  });
+
+  it('turns a longer range on once the history reaches past the shorter one', () => {
+    const twoMonths = days(['2026-07-20', '2026-09-28']);
+    expect(availableRanges(twoMonths)).toEqual({
+      '1m': true,
+      '3m': true,
+      '6m': false,
+      '1y': false,
+    });
+    const year = days(['2025-09-29', '2026-03-30', '2026-09-28']);
+    expect(availableRanges(year)).toEqual({ '1m': true, '3m': true, '6m': true, '1y': true });
+  });
+
+  it('offers nothing but the shortest range for no history', () => {
+    expect(availableRanges([])).toEqual({ '1m': true, '3m': false, '6m': false, '1y': false });
   });
 });
 

@@ -417,6 +417,27 @@ describe('the overview card', () => {
     expect(within(overview).queryByRole('button', { name: '1W' })).toBeNull();
   });
 
+  it('greys out ranges the history does not reach yet, and says how far back it goes', async () => {
+    install({ prices: { RELIANCE: demoPrices('RELIANCE') } }); // five days: 22 to 28 Sep 2026
+    render(<ChatView />);
+    const overview = await screen.findByRole('region', { name: 'Reliance overview' });
+    await within(overview).findAllByText('₹101.50');
+    for (const name of ['3M', '6M', '1Y']) {
+      const button = within(overview).getByRole('button', { name });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute('title', 'Not enough history yet');
+    }
+    expect(within(overview).getByRole('button', { name: '1M' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(
+      within(overview).getByText(
+        'Prices from 22 Sep 2026 so far; the rest of the year is still being fetched.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('says prices are not loaded yet, with no chart and no range tabs', async () => {
     install({ prices: { RELIANCE: noPrices('RELIANCE') } });
     render(<ChatView />);

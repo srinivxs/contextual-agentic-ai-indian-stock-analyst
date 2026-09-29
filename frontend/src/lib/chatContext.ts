@@ -60,13 +60,43 @@ export const RANGES = [
 export type RangeKey = (typeof RANGES)[number]['key'];
 
 /** The closes of the last month(s) before the newest close (dates compared as text, no time zone). */
+/** The first date a range shows, counted back from the newest close ("YYYY-MM-DD"). */
+function rangeStart(newest: string, months: number): string {
+  const [year = 0, month = 1, day = 1] = newest.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1 - months, day)).toISOString().slice(0, 10);
+}
+
 export function rangeHistory(history: PricePoint[], range: RangeKey): PricePoint[] {
   const newest = history.at(-1);
   if (!newest) return [];
   const months = RANGES.find((r) => r.key === range)?.months ?? 12;
-  const [year = 0, month = 1, day = 1] = newest.date.split('-').map(Number);
-  const from = new Date(Date.UTC(year, month - 1 - months, day)).toISOString().slice(0, 10);
+  const from = rangeStart(newest.date, months);
   return history.filter((point) => point.date >= from);
+}
+
+/**
+ * Which ranges show more than the shorter one before them. The shortest always does; a longer
+ * range only once the stored history reaches back past the shorter range's start. While the
+ * price history is still being fetched (a few weeks at first), 3M, 6M and 1Y would all repeat
+ * the 1M chart, so they stay off until they have something of their own to show.
+ */
+export function availableRanges(history: PricePoint[]): Record<RangeKey, boolean> {
+  const oldest = history[0]?.date;
+  const newest = history.at(-1)?.date;
+  const result = { '1m': true, '3m': false, '6m': false, '1y': false } as Record<RangeKey, boolean>;
+  if (oldest === undefined || newest === undefined) return result;
+  RANGES.forEach((range, index) => {
+    const shorter = RANGES[index - 1];
+    if (shorter) result[range.key] = oldest < rangeStart(newest, shorter.months);
+  });
+  return result;
+}
+
+/** True while the history does not reach back a full year yet. */
+export function historyStillFilling(history: PricePoint[]): boolean {
+  const oldest = history[0]?.date;
+  const newest = history.at(-1)?.date;
+  return oldest !== undefined && newest !== undefined && oldest > rangeStart(newest, 12);
 }
 
 /** The newest three events, newest first. */
