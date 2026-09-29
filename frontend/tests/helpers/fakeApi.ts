@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 
 import type { ChatMessage, ChatSource, ChatTable, Conversation } from '@/lib/chat';
 import type { DataStatus, RefreshResult } from '@/lib/dataStatus';
+import type { Fundamentals } from '@/lib/fundamentals';
 import type { Citation, DerivedValue, KeyFact, StockInsights } from '@/lib/insights';
 import type { FeedItem } from '@/lib/feed';
 import type { MatchReason, MatchResult, StockMatch } from '@/lib/match';
@@ -393,6 +394,8 @@ export type Options = {
   documents?: FakeDocument[];
   /** How many documents one page of the list holds (the real API allows up to 100). */
   pageSize?: number;
+  /** Each stock's fundamentals card; a known stock left out gets demoFundamentals. */
+  fundamentals?: Record<string, Fundamentals>;
   /** What GET /api/v1/data/status answers; anything left out is idle, nothing stored. */
   dataStatus?: Partial<DataStatus>;
   /** What POST /api/v1/data/refresh answers per source; by default every source is queued. */
@@ -558,11 +561,39 @@ export type FakeApi = {
   setDataStatus: (status: Partial<DataStatus>) => void;
 };
 
+/** An invented fundamentals card: screener.in figures read on 30 Sep 2026. */
+export const demoFundamentals = (symbol: string): Fundamentals => ({
+  symbol,
+  as_of: '2026-09-30T08:00:00+00:00',
+  source_url: `https://www.screener.in/company/${symbol}/consolidated/`,
+  items: [
+    ['market_cap', 'Mkt Cap', 'ok', '123456', 'INR_CRORE', 'screener', null],
+    ['roe', 'ROE', 'ok', '25.5', 'PERCENT', 'screener', null],
+    ['pe_ttm', 'P/E Ratio (TTM)', 'ok', '22.5', 'RATIO', 'screener', null],
+    ['eps_ttm', 'EPS (TTM)', 'ok', '137.78', 'INR_PER_SHARE', 'computed', 'Computed: price / P/E.'],
+    ['pb', 'P/B Ratio', 'ok', '5.08', 'RATIO', 'computed', 'Computed: price / book value.'],
+    ['dividend_yield', 'Div Yield', 'ok', '1.8', 'PERCENT', 'screener', null],
+    ['industry_pe', 'Industry P/E', 'not_available', null, 'RATIO', 'none', 'Not in the data.'],
+    ['book_value', 'Book Value', 'ok', '610', 'INR_PER_SHARE', 'screener', null],
+    ['debt_to_equity', 'Debt to Equity', 'ok', '0.37', 'RATIO', 'computed', 'Borrowings / equity.'],
+    ['face_value', 'Face Value', 'ok', '1', 'INR_PER_SHARE', 'screener', null],
+  ].map(([name, label, status, value, unit, source, note]) => ({
+    name,
+    label,
+    status,
+    value,
+    unit,
+    source,
+    note,
+  })) as Fundamentals['items'],
+});
+
 export const IDLE_DATA: DataStatus = {
   updating: false,
   filings_checked_at: null,
   prices_to: null,
   rbi_to: null,
+  next_update_at: null,
   filings_on: true,
   prices_on: true,
   rbi_live: true,
@@ -748,6 +779,12 @@ export function installFakeApi(options: Options = {}): FakeApi {
       const metric = (seriesCall[2] ?? '') as SeriesMetric;
       return json(200, options.series?.[symbol] ?? demoSeries(symbol, [], { metric }));
     }
+    const fundamentalsCall = /^GET \/api\/v1\/stocks\/([^/?]+)\/fundamentals$/.exec(key);
+    if (fundamentalsCall) {
+      const symbol = decodeURIComponent(fundamentalsCall[1] ?? '');
+      if (!stocks.some((s) => s.symbol === symbol)) return envelope(404, 'not_found');
+      return json(200, options.fundamentals?.[symbol] ?? demoFundamentals(symbol));
+    }
     const pricesCall = /^GET \/api\/v1\/stocks\/([^/?]+)\/prices$/.exec(key);
     if (pricesCall) {
       const symbol = decodeURIComponent(pricesCall[1] ?? '');
@@ -764,7 +801,11 @@ export function installFakeApi(options: Options = {}): FakeApi {
     if (profiled) return profiled;
     if (key === 'GET /api/v1/data/status') return json(200, dataStatus);
     if (key === 'POST /api/v1/data/refresh') {
-      dataStatus = { ...dataStatus, updating: true };
+      // The real rule: once an hour, for everyone together.
+      const next = dataStatus.next_update_at;
+      if (next !== null && Date.parse(next) > Date.now()) return envelope(429, 'rate_limited');
+      const nextHour = new Date(Date.now() + 3_600_000).toISOString();
+      dataStatus = { ...dataStatus, updating: true, next_update_at: nextHour };
       const result = { filings: 'queued', prices: 'queued', rbi: 'queued', ...options.refresh };
       return json(202, { ...result, status: dataStatus });
     }

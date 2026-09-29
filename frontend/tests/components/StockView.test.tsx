@@ -1,14 +1,15 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { DATA_POLL_MS } from '@/components/DataFreshness';
 import { StockView } from '@/components/StockView';
 import {
   demoCitation,
   demoFact,
+  demoFundamentals,
   demoInsights,
   demoPrices,
-  demoRatio,
   noPrices,
   demoRbiCitation,
   demoScreenerCitation,
@@ -507,48 +508,15 @@ describe('the share price card', () => {
     expect(price.compareDocumentPosition(facts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('lists the four returns, saying "not enough history" for a missing one', async () => {
+  it('has no returns, volatility, P/E or dividend yield (they moved to Fundamentals)', async () => {
     show();
     const c = await card();
-    const returns = c.getByRole('list', { name: 'Returns' });
-    const item = (label: string) => within(returns).getByText(label).closest('li') as HTMLElement;
-    expect(item('1 month')).toHaveTextContent('+4.2%');
-    expect(item('3 months')).toHaveTextContent('not enough history');
-    expect(item('6 months')).toHaveTextContent('−3.1%');
-    expect(item('1 year')).toHaveTextContent('not enough history');
-  });
-
-  it('shows one-year volatility, P/E and dividend yield with their reasons', async () => {
-    show();
-    const c = await card();
-    expect(c.getByText('18.6%')).toBeInTheDocument();
-    const pe = c.getByText('P/E').closest('li') as HTMLElement;
-    expect(pe).toHaveTextContent('12.5');
-    expect(pe).toHaveTextContent('Invented sample');
-    const yieldItem = c.getByText('Dividend yield').closest('li') as HTMLElement;
-    expect(yieldItem).toHaveTextContent('1.2%');
-  });
-
-  it('gives the reason when P/E and dividend yield are not assessable, never a number', async () => {
-    show(
-      demoPrices('DEMOA', {
-        volatility_1y: null,
-        pe: demoRatio({ status: 'not_assessable', value: null, reason: 'Earnings are missing.' }),
-        dividend_yield: demoRatio({
-          status: 'not_assessable',
-          value: null,
-          reason: 'No dividend stored.',
-        }),
-      }),
-    );
-    const c = await card();
-    const pe = c.getByText('P/E').closest('li') as HTMLElement;
-    expect(pe).toHaveTextContent('Not assessable');
-    expect(pe).toHaveTextContent('Earnings are missing.');
-    expect(pe).not.toHaveTextContent(/\d/);
-    const yieldItem = c.getByText('Dividend yield').closest('li') as HTMLElement;
-    expect(yieldItem).toHaveTextContent('No dividend stored.');
-    expect(c.getByText('Volatility, 1 year').closest('li')).toHaveTextContent('not enough history');
+    expect(c.queryByRole('list', { name: 'Returns' })).toBeNull();
+    expect(c.queryByRole('list', { name: 'Risk and valuation' })).toBeNull();
+    for (const label of ['1 month', 'Volatility, 1 year', 'P/E', 'Dividend yield']) {
+      expect(c.queryByText(label)).toBeNull();
+    }
+    expect(c.queryByText('not enough history')).toBeNull();
   });
 
   it('lists a bonus issue or split plainly', async () => {
@@ -606,5 +574,94 @@ describe('the share price card', () => {
     api.failWith('GET /api/v1/stocks/DEMOA/prices', 401);
     render(<StockView />);
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
+  });
+});
+
+describe('the fundamentals card', () => {
+  it('shows the ten fundamentals in two columns, with the date and the page they are from', async () => {
+    installFakeApi({ insights: { DEMOA: demoInsights() } });
+    render(<StockView />);
+    const card = await screen.findByRole('region', { name: 'Fundamentals' });
+    await within(card).findByText('Mkt Cap');
+    const terms = within(card)
+      .getAllByRole('term')
+      .map((t) => t.textContent);
+    expect(terms).toEqual([
+      'Mkt Cap',
+      'ROE',
+      'P/E Ratio (TTM)',
+      'EPS (TTM)',
+      'P/B Ratio',
+      'Div Yield',
+      'Industry P/E',
+      'Book Value',
+      'Debt to Equity',
+      'Face Value',
+    ]);
+    const value = (label: string) => within(card).getByText(label).nextElementSibling;
+    expect(value('Mkt Cap')).toHaveTextContent('₹1,23,456 Cr');
+    expect(value('EPS (TTM)')).toHaveTextContent('₹137.78');
+    expect(value('EPS (TTM)')).toHaveAttribute('title', 'Computed: price / P/E.');
+    expect(value('Industry P/E')).toHaveTextContent('Not available');
+    expect(value('Industry P/E')).toHaveClass('muted');
+    expect(card).toHaveTextContent('screener.in figures as of 30 Sep 2026');
+    expect(within(card).getByRole('link', { name: 'screener.in company page' })).toHaveAttribute(
+      'href',
+      'https://www.screener.in/company/DEMOA/consolidated/',
+    );
+  });
+
+  it('sits between the share price and the key facts', async () => {
+    installFakeApi({ insights: { DEMOA: demoInsights() } });
+    render(<StockView />);
+    const price = await screen.findByRole('region', { name: 'Share price' });
+    const card = await screen.findByRole('region', { name: 'Fundamentals' });
+    const facts = await screen.findByRole('region', { name: 'Key facts' });
+    expect(price.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(facts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('says so before screener.in was ever read, with no link', async () => {
+    installFakeApi({
+      insights: { DEMOA: demoInsights() },
+      fundamentals: {
+        DEMOA: { ...demoFundamentals('DEMOA'), as_of: null, source_url: null },
+      },
+    });
+    render(<StockView />);
+    const card = await screen.findByRole('region', { name: 'Fundamentals' });
+    expect(
+      await within(card).findByText('screener.in figures not read yet: press Update data.'),
+    ).toBeInTheDocument();
+    expect(within(card).queryByRole('link')).toBeNull();
+  });
+
+  it('loads the card again when an update finishes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = installFakeApi({
+      insights: { DEMOA: demoInsights() },
+      dataStatus: { updating: true },
+    });
+    render(<StockView />);
+    await screen.findByRole('region', { name: 'Fundamentals' });
+    const asked = () =>
+      api.requests.filter((r) => r === 'GET /api/v1/stocks/DEMOA/fundamentals').length;
+    await waitFor(() => expect(asked()).toBe(1));
+
+    api.setDataStatus({ updating: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DATA_POLL_MS);
+    });
+    await waitFor(() => expect(asked()).toBe(2));
+    vi.useRealTimers();
+  });
+
+  it('shows a short message when the card cannot load, keeping the rest of the page', async () => {
+    const api = installFakeApi({ insights: { DEMOA: demoInsights() } });
+    api.failWith('GET /api/v1/stocks/DEMOA/fundamentals', 500);
+    render(<StockView />);
+    const card = await screen.findByRole('region', { name: 'Fundamentals' });
+    expect(await within(card).findByText(/couldn't load the fundamentals/i)).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Key facts' })).toBeInTheDocument();
   });
 });

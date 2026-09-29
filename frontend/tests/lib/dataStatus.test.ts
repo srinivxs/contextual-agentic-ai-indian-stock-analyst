@@ -15,6 +15,7 @@ const STATUS: DataStatus = {
   filings_checked_at: '2026-09-29T09:30:00+00:00',
   prices_to: '2026-09-28',
   rbi_to: '2026-09-29T06:00:00+00:00',
+  next_update_at: null,
   filings_on: true,
   prices_on: true,
   rbi_live: true,

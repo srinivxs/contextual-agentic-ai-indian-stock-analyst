@@ -8,6 +8,11 @@ section, row and column it was read from.
 One screener fact per (stock, metric, period, basis): a new day's read updates the figure in place
 (screener revises recent numbers). A page that yields nothing (a layout change) stores nothing and
 deletes nothing: the history stays until the parser is fixed.
+
+The page's "top ratios" list (market cap, current price, stock P/E, book value, dividend yield,
+ROCE, ROE, face value) is kept too, one row per stock in ``screener_ratios``, replaced on each
+read: the stock page's Fundamentals card (app/fundamentals.py; the owner, 2026-09-30). A page with
+no top ratios at all leaves the stored row as it was.
 """
 
 from typing import Any, cast
@@ -15,7 +20,7 @@ from typing import Any, cast
 from sqlalchemy import CursorResult, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.screener_numbers import map_to_vocabulary, parse_fundamentals
+from app.screener_numbers import map_to_vocabulary, parse_fundamentals, parse_top_ratios
 
 _UPSERT = text(
     """
@@ -35,6 +40,48 @@ _UPSERT = text(
                   updated_at = now()
     """
 )
+
+
+_UPSERT_RATIOS = text(
+    """
+    INSERT INTO screener_ratios (stock_id, market_cap_crore, current_price, stock_pe, book_value,
+                                 dividend_yield_percent, roce_percent, roe_percent, face_value,
+                                 source_url, fetched_at)
+    VALUES (:stock_id, :market_cap_crore, :current_price, :stock_pe, :book_value,
+            :dividend_yield_percent, :roce_percent, :roe_percent, :face_value, :url, now())
+    ON CONFLICT (stock_id) DO UPDATE SET
+        market_cap_crore = EXCLUDED.market_cap_crore,
+        current_price = EXCLUDED.current_price,
+        stock_pe = EXCLUDED.stock_pe,
+        book_value = EXCLUDED.book_value,
+        dividend_yield_percent = EXCLUDED.dividend_yield_percent,
+        roce_percent = EXCLUDED.roce_percent,
+        roe_percent = EXCLUDED.roe_percent,
+        face_value = EXCLUDED.face_value,
+        source_url = EXCLUDED.source_url,
+        fetched_at = now()
+    """
+)
+
+
+async def store_top_ratios(db: AsyncSession, *, stock_id: int, page: str, url: str) -> bool:
+    """Replace the stock's stored top ratios with this read; False (and nothing changed) when the
+    page has none of them."""
+    ratios = parse_top_ratios(page)
+    values = {
+        "market_cap_crore": ratios.market_cap_crore,
+        "current_price": ratios.current_price,
+        "stock_pe": ratios.stock_pe,
+        "book_value": ratios.book_value,
+        "dividend_yield_percent": ratios.dividend_yield_percent,
+        "roce_percent": ratios.roce_percent,
+        "roe_percent": ratios.roe_percent,
+        "face_value": ratios.face_value,
+    }
+    if all(value is None for value in values.values()):
+        return False
+    await db.execute(_UPSERT_RATIOS, {"stock_id": stock_id, "url": url, **values})
+    return True
 
 
 async def store_screener_facts(

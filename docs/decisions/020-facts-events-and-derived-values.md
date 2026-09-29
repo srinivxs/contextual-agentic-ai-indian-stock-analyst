@@ -105,3 +105,25 @@ chosen by the conflict policy above (the best-ranked source), without the "dispu
 list of sources that disagree, and every source there is a small link icon (its name and hover
 give the full source). Nothing changed in how figures are stored or chosen, and the chat still
 names another source's differing figure beside the one it uses (ADR 021 amendments).
+
+## Amendment (2026-09-30): the Fundamentals card
+
+The owner asked for a Fundamentals card on the stock page, for all three stocks, in place of the
+share price card's returns, volatility, P/E and dividend yield: Mkt Cap, ROE, P/E Ratio (TTM),
+EPS (TTM), P/B Ratio, Div Yield, Industry P/E, Book Value, Debt to Equity, Face Value.
+
+- **Source:** the "top ratios" list of the same screener.in company page the worker already reads
+  once a day (no new page, no new request; rule 9 and ADR 018 still hold). Parsed by code
+  (`screener_numbers.parse_top_ratios`, written in P11 and unused until now) and stored one row per
+  stock in `screener_ratios` (migration `0013`), replaced on each read, so "Update data" refreshes
+  it. A missing item is NULL, never zero.
+- **Computed on read (ADR 009):** EPS (TTM) = screener.in's current price / its P/E, and P/B =
+  its current price / its book value per share (the same moment's figures); Debt to Equity is ours
+  (stored borrowings / equity), "not applicable" for a bank.
+- **Not available, said plainly:** Industry P/E. The company page read does not show it and no
+  other page is read.
+- **Honest limits:** screener.in's figures are as of its read (the card says when), not BSE's
+  end-of-day close in the share price card; the P/E is screener.in's own trailing-twelve-months
+  figure. The share price card now holds only the close, the chart and corporate actions (the
+  price API still sends returns, volatility, P/E and yield: matching and the chat use them).
+

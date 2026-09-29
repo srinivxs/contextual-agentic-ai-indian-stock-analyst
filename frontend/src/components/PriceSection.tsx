@@ -1,59 +1,17 @@
 /**
- * The share price card of the stock page: the latest end-of-day close, a year of adjusted closes,
- * returns, volatility, P/E and dividend yield, and any bonus issue or split. Each figure is shown as
- * the server sent it; a missing one says why, never a zero.
+ * The share price card of the stock page: the latest end-of-day close and its day change, the stored
+ * adjusted closes, and any bonus issue or split. Valuation now lives in the Fundamentals card
+ * (the owner, 2026-09-30: returns, volatility, P/E and dividend yield were removed from here).
  */
 
 import { CitationChip } from '@/components/InsightSections';
 import { PriceChart } from '@/components/PriceChart';
 import { eventDateLabel } from '@/lib/insights';
-import {
-  actionLine,
-  priceLabel,
-  RETURN_KEYS,
-  signedPercent,
-  type PriceRatio,
-  type Prices,
-  type ReturnKey,
-} from '@/lib/prices';
+import { actionLine, priceLabel, signedPercent, type Prices } from '@/lib/prices';
 import { direction } from '@/lib/series';
-
-const RETURN_LABELS: Record<ReturnKey, string> = {
-  '1m': '1 month',
-  '3m': '3 months',
-  '6m': '6 months',
-  '1y': '1 year',
-};
-
-const NOT_ENOUGH = 'not enough history';
 
 const toneOf = (percent: string | null): string =>
   direction(percent === null ? null : Number(percent));
-
-/** P/E or dividend yield: the value when there is one, else the state and always the reason. */
-function RatioItem({ label, ratio, unit }: { label: string; ratio: PriceRatio; unit: string }) {
-  const known = ratio.status === 'ok' && ratio.value !== null;
-  return (
-    <li className="price-stat">
-      <span className="price-stat-name">{label}</span>
-      <span className={known ? 'price-stat-value num' : 'price-stat-value muted'}>
-        {known
-          ? `${ratio.value}${unit}`
-          : ratio.status === 'not_assessable'
-            ? 'Not assessable'
-            : 'Not available'}
-      </span>
-      <span className="price-stat-reason muted">{ratio.reason}</span>
-      {ratio.citations.length > 0 && (
-        <span className="chips">
-          {ratio.citations.map((citation, index) => (
-            <CitationChip key={`${index}-${citation.label}`} citation={citation} icon />
-          ))}
-        </span>
-      )}
-    </li>
-  );
-}
 
 export type PriceState =
   { phase: 'loading' } | { phase: 'problem' } | { phase: 'ready'; prices: Prices };
@@ -69,7 +27,7 @@ export function PriceSection({ state, name }: { state: PriceState; name: string 
   } else if (state.prices.latest === null) {
     body = <p className="muted">Prices not loaded yet</p>;
   } else {
-    const { latest, history, returns, volatility_1y: volatility, actions } = state.prices;
+    const { latest, history, actions } = state.prices;
     const day = signedPercent(latest.change_pct);
     body = (
       <>
@@ -83,36 +41,6 @@ export function PriceSection({ state, name }: { state: PriceState; name: string 
           )}
         </p>
         <PriceChart history={history} name={name} changePct={latest.change_pct} />
-        <ul className="price-stats" aria-label="Returns">
-          {RETURN_KEYS.map((key) => {
-            const value = returns[key];
-            const text = signedPercent(value);
-            return (
-              <li key={key} className="price-stat">
-                <span className="price-stat-name">{RETURN_LABELS[key]}</span>
-                {text ? (
-                  <span className={`price-stat-value num home-change ${toneOf(value)}`}>
-                    {text}
-                  </span>
-                ) : (
-                  <span className="price-stat-value muted">{NOT_ENOUGH}</span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-        <ul className="price-stats" aria-label="Risk and valuation">
-          <li className="price-stat">
-            <span className="price-stat-name">Volatility, 1 year</span>
-            {volatility === null ? (
-              <span className="price-stat-value muted">{NOT_ENOUGH}</span>
-            ) : (
-              <span className="price-stat-value num">{`${volatility}%`}</span>
-            )}
-          </li>
-          <RatioItem label="P/E" ratio={state.prices.pe} unit="" />
-          <RatioItem label="Dividend yield" ratio={state.prices.dividend_yield} unit="%" />
-        </ul>
         {actions.length > 0 && (
           <ul className="price-actions">
             {actions.map((action) => (

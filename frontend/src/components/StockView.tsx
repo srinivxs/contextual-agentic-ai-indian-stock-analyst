@@ -12,8 +12,10 @@ import {
   RecentEvents,
   RecentSentiment,
 } from '@/components/InsightSections';
+import { FundamentalsCard, type FundamentalsState } from '@/components/FundamentalsCard';
 import { PriceSection, type PriceState } from '@/components/PriceSection';
 import { ApiError } from '@/lib/api';
+import { getFundamentals } from '@/lib/fundamentals';
 import { getInsights, isTickerSymbol, type StockInsights } from '@/lib/insights';
 import { getPrices } from '@/lib/prices';
 import { signOut, useMe } from '@/lib/session';
@@ -56,6 +58,17 @@ export function StockView() {
     priceResult !== null && priceResult.symbol === symbol
       ? priceResult.state
       : { phase: 'loading' };
+  const [fundamentalsResult, setFundamentalsResult] = useState<{
+    symbol: string;
+    state: FundamentalsState;
+  } | null>(null);
+  const fundamentalsState: FundamentalsState =
+    fundamentalsResult !== null && fundamentalsResult.symbol === symbol
+      ? fundamentalsResult.state
+      : { phase: 'loading' };
+  // Bumped when an "Update data" run finishes: every card loads again, keeping what it shows until
+  // the new answer arrives.
+  const [version, setVersion] = useState(0);
   const signedIn = me.status === 'signed-in';
 
   useEffect(() => {
@@ -83,7 +96,7 @@ export function StockView() {
     return () => {
       cancelled = true;
     };
-  }, [signedIn, symbol, router]);
+  }, [signedIn, symbol, router, version]);
 
   // The price card loads on its own: a failure here never hides the key facts, and the reverse.
   useEffect(() => {
@@ -102,7 +115,26 @@ export function StockView() {
     return () => {
       cancelled = true;
     };
-  }, [signedIn, symbol, router]);
+  }, [signedIn, symbol, router, version]);
+
+  // The fundamentals card too loads on its own.
+  useEffect(() => {
+    if (!signedIn || symbol === null) return;
+    let cancelled = false;
+    getFundamentals(symbol).then(
+      (fundamentals) => {
+        if (!cancelled) setFundamentalsResult({ symbol, state: { phase: 'ready', fundamentals } });
+      },
+      (error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 401) router.replace('/');
+        else setFundamentalsResult({ symbol, state: { phase: 'problem' } });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn, symbol, router, version]);
 
   if (me.status === 'error') {
     return (
@@ -143,7 +175,12 @@ export function StockView() {
 
   const insights = outcome?.phase === 'ready' ? outcome.insights : null;
   return (
-    <AppShell email={me.user.email} onSignOut={leave} active="stocks">
+    <AppShell
+      email={me.user.email}
+      onSignOut={leave}
+      active="stocks"
+      onDataUpdated={() => setVersion((v) => v + 1)}
+    >
       <div className="stock-head">
         <Monogram symbol={symbol} size="lg" />
         <div className="stock-head-text">
@@ -166,6 +203,7 @@ export function StockView() {
       {outcome?.phase !== 'problem' && (
         <PriceSection state={priceState} name={insights?.name ?? symbol} />
       )}
+      {outcome?.phase !== 'problem' && <FundamentalsCard state={fundamentalsState} />}
       {insights && (
         <>
           <KeyFacts facts={insights.key_facts} />

@@ -19,6 +19,8 @@ export type DataStatus = {
   prices_to: string | null;
   /** The newest live RBI release stored (a timestamp), or null. */
   rbi_to: string | null;
+  /** When "Update data" works again (once an hour); null means now. */
+  next_update_at: string | null;
   filings_on: boolean;
   prices_on: boolean;
   /** False: the RBI tab shows sample items, not the live feed. */
@@ -43,6 +45,7 @@ function isStatus(value: unknown): value is DataStatus {
     orNull(s.filings_checked_at) &&
     orNull(s.prices_to) &&
     orNull(s.rbi_to) &&
+    orNull(s.next_update_at) &&
     bool(s.filings_on) &&
     bool(s.prices_on) &&
     bool(s.rbi_live)
@@ -104,6 +107,11 @@ export function dataNote(status: DataStatus): string {
   const head = newest ? `Data updated to ${label(newest)}` : 'No data updated yet';
   const note = `${head}: ${parts.join(', ')}. Not live data.`;
   return status.updating ? `Updating… ${note}` : note;
+}
+
+/** "16:05" in the reader's own time: when "Update data" works again. */
+export function clockOf(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
 /** What a click on "Update data" did, in one or two sentences. */

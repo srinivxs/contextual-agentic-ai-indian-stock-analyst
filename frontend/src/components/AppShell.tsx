@@ -22,6 +22,8 @@ type Props = {
   onSignOut: () => void;
   /** Which menu item is this page: marked as the current one. */
   active?: Section;
+  /** Called when an "Update data" run finishes, so the page can load its data again. */
+  onDataUpdated?: () => void;
   children: ReactNode;
 };
 
@@ -44,8 +46,8 @@ export function initials(email: string): string {
  * The frame around every signed-in page: the menu, the stock search, "Update data", who you are,
  * and under the top bar the date the data is updated to (a disclaimer: it is not live).
  */
-export function AppShell({ email, onSignOut, active, children }: Props) {
-  const freshness = useFreshness();
+export function AppShell({ email, onSignOut, active, onDataUpdated, children }: Props) {
+  const freshness = useFreshness(onDataUpdated);
   return (
     <div className="shell">
       <aside className="sidebar">

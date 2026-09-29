@@ -119,6 +119,13 @@ updated to on every page. The per-stock **Check for new filings** button and its
 
 A follow still checks that stock at once, within the same hour limit.
 
+Later the same day the owner added: the button itself works **once an hour**, for everyone
+together. Each press is recorded in `data_refreshes` (migration `0013`) under a transaction-scoped
+advisory lock, so presses at the same moment count as one; a press within the hour gets 429, and
+the status carries `next_update_at`, so the button is off until then and says when it works again.
+When a run finishes, the stock page loads its cards again (the Fundamentals card included: the
+filings check reads screener.in's page, which refreshes its top ratios).
+
 ## Amendment (P9d, 2026-09-23): a follow and a button check a stock at once
 
 (Superseded in part by the amendment above: the button is now "Update data".)

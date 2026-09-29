@@ -202,7 +202,8 @@ async def clean_document_tables(admin_engine: AsyncEngine) -> None:
     async with admin_engine.begin() as connection:
         await connection.execute(
             text(
-                "TRUNCATE documents, jobs, embeddings, facts, events, extraction_calls "
+                "TRUNCATE documents, jobs, embeddings, facts, events, extraction_calls, "
+                "screener_ratios, data_refreshes "
                 "RESTART IDENTITY CASCADE"
             )
         )

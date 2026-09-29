@@ -43,7 +43,7 @@ from app.documents import PDF_SIGNATURE, PdfFile, record_document, stock_id
 from app.ingest import JobCannotSucceed
 from app.jobs import ClaimedJob, complete, still_mine
 from app.polite_fetch import FetchRefused, FetchTooLarge, polite_get
-from app.screener_facts import store_screener_facts
+from app.screener_facts import store_screener_facts, store_top_ratios
 
 SCREENER_URL = "https://www.screener.in/company/{symbol}/consolidated/"
 PAGE_LIMIT = 3 * 1024 * 1024  # a company page is a few hundred kilobytes
@@ -356,6 +356,8 @@ async def discover(
         await store_screener_facts(
             db, stock_id=stock.id, is_financial=stock.is_financial, page=page, url=url
         )
+        # And its top ratios, for the stock page's Fundamentals card (still no second request).
+        await store_top_ratios(db, stock_id=stock.id, page=page, url=url)
         for link in links:
             await db.execute(
                 _ENQUEUE_FETCH,

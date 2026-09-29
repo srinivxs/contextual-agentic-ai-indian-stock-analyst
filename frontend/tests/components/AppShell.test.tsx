@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -225,5 +225,73 @@ describe('the logos', () => {
     preloadLogos();
     vi.unstubAllGlobals();
     expect(asked).toEqual(['/logos/RELIANCE.png', '/logos/TCS.png', '/logos/HDFCBANK.png']);
+  });
+});
+
+describe('update data at most once an hour', () => {
+  const shell = () =>
+    render(
+      <AppShell email="reader@example.test" onSignOut={() => {}}>
+        <p>content</p>
+      </AppShell>,
+    );
+
+  it('is off after a press, saying when it works again', async () => {
+    installFakeApi();
+    shell();
+    const button = await screen.findByRole('button', { name: 'Update data' });
+    await userEvent.click(button);
+    await waitFor(() => expect(button).toBeDisabled());
+    expect(button.getAttribute('title')).toMatch(/^Updated recently: next update after \d\d:\d\d$/);
+  });
+
+  it('is off when the last press was less than an hour ago', async () => {
+    installFakeApi({
+      dataStatus: { next_update_at: new Date(Date.now() + 30 * 60_000).toISOString() },
+    });
+    shell();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update data' })).toBeDisabled());
+  });
+
+  it('turns itself back on when the hour is up', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    installFakeApi({ dataStatus: { next_update_at: new Date(Date.now() + 60_000).toISOString() } });
+    shell();
+    const button = await screen.findByRole('button', { name: 'Update data' });
+    await waitFor(() => expect(button).toBeDisabled());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(61_000);
+    });
+    await waitFor(() => expect(button).toBeEnabled());
+    vi.useRealTimers();
+  });
+
+  it('says so when the server refuses a press within the hour', async () => {
+    const api = installFakeApi();
+    shell();
+    const button = await screen.findByRole('button', { name: 'Update data' });
+    api.setDataStatus({ next_update_at: new Date(Date.now() + 30 * 60_000).toISOString() });
+    await userEvent.click(button);
+    expect(await screen.findByText('Data was updated less than an hour ago.')).toBeInTheDocument();
+    await waitFor(() => expect(button).toBeDisabled());
+  });
+
+  it('tells the page when an update finishes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = installFakeApi({ dataStatus: { updating: true } });
+    const onDataUpdated = vi.fn();
+    render(
+      <AppShell email="reader@example.test" onSignOut={() => {}} onDataUpdated={onDataUpdated}>
+        <p>content</p>
+      </AppShell>,
+    );
+    await screen.findByRole('note', { name: 'Data freshness' });
+    expect(onDataUpdated).not.toHaveBeenCalled();
+    api.setDataStatus({ updating: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DATA_POLL_MS);
+    });
+    await waitFor(() => expect(onDataUpdated).toHaveBeenCalledOnce());
+    vi.useRealTimers();
   });
 });

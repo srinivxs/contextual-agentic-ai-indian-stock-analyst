@@ -3155,3 +3155,48 @@ a.chat-source-chip:hover {
 .source-icon.rbi {
   color: var(--accent);
 }
+
+/* The Fundamentals card (the owner, 2026-09-30): ten values in two columns. */
+.fundamentals-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.15rem 2rem;
+  margin: 0;
+}
+
+.fundamental {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fundamental dt {
+  color: var(--muted);
+}
+
+.fundamental dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.fundamental dd.muted {
+  font-weight: 400;
+}
+
+.fundamentals-source {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 40rem) {
+  .fundamentals-grid {
+    grid-template-columns: 1fr;
+  }
+}

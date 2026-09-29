@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.integration.conftest import DbConfig, Migrator, make_alembic_config
 
-HEAD = "0012"
+HEAD = "0013"
 
 STATE_QUERIES = {
     "extension": "SELECT extversion FROM pg_extension WHERE extname = 'vector'",
@@ -40,6 +40,10 @@ STATE_QUERIES = {
         "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' "
         "AND tablename IN ('prices', 'price_days')"
     ),
+    "fundamentals_tables": (
+        "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' "
+        "AND tablename IN ('screener_ratios', 'data_refreshes')"
+    ),
     "version_table": "SELECT to_regclass('public.alembic_version') IS NOT NULL",
 }
 
@@ -60,6 +64,7 @@ class State:
     investor_profiles_table: bool  # 0009
     feed_tables: int  # feed_items, feed_state (0010)
     prices_tables: int  # prices, price_days (0011)
+    fundamentals_tables: int  # screener_ratios, data_refreshes (0013)
     revision: str | None
     stock_rows: tuple[tuple[object, ...], ...]
 
@@ -100,6 +105,7 @@ async def snapshot(admin_engine: AsyncEngine) -> State:
             investor_profiles_table=bool(await scalar("investor_profiles_table")),
             feed_tables=int(str(await scalar("feed_tables"))),
             prices_tables=int(str(await scalar("prices_tables"))),
+            fundamentals_tables=int(str(await scalar("fundamentals_tables"))),
             revision=revision,
             stock_rows=rows,
         )
@@ -118,6 +124,7 @@ EMPTY = State(
     investor_profiles_table=False,
     feed_tables=0,
     prices_tables=0,
+    fundamentals_tables=0,
     revision=None,
     stock_rows=(),
 )
@@ -143,6 +150,7 @@ async def test_up_down_up_round_trip_verified_at_every_step(
     assert first.investor_profiles_table is True
     assert first.feed_tables == 2
     assert first.prices_tables == 2
+    assert first.fundamentals_tables == 2
     assert first.revision == HEAD
     assert [row[1] for row in first.stock_rows] == ["RELIANCE", "TCS", "HDFCBANK"]
 
@@ -156,12 +164,19 @@ async def test_up_down_up_round_trip_verified_at_every_step(
 async def test_each_downgrade_step_removes_only_what_its_revision_created(
     migrator: Migrator, admin_engine: AsyncEngine
 ) -> None:
-    """0012 adds messages.data_table, 0011 owns prices and price_days, 0010 feed_items and
+    """0013 owns screener_ratios and data_refreshes, 0012 adds messages.data_table, 0011 owns
+    prices and price_days, 0010 feed_items and
     feed_state, 0009 investor_profiles, 0008 conversations and messages, 0007 facts and events,
     0006 embeddings, 0004 the ingestion tables, 0003 user_follows,
     0002 users and sessions, 0001 stocks."""
     await migrator.upgrade("head")
     at_head = await snapshot(admin_engine)
+
+    await migrator.downgrade("-1")
+    no_fundamentals = await snapshot(admin_engine)
+    assert no_fundamentals.revision == "0012"
+    assert no_fundamentals.fundamentals_tables == 0
+    assert no_fundamentals.prices_tables == 2  # everything older is untouched
 
     await migrator.downgrade("-1")  # 0012 only adds a column to messages
     no_data_table = await snapshot(admin_engine)

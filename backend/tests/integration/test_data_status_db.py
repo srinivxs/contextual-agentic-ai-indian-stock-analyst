@@ -68,30 +68,55 @@ async def test_one_click_queues_filings_prices_and_the_rbi_feed(
     )
 
 
-async def test_clicking_again_at_once_queues_nothing_more(
+async def test_a_second_press_within_the_hour_is_refused_and_queues_nothing(
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    headers = await sign_in(make_user, session_factory)
+    settings = everything_on(db_config)
+    first = await run(settings, "POST", REFRESH, headers)
+
+    again = await run(settings, "POST", REFRESH, headers)
+    status = (await run(settings, "GET", STATUS, headers)).json()
+
+    assert (first.status_code, again.status_code) == (202, 429)
+    assert again.json()["error"]["code"] == "rate_limited"
+    assert len(await queued(admin_engine)) == 5
+    assert status["next_update_at"] is not None  # the page shows when it works again
+    assert await rows(admin_engine, "SELECT count(*) FROM data_refreshes") == [(1,)]
+
+
+async def test_after_the_hour_it_works_again(
     db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
 ) -> None:
     headers = await sign_in(make_user, session_factory)
     settings = everything_on(db_config)
     await run(settings, "POST", REFRESH, headers)
-    async with admin_engine.begin() as connection:  # as if the worker had finished them all
-        await connection.execute(text("UPDATE jobs SET status = 'completed'"))
+    async with admin_engine.begin() as connection:  # as if it all happened 61 minutes ago
+        await connection.execute(
+            text("UPDATE data_refreshes SET requested_at = now() - interval '61 minutes'")
+        )
+        await connection.execute(
+            text("UPDATE jobs SET status = 'completed', created_at = now() - interval '61 minutes'")
+        )
 
-    again = (await run(settings, "POST", REFRESH, headers)).json()
+    again = await run(settings, "POST", REFRESH, headers)
+    status = (await run(settings, "GET", STATUS, headers)).json()
 
-    assert (again["filings"], again["prices"], again["rbi"]) == ("recent", "recent", "recent")
-    assert len(await queued(admin_engine)) == 5
+    assert again.status_code == 202
+    assert again.json()["filings"] == "queued"
+    assert status["next_update_at"] is not None  # counted from this press
 
 
-async def test_many_clicks_at_once_queue_each_job_once(
+async def test_many_presses_at_once_count_as_one(
     db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
 ) -> None:
     headers = await sign_in(make_user, session_factory)
     async with running_app(everything_on(db_config)) as (_, client):
         answers = await asyncio.gather(*(client.post(REFRESH, headers=headers) for _ in range(6)))
 
-    assert {answer.status_code for answer in answers} == {202}
+    assert sorted(answer.status_code for answer in answers) == [202, 429, 429, 429, 429, 429]
     assert len(await queued(admin_engine)) == 5
+    assert await rows(admin_engine, "SELECT count(*) FROM data_refreshes") == [(1,)]
 
 
 async def test_a_source_switched_off_is_never_queued(
@@ -158,6 +183,7 @@ async def test_the_status_gives_the_dates_the_data_is_updated_to(
         "filings_checked_at": "2026-09-29T09:30:00+00:00",
         "prices_to": "2026-09-28",
         "rbi_to": None,  # only sample RBI items, which are not live data
+        "next_update_at": None,  # nobody pressed "Update data" yet
         "filings_on": False,
         "prices_on": False,
         "rbi_live": False,
