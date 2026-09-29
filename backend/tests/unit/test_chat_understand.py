@@ -191,3 +191,31 @@ def test_periods_are_read_as_fiscal_year_and_quarter_codes(
 )
 def test_text_that_is_not_a_full_year_or_quarter_names_no_period(text: str) -> None:
     assert ask(text).periods == ()
+
+
+# --- "Match me" (P14) -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Match me",
+        "match me please",
+        "Which stock suits me best?",
+        "Which one fits my profile?",
+        "What matches my preferences?",
+        "Which of them is right for me",
+        "Which one aligns best with a conservative, long-term investor?",
+        "Is TCS a good fit for me?",
+    ],
+)
+def test_match_questions_ask_for_a_match(text: str) -> None:
+    assert ask(text).wants_match is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["What was TCS's net profit in FY2026?", "Does the revenue match the guidance?", "Suits"],
+)
+def test_other_questions_do_not_ask_for_a_match(text: str) -> None:
+    assert ask(text).wants_match is False

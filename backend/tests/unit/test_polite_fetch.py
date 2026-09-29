@@ -7,7 +7,7 @@ timeout, follows a redirect only to another allowed address, and stops reading p
 import httpx
 import pytest
 
-from app.polite_fetch import USER_AGENT, FetchRefused, FetchTooLarge, polite_get
+from app.polite_fetch import USER_AGENT, FetchRefused, FetchTooLarge, polite_fetch, polite_get
 
 ALLOWED = "https://allowed.example/ok"
 
@@ -93,3 +93,46 @@ async def test_an_error_status_is_an_error(status: int) -> None:
     async with client(httpx.MockTransport(handler)) as http:
         with pytest.raises(httpx.HTTPStatusError):
             await polite_get(http, ALLOWED, allowed=allow, limit=1000)
+
+
+async def test_polite_fetch_sends_extra_headers_and_returns_status_and_headers() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=b"body", headers={"ETag": "x"})
+
+    async with client(httpx.MockTransport(handler)) as http:
+        got = await polite_fetch(
+            http, ALLOWED, allowed=allow, limit=1000, extra_headers={"If-None-Match": "x"}
+        )
+
+    assert (got.status, got.headers["etag"], got.body) == (200, "x", b"body")
+    assert seen[0].headers["if-none-match"] == "x"
+    assert seen[0].headers["user-agent"] == USER_AGENT
+
+
+async def test_extra_headers_cannot_replace_the_honest_user_agent() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200)
+
+    async with client(httpx.MockTransport(handler)) as http:
+        await polite_fetch(
+            http, ALLOWED, allowed=allow, limit=10, extra_headers={"User-Agent": "Mozilla/5.0"}
+        )
+
+    assert seen[0].headers["user-agent"] == USER_AGENT
+
+
+async def test_a_304_is_a_result_only_when_asked_for() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(304)
+
+    async with client(httpx.MockTransport(handler)) as http:
+        got = await polite_fetch(http, ALLOWED, allowed=allow, limit=10, not_modified_ok=True)
+        assert (got.status, got.body) == (304, b"")
+        with pytest.raises(FetchRefused):  # as before: a 3xx without a Location goes nowhere
+            await polite_fetch(http, ALLOWED, allowed=allow, limit=10)

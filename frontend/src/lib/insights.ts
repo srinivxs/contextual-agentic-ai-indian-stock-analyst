@@ -5,7 +5,7 @@
  */
 
 import { ApiError, apiFetch } from '@/lib/api';
-import { officialUrl, screenerUrl } from '@/lib/documents';
+import { officialUrl, rbiUrl, screenerUrl } from '@/lib/documents';
 
 const METRICS = [
   'revenue_from_operations',
@@ -23,7 +23,7 @@ const BASES = ['consolidated', 'standalone', 'unspecified'] as const;
 const CURRENCIES = ['INR', 'USD'] as const;
 const UNITS = ['INR_CRORE', 'USD_MILLION', 'INR_PER_SHARE', 'USD_PER_SHARE', 'PERCENT'] as const;
 const FACT_STATUSES = ['single', 'agreed', 'disputed'] as const;
-const SOURCES = ['filing', 'screener'] as const;
+const SOURCES = ['filing', 'screener', 'rbi'] as const;
 const DERIVED_NAMES = [
   'debt_to_equity',
   'revenue_growth',
@@ -39,7 +39,7 @@ export type Basis = (typeof BASES)[number];
 export type Unit = (typeof UNITS)[number];
 export type DerivedStatus = (typeof DERIVED_STATUSES)[number];
 
-/** Where a figure came from: a page of a filing (with its words) or a screener.in table. */
+/** Where a figure came from: a filing page (with its words), a screener.in table or an RBI release. */
 export type Citation = {
   source: (typeof SOURCES)[number];
   label: string;
@@ -120,7 +120,7 @@ const decimal = (value: unknown): boolean => text(value) && DECIMAL.test(value);
 const listOf = (value: unknown, test: (v: unknown) => boolean): boolean =>
   Array.isArray(value) && value.every(test);
 
-function isCitation(value: unknown): value is Citation {
+export function isCitation(value: unknown): value is Citation {
   const c = (value ?? {}) as Partial<Citation>;
   return oneOf(SOURCES)(c.source) && text(c.label) && orNull(c.url, text) && orNull(c.quote, text);
 }
@@ -255,12 +255,14 @@ export function basisNote(basis: Basis): string {
 }
 
 /**
- * The address a citation may link to, or null. A filing may only link to BSE and a screener
- * figure only to a screener.in company page, so a bad value can never become a `javascript:` or
+ * The address a citation may link to, or null. A filing may only link to BSE, a screener
+ * figure only to a screener.in company page, an RBI release only to rbi.org.in, so a bad value can never become a `javascript:` or
  * look-alike link in the page.
  */
 export function citationLink(citation: Citation): string | null {
-  return citation.source === 'filing' ? officialUrl(citation.url) : screenerUrl(citation.url);
+  if (citation.source === 'filing') return officialUrl(citation.url);
+  if (citation.source === 'rbi') return rbiUrl(citation.url);
+  return screenerUrl(citation.url);
 }
 
 export type FactRow = { metric: Metric; label: string; cells: (KeyFact | null)[] };

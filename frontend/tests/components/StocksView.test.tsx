@@ -63,7 +63,9 @@ describe('the stocks page', () => {
 
   it('renders stock text as text, never as HTML', async () => {
     installFakeApi({
-      stocks: [{ symbol: 'DEMOA', name: '<img src=x onerror=alert(1)>', bse_code: '000001', sector: 'S' }],
+      stocks: [
+        { symbol: 'DEMOA', name: '<img src=x onerror=alert(1)>', bse_code: '000001', sector: 'S' },
+      ],
     });
     const { container } = render(<StocksView />);
 

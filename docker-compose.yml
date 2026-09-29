@@ -150,6 +150,10 @@ services:
       EXTRACTION_ENABLED: ${EXTRACTION_ENABLED:-false}
       # The owner approved $2; set it lower for a first test run (for example 0.01).
       EXTRACTION_BUDGET_USD: ${EXTRACTION_BUDGET_USD:-2.00}
+      # The RBI press-release feed (P15, ADR 007). "fixture" (the default) reads the synthetic
+      # items shipped with the code and never touches the network; "live" fetches rbi.org.in.
+      FEED_MODE: ${FEED_MODE:-fixture}
+      FEED_POLL_MINUTES: ${FEED_POLL_MINUTES:-60}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}

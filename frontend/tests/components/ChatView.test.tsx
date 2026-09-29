@@ -221,6 +221,42 @@ describe('an answer’s sources', () => {
     expect(within(computed).queryByRole('link')).toBeNull();
   });
 
+  it('marks an RBI source and links it to rbi.org.in', async () => {
+    const sources = await answered(
+      demoAnswer({
+        text: 'The RBI said so [1].',
+        sources: [
+          demoChatSource({
+            source: 'rbi',
+            label: 'RBI press release · 12 Sep 2026',
+            url: 'https://www.rbi.org.in/Scripts/x.aspx?prid=1',
+          }),
+        ],
+      }),
+    );
+    expect(within(sources).getByText('RBI')).toBeInTheDocument();
+    const link = within(sources).getByRole('link', { name: 'RBI press release · 12 Sep 2026' });
+    expect(link).toHaveAttribute('href', 'https://www.rbi.org.in/Scripts/x.aspx?prid=1');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('shows an RBI source on another host as plain text', async () => {
+    const sources = await answered(
+      demoAnswer({
+        text: 'The RBI said so [1].',
+        sources: [
+          demoChatSource({
+            source: 'rbi',
+            label: 'RBI press release · 12 Sep 2026',
+            url: 'https://www.bseindia.com/x.pdf',
+          }),
+        ],
+      }),
+    );
+    expect(within(sources).getByText('RBI press release · 12 Sep 2026')).toBeInTheDocument();
+    expect(within(sources).queryByRole('link')).toBeNull();
+  });
+
   it('shows a source it may not link to as plain text', async () => {
     const sources = await answered(
       demoAnswer({

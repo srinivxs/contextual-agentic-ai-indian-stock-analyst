@@ -26,7 +26,7 @@ class Source:
     """One numbered source under an answer: what the [n] markers in the text point at."""
 
     marker: int  # 1, 2, 3 ... in order of first use
-    source: Literal["filing", "screener", "derived"]
+    source: Literal["filing", "screener", "rbi", "derived"]
     # "Annual report · Annual Report 2026 · p.37", "screener.in · profit-loss · ...", or for a
     # computed value "Computed: Net profit growth FY2025 → FY2026"
     label: str

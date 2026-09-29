@@ -18,8 +18,9 @@ Nothing it writes is trusted. This code decides, and an empty list of problems i
                             sources (an annual report's FY2025 revenue and screener.in's FY2026):
                             they may count it differently, so the change is not like with like;
                             the growth value (D#) compares like with like (ADR 020)
-    figure_missing          a claim that cites facts or computed values with numbers but shows
-                            none of those numbers ("TCS has low leverage" citing ten figures):
+    figure_missing          a claim that cites facts, computed values or match verdicts (P14)
+                            with numbers but shows none of those numbers ("TCS has low
+                            leverage" citing ten figures, "TCS is a partial match"):
                             a judgment must show the figure it rests on, or there is nothing
                             for the number check to test
 
@@ -52,7 +53,7 @@ MAX_CLAIM_CHARS = 600
 MAX_CITATIONS = 5
 ID_IN_DETAIL = 20  # an unknown ID is the model's text: only this much of it goes in a detail
 
-_MARKERS = re.compile(r"\s*\[[FDNE]\d+(?:\s*,\s*[FDNE]\d+)*\]")
+_MARKERS = re.compile(r"\s*\[[FDMNE]\d+(?:\s*,\s*[FDMNE]\d+)*\]")
 _URL = re.compile(r"https?://|www\.", re.IGNORECASE)
 _BARE_PERIOD = re.compile(r"(?<![a-z0-9])(?:q[1-4]|[1-4]q|h[12]|9m)(?![a-z0-9])", re.IGNORECASE)
 _YEAR = re.compile(r"(?<![\d,.])(?:199\d|20\d\d)(?![\d%]|[.,]\d)")
@@ -196,7 +197,7 @@ def _figure_missing(text: str, cited: list[EvidenceItem]) -> bool:
     """True when the cited facts and computed values have numbers and the claim shows none."""
     figures: set[Decimal] = set()
     for item in cited:
-        if item.kind in ("fact", "derived"):
+        if item.kind in ("fact", "derived", "match"):
             figures |= _sizes(_checkable(item.text, [item]))
     return bool(figures) and not (figures & _sizes(_checkable(text, cited)))
 

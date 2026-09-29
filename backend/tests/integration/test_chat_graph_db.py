@@ -109,7 +109,7 @@ def evidence_id(user: str, *needles: str) -> str:
     """The ID of the evidence line that contains every needle, read from the prompt as the
     model would."""
     for line in user.splitlines():
-        match = re.match(r"\[([FDNE]\d+)\]", line)
+        match = re.match(r"\[([FDMNE]\d+)\]", line)
         if match and all(needle in line for needle in needles):
             return match.group(1)
     raise AssertionError(f"no evidence line with {needles}")
@@ -516,3 +516,43 @@ async def test_without_a_profile_search_gets_no_nudge(
     embedder = FakeEmbedder()
     await ask(session_factory, FakeLlm(grounded), "What was TCS's net profit?", embedder=embedder)
     assert embedder.calls == ["What was TCS's net profit?"]
+
+
+# --- "Match me" (P14) -----------------------------------------------------------------------------
+
+
+async def test_a_match_question_gets_the_code_s_verdicts_to_explain(
+    session_factory: Factory, admin_engine: AsyncEngine, make_user: MakeUser
+) -> None:
+    """The verdicts come from app/matching/rules.py; the model only explains them (M items)."""
+    await seed(admin_engine)
+    user = await make_user()
+    await ask(session_factory, FakeLlm(grounded), STATEMENT, user_id=user)
+    seen: list[str] = []
+
+    def explains(system: str, user_text: str, tool: ToolSpec) -> dict[str, Any]:
+        seen.append(user_text)
+        mid = evidence_id(user_text, "TCS · Match for your profile")
+        return {
+            "outcome": "answer",
+            "claims": [{"text": "TCS cannot be judged yet for your profile.", "citations": [mid]}],
+        }
+
+    reply = await ask(session_factory, FakeLlm(explains), "Which stock suits me?", user_id=user)
+
+    assert reply.status == "answered"
+    assert "Match for your profile: not enough data" in seen[0]  # no debt figures seeded
+    assert [line[:5] for line in seen[0].splitlines() if "Match for your profile" in line] == [
+        "[M1] ",
+        "[M2] ",
+        "[M3] ",
+    ]  # one per stock
+
+
+async def test_without_a_profile_a_match_question_gets_no_verdicts(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    llm = FakeLlm(grounded)
+    await ask(session_factory, llm, "Which stock suits me? What was TCS's net profit in FY2026?")
+    assert "Match for your profile" not in llm.calls[0][1]

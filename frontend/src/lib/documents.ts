@@ -80,6 +80,29 @@ export function officialUrl(url: string | null): string | null {
   return url !== null && url.startsWith(OFFICIAL_PREFIX) ? url : null;
 }
 
+const RBI_HOSTS: readonly string[] = ['www.rbi.org.in', 'rbi.org.in'];
+
+/**
+ * An address we are willing to link to for an RBI press release: https, on rbi.org.in or
+ * www.rbi.org.in exactly (parsed, so `rbi.org.in.evil.example` and `user@host` tricks fail), no
+ * credentials. Anything else is null and shown as plain text.
+ */
+export function rbiUrl(url: string | null): string | null {
+  if (url === null) return null;
+  try {
+    const parsed = new URL(url);
+    const ok =
+      parsed.protocol === 'https:' &&
+      RBI_HOSTS.includes(parsed.hostname) &&
+      parsed.username === '' &&
+      parsed.password === '' &&
+      parsed.port === '';
+    return ok ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The same check for a screener.in company page, where some key facts come from (ADR 020). */
 export function screenerUrl(url: string | null): string | null {
   return url !== null && url.startsWith(SCREENER_PREFIX) ? url : null;

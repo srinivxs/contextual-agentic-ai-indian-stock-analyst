@@ -25,7 +25,7 @@ INJECTED = (
 
 
 def item(item_id: str, text: str) -> EvidenceItem:
-    kind = {"F": "fact", "D": "derived", "N": "passage"}[item_id[0]]
+    kind = {"F": "fact", "D": "derived", "M": "match", "N": "passage", "E": "event"}[item_id[0]]
     return EvidenceItem(
         id=item_id,
         kind=kind,  # type: ignore[arg-type]
@@ -317,4 +317,18 @@ def test_known_limit_an_injected_number_cited_to_its_own_passage_passes_the_numb
 def test_without_markers_removes_the_evidence_ids_a_model_wrote_into_its_text() -> None:
     assert without_markers("Net profit rose [F1] 8.8% [D1, F2].") == "Net profit rose 8.8%."
     assert without_markers("An order came [E2, N1].") == "An order came."
+    assert without_markers("TCS is a partial match [M1].") == "TCS is a partial match."
+
+
+def test_a_match_verdict_must_show_one_of_its_figures() -> None:
+    """P14: "TCS is a partial match" says nothing checkable; the reason's figure must be shown."""
+    match = item(
+        "M1",
+        "TCS · Match for your profile: partial match · Debt to equity is 0.45, within the 1.0 "
+        "limit for avoiding high debt.",
+    )
+    bare = Claim("TCS is a partial match for your profile.", ("M1",))
+    assert [p.code for p in check_answer([bare], [match])] == ["figure_missing"]
+    shown = Claim("TCS is a partial match: its debt to equity is 0.45, within 1.0.", ("M1",))
+    assert check_answer([shown], [match]) == []
     assert without_markers("See note [1] and [x].") == "See note [1] and [x]."

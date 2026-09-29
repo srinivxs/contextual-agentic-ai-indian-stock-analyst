@@ -13,6 +13,7 @@ import {
   listAllDocuments,
   officialLink,
   pagesLabel,
+  rbiUrl,
   summaryLabel,
   type DocumentStatus,
   type StockDocument,
@@ -25,6 +26,7 @@ import {
   startFilingCheck,
   type FilingCheck,
 } from '@/lib/filingChecks';
+import { feedDateLabel, getFeed, type Feed, type FeedItem } from '@/lib/feed';
 import { stockPageHref } from '@/lib/insights';
 import { signOut, useMe } from '@/lib/session';
 import { listStocks, type Stock } from '@/lib/stocks';
@@ -33,6 +35,11 @@ import { listStocks, type Stock } from '@/lib/stocks';
 export const REFRESH_MS = 5000;
 
 const LOAD_FAILED = "We couldn't load the documents. Reload the page to try again.";
+const FEED_FAILED = "We couldn't load the RBI press releases. Reload the page to try again.";
+const FEED_EMPTY = "No press releases yet. The worker checks RBI's feed every hour.";
+/** The selected-tab value of the press-release tab; a stock symbol can never be lowercase. */
+const RBI_TAB = 'rbi';
+
 const CHECK_FAILED = "We couldn't start the check. Try again in a moment.";
 
 // A finished document needs no badge: the absence of one reads as "ready".
@@ -133,6 +140,61 @@ function Freshness({ check, onCheck }: { check: FilingCheck; onCheck: () => void
   );
 }
 
+function FeedRow({ item }: { item: FeedItem }) {
+  // A fixture is a sample: never linked, whatever address it carries.
+  const link = item.is_fixture ? null : rbiUrl(item.url);
+  return (
+    <li className="feed-row">
+      <span className="doc-label">
+        {link ? (
+          <a href={link} target="_blank" rel="noopener noreferrer" className="doc-link">
+            {item.title}
+          </a>
+        ) : (
+          <span>{item.title}</span>
+        )}
+        <span className="muted feed-date">
+          {feedDateLabel(item.published_at) ?? 'Date not given'}
+        </span>
+        {item.is_fixture && <span className="pill">Sample item (offline fixture)</span>}
+      </span>
+      <p className="feed-summary">{item.summary}</p>
+    </li>
+  );
+}
+
+/** The latest RBI press releases: title, date, short summary, and the credit line. */
+function FeedPanel({ feed, failed }: { feed: Feed | null; failed: boolean }) {
+  return (
+    <div
+      role="tabpanel"
+      id={`panel-${RBI_TAB}`}
+      aria-label="RBI press releases"
+      className="doc-panel"
+    >
+      {failed && (
+        <p role="alert" className="alert">
+          {FEED_FAILED}
+        </p>
+      )}
+      {!failed && feed === null && (
+        <p role="status" className="muted">
+          Loading press releases…
+        </p>
+      )}
+      {feed && feed.items.length === 0 && <p className="muted empty">{FEED_EMPTY}</p>}
+      {feed && feed.items.length > 0 && (
+        <ul className="doc-list feed-list">
+          {feed.items.map((item, index) => (
+            <FeedRow key={`${index}-${item.title}`} item={item} />
+          ))}
+        </ul>
+      )}
+      {feed && <p className="muted feed-attribution">{feed.attribution}</p>}
+    </div>
+  );
+}
+
 function StockPanel({ shelf, onCheck }: { shelf: Shelf; onCheck: () => void }) {
   const groups = groupDocuments(shelf.documents);
   return (
@@ -201,6 +263,8 @@ export function DocumentsView() {
   const [shelves, setShelves] = useState<Shelf[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [feed, setFeed] = useState<Feed | null>(null);
+  const [feedFailed, setFeedFailed] = useState(false);
   const signedIn = me.status === 'signed-in';
 
   const show = useCallback(
@@ -232,6 +296,23 @@ export function DocumentsView() {
       cancelled = true;
     };
   }, [signedIn, show]);
+
+  // The RBI feed is loaded once and on its own, so its failure never hides the stock tabs.
+  useEffect(() => {
+    if (!signedIn) return;
+    let cancelled = false;
+    getFeed().then(
+      (loaded) => {
+        if (!cancelled) setFeed(loaded);
+      },
+      () => {
+        if (!cancelled) setFeedFailed(true);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn]);
 
   // Then load again every REFRESH_MS, but only while something is still being worked on.
   const working =
@@ -298,6 +379,7 @@ export function DocumentsView() {
     );
   }
 
+  const rbiSelected = selected === RBI_TAB;
   const current = shelves?.find((s) => s.stock.symbol === selected) ?? shelves?.[0] ?? null;
 
   return (
@@ -325,7 +407,7 @@ export function DocumentsView() {
         <div className="doc-card">
           <div role="tablist" aria-label="Stocks" className="tabs">
             {shelves.map((shelf) => {
-              const active = shelf.stock.symbol === current.stock.symbol;
+              const active = !rbiSelected && shelf.stock.symbol === current.stock.symbol;
               return (
                 <button
                   key={shelf.stock.symbol}
@@ -342,8 +424,23 @@ export function DocumentsView() {
                 </button>
               );
             })}
+            <button
+              type="button"
+              role="tab"
+              id={`tab-${RBI_TAB}`}
+              aria-selected={rbiSelected}
+              aria-controls={`panel-${RBI_TAB}`}
+              className={rbiSelected ? 'tab active' : 'tab'}
+              onClick={() => setSelected(RBI_TAB)}
+            >
+              RBI press releases
+            </button>
           </div>
-          <StockPanel shelf={current} onCheck={() => void check(current.stock.symbol)} />
+          {rbiSelected ? (
+            <FeedPanel feed={feed} failed={feedFailed} />
+          ) : (
+            <StockPanel shelf={current} onCheck={() => void check(current.stock.symbol)} />
+          )}
         </div>
       )}
     </AppShell>

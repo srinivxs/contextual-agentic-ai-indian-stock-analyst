@@ -37,9 +37,9 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | P11 | Fact and event extraction, derived values | ✅ done locally (ADR 020): P11a/b facts and events (Nova 2 Lite + validator, screener.in table by code); P11c stock page with citations; real run $0.49; definition guards after the hand check |
 | P12 | Grounded chat (LangGraph) → **Gate B: cited RAG chat working** (locally; live at GL) | ✅ done locally (ADR 021): Gate B passed locally 2026-09-28; P12b/c fixes from the owner's real questions; Nova 2 Lite kept for chat |
 | P13 | Investor memory | ✅ done locally (ADR 022): code-read fixed vocabulary, profile API and panel, injection test; GL comes next (owner, 2026-09-28) |
-| P14 | Deterministic matching → **Gate C: full MVP working** | |
-| P15 | Scheduled RBI feed | |
-| GL | Go-live on AWS: everything AWS deferred from P9 onward, one cost approval, one live test | |
+| P14 | Deterministic matching → **Gate C: full MVP working** | ✅ done locally (ADR 023): rules in code, golden tests, Match page, "Match me" in chat; Gate C checked at the owner's walkthrough, live at GL |
+| P15 | Scheduled RBI feed | ✅ done locally (ADR 024): fixture by default, conditional GET, dedupe by URL and title hash, one poll per time slot, RBI tab |
+| GL | Go-live on AWS: everything AWS deferred from P9 onward, one cost approval, one live test | next (moved after P15 by the owner, 2026-09-29) |
 | P16 | Hardening, docs, demo rehearsal | |
 
 The gates matter: at each one there is something complete and demonstrable, so stopping early still
@@ -266,6 +266,10 @@ leaves a real product.
 - **Done when:** golden tests for several profiles across the three stocks.
 - **Gate C:** the full MVP works end to end.
 - **You should be able to answer:** what is deterministic and what is the LLM's job?
+- **Done (locally, 2026-09-29; ADR 023):** `app/matching/rules.py` (one rule table, named
+  thresholds; golden tests for six profiles across four synthetic stocks), `GET /api/v1/match`
+  and the Match page (no LLM), and "Match me" in the chat: the verdicts become `M#` evidence the
+  model explains under the checker. A soft criterion with no data allows at most a partial match.
 
 ## P15 — Scheduled RBI feed
 
@@ -274,6 +278,12 @@ leaves a real product.
   URL and title hash); the worker's timer enqueuing `poll_feed`; the `FEED_MODE=live|fixture` switch.
 - **Done when:** repeated polls create no duplicates; fixture mode works offline.
 - **You should be able to answer:** why is a timer inside the worker safe with several workers?
+- **Done (locally, 2026-09-29; ADR 024; migration `0010`):** `app/feeds/` (rbi: conditional,
+  allow-listed fetch and lenient safe parsing; tagging: events only for items naming a company;
+  store), `app/feed_jobs.py` and the worker's timer (one `poll_feed` per time slot, proven with
+  eight concurrent enqueues and two workers), `GET /api/v1/feed`, the "RBI press releases" tab,
+  citation source `rbi`. The real feed was checked once: RSS 2.0, ten items, ETag and
+  Last-Modified sent.
 
 ## GL — Go-live on AWS
 
@@ -292,6 +302,8 @@ leaves a real product.
   on for **both** the api and the worker; a decision on re-fetching the ~85 filings after each
   `demo-up` (the database is destroyed nightly). **Later phases add their items here** (Bedrock
   permissions for embeddings and chat, for example).
+- **Build (from P15):** the worker needs outbound HTTPS to www.rbi.org.in (it has a public IP; no
+  NAT) and a `FEED_MODE` choice for AWS (fixture, or live as the owner decides).
 - **Done when:** on the live URL a user signs in, follows a stock, sees its filings arrive, and gets
   a cited answer; then `demo-down` leaves only the permanent roots.
 

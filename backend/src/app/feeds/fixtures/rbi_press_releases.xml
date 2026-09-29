@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel>
+    <title>SAMPLE (FIXTURE) PRESS RELEASES</title>
+    <link>https://www.rbi.org.in</link>
+    <description>Synthetic sample items for offline use. Not real press releases.</description>
+    <item>
+      <title><![CDATA[Sample (fixture): Result of an overnight reverse repo auction]]></title>
+      <description><![CDATA[<p>Synthetic text. The notified amount and the accepted amount are invented for testing.</p>]]></description>
+      <link>https://www.rbi.org.in/fixture/1</link>
+      <pubDate>Mon, 05 Jan 2026 10:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title><![CDATA[Sample (fixture): Monetary policy statement for the sample period]]></title>
+      <description><![CDATA[<p>Synthetic text about a policy rate decision. No real decision is described.</p>]]></description>
+      <link>https://www.rbi.org.in/fixture/2</link>
+      <pubDate>Fri, 06 Feb 2026 09:30:00 GMT</pubDate>
+    </item>
+    <item>
+      <title><![CDATA[Sample (fixture): Weekly statistical supplement]]></title>
+      <description><![CDATA[<p>Synthetic text about a weekly data release.</p>]]></description>
+      <link>https://www.rbi.org.in/fixture/3</link>
+      <pubDate>Fri, 20 Feb 2026 12:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title><![CDATA[Sample (fixture): Auction of sample government securities]]></title>
+      <description><![CDATA[<p>Synthetic text about an auction of securities.</p>]]></description>
+      <link>https://www.rbi.org.in/fixture/4</link>
+      <pubDate>Fri, 13 Mar 2026 08:15:00 GMT</pubDate>
+    </item>
+    <item>
+      <title><![CDATA[Sample (fixture): Guidelines on a sample banking practice]]></title>
+      <description><![CDATA[<p>Synthetic text about draft guidelines for banks in general.</p>]]></description>
+      <link>https://www.rbi.org.in/fixture/5</link>
+      <pubDate>Tue, 07 Apr 2026 11:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title><![CDATA[Sample (fixture): Foreign exchange reserves of the sample week]]></title>
+      <description><![CDATA[<p>Synthetic text about reserves. The figures are invented.</p>]]></description>
+      <link>https://www.rbi.org.in/fixture/6</link>
+      <pubDate>Fri, 15 May 2026 10:30:00 GMT</pubDate>
+    </item>
+    <item>
+      <title><![CDATA[Sample (fixture): Consultation on a sample payments rule]]></title>
+      <description><![CDATA[<p>Synthetic text inviting comments on a sample rule.</p>]]></description>
+      <link>https://www.rbi.org.in/fixture/7</link>
+      <pubDate>Mon, 08 Jun 2026 14:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title><![CDATA[Sample (fixture): Liquidity operations of the sample fortnight]]></title>
+      <description><![CDATA[<p>Synthetic text about liquidity operations.</p>]]></description>
+      <link>https://www.rbi.org.in/fixture/8</link>
+      <pubDate>Thu, 16 Jul 2026 09:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title><![CDATA[Sample (fixture): Financial stability report, sample edition]]></title>
+      <description><![CDATA[<p>Synthetic text about a periodic report on the financial system.</p>]]></description>
+      <link>https://www.rbi.org.in/fixture/9</link>
+      <pubDate>Tue, 25 Aug 2026 10:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

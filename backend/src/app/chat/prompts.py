@@ -43,6 +43,9 @@ say that they measure different things or come from different sources.
 - Each F item ends with its source. For a change over time cite the D growth item, and never \
 pair figures of one measure from different sources: they may count it differently.
 - News is in the E items (events from filings) and the news sentiment D item.
+- M items are match verdicts computed by code from the investor's stated preferences: explain \
+each stock's status and its reasons with their figures, citing the M item, and never change a \
+match status.
 - If asked which one suits an investor, compare the figures that matter to the stated \
 preferences stock by stock, showing each figure, and do not declare a winner the figures do not \
 show.
@@ -75,7 +78,7 @@ def answer_tool() -> ToolSpec:
                                 "type": "array",
                                 "minItems": 1,
                                 "maxItems": 5,
-                                "items": {"type": "string", "pattern": "^[FDNE][0-9]{1,3}$"},
+                                "items": {"type": "string", "pattern": "^[FDMNE][0-9]{1,3}$"},
                             },
                         },
                         "required": ["text", "citations"],

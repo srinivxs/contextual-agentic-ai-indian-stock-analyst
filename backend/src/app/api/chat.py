@@ -58,7 +58,7 @@ class AskIn(BaseModel):
 
 class SourceOut(BaseModel):
     marker: int
-    source: Literal["filing", "screener", "derived"]
+    source: Literal["filing", "screener", "rbi", "derived"]
     label: str
     url: str | None
     quote: str | None

@@ -12,7 +12,8 @@
   only states preferences ends at remembered: "Noted. I'll remember: ...", with no LLM call.
 - retrieve (code): the stocks' chosen facts and derived values (app/insights.py), the passages
   closest in meaning (app/retrieval.py) and, for news questions, the events and the rolling news
-  sentiment, numbered F#, D#, N#, E# (app/chat/evidence.py).
+  sentiment, and for "Match me" questions the verdicts of app/matching/rules.py, numbered F#, D#,
+  M#, N#, E# (app/chat/evidence.py).
 - grade (code): no evidence at all means "I don't have that in the data", without an LLM call.
 - generate (LLM): one call, a forced tool filling a fixed form (app/chat/prompts.py).
 - validate (code): every claim cites real evidence and every number is in what it cites
@@ -42,8 +43,9 @@ from app.chat.understand import Question, symbols_in, understand
 from app.derived import Sentiment, rolling_sentiment
 from app.embeddings import Embedder
 from app.insights import DerivedView, KeyFact, StoredEvent, derived_views, key_facts
-from app.insights_store import load_stock
+from app.insights_store import StockRows, load_stock
 from app.llm import LlmError, StructuredLlm
+from app.matching.rules import match_all
 from app.memory.extract import describe, extract_preferences, preferences_text, profile_summary
 from app.memory.store import get_profile, remember
 from app.memory.vocabulary import Preference, StoredPreference
@@ -178,10 +180,12 @@ class GraphChatEngine:
         derived: dict[str, list[DerivedView]] = {}
         events: dict[str, list[StoredEvent]] = {}
         sentiment: dict[str, Sentiment] = {}
+        stocks: list[StockRows] = []
         async with self._session_factory() as db:
             for symbol in question.symbols:
                 stock = await load_stock(db, symbol)
                 if stock is not None:  # pragma: no branch - understand() names only seeded stocks
+                    stocks.append(stock)
                     facts[symbol] = key_facts(stock.facts)
                     derived[symbol] = derived_views(stock.facts, is_financial=stock.is_financial)
                     events[symbol] = stock.events
@@ -190,6 +194,10 @@ class GraphChatEngine:
         passages = await self._passages(
             state["question"], question, profile_summary(state["profile"])
         )
+        # "Match me" (P14): the verdicts are code's (app/matching/rules.py); the model explains.
+        profile = state["profile"]
+        wants_match = question.wants_match and bool(profile)
+        matches = match_all(profile, stocks, today=self._today()) if wants_match else []
         evidence = build_evidence(
             question=question,
             facts=facts,
@@ -197,6 +205,7 @@ class GraphChatEngine:
             passages=passages,
             events=events,
             sentiment=sentiment,
+            matches=matches,
         )
         return {"evidence": evidence}
 

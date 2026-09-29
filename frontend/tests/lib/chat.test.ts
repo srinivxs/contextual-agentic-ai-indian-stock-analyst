@@ -316,3 +316,23 @@ describe('splitMarkers', () => {
     expect(splitMarkers('', [1])).toEqual([]);
   });
 });
+
+describe('sourceLink for RBI', () => {
+  const rbi = (url: string | null): ChatSource =>
+    demoChatSource({ source: 'rbi', label: 'RBI press release · 12 Sep 2026', url });
+
+  it('links an RBI source to rbi.org.in only', () => {
+    const url = 'https://www.rbi.org.in/Scripts/x.aspx?prid=1';
+    expect(sourceLink(rbi(url))).toBe(url);
+    expect(sourceLink(rbi('https://www.bseindia.com/x.pdf'))).toBeNull();
+    expect(sourceLink(rbi('https://rbi.org.in.evil.example/x'))).toBeNull();
+    expect(sourceLink(rbi(null))).toBeNull();
+  });
+
+  it('accepts an rbi source in a reply', async () => {
+    const answer = demoAnswer({ sources: [rbi('https://www.rbi.org.in/x')] });
+    installFakeApi({ chatAnswer: () => answer });
+    const reply = await sendQuestion('What did the RBI say?', null);
+    expect(reply.answer.sources[0]?.source).toBe('rbi');
+  });
+});

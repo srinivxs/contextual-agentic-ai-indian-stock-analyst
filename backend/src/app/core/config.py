@@ -108,6 +108,13 @@ class CommonSettings(BaseSettings):
     # priced with LLM_*_USD_PER_MTOK. At the cap the chat says it is unavailable.
     chat_budget_usd: Decimal = Field(default=Decimal("1.00"), ge=0, le=100)
 
+    # --- the RBI press-release feed (P15, ADR 007) ---------------------------------------------
+    # "fixture" reads the synthetic items shipped with the code and never touches the network;
+    # "live" makes a polite conditional GET of RBI's RSS. Offline unless the deployment says so.
+    feed_mode: Literal["live", "fixture"] = "fixture"
+    # How often the worker queues a poll. 15 minutes is the floor: it is a public site.
+    feed_poll_minutes: int = Field(default=60, ge=15, le=1440)
+
     @field_validator("database_url")
     @classmethod
     def _require_the_asyncpg_driver(cls, value: SecretStr) -> SecretStr:

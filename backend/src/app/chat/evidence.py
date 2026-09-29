@@ -7,6 +7,9 @@ Everything the model is shown is an item with an ID, and an answer may only cite
     D1, D2 ...  derived values computed on read (debt to equity, growth, latest dividend),
                 cited as "Computed: ..." with the sentence that says how
     N1, N2 ...  passages of the filings found by search (app/retrieval.py), cited to the page
+    M1, M2 ...  for "Match me" questions (P14): the verdict per stock that app/matching/rules.py
+                computed from the investor's profile, with its reasons and figures; the model
+                only explains them
     E1, E2 ...  events from the filings (P11), newest first, cited to the filing page; only when
                 the question asks about news or events, together with a D item per stock for
                 the rolling news sentiment (app/derived.py, computed on read)
@@ -41,6 +44,7 @@ from app.chat.understand import Question
 from app.derived import Sentiment
 from app.extraction_prompts import document_block
 from app.insights import DerivedView, KeyFact, StoredEvent, filing_citation, recent_events
+from app.matching.model import StockMatch
 from app.retrieval import Result, excerpt
 
 PASSAGE_CHARS = 600  # the model reads this much of a passage; the source shows EXCERPT_CHARS
@@ -53,11 +57,11 @@ T = TypeVar("T")
 
 @dataclass(frozen=True)
 class EvidenceItem:
-    id: str  # "F1", "D1", "N1", "E1"
-    kind: Literal["fact", "derived", "passage", "event"]
+    id: str  # "F1", "D1", "M1", "N1", "E1"
+    kind: Literal["fact", "derived", "match", "passage", "event"]
     symbol: str
     text: str  # one line: what the model reads and what the checker verifies numbers against
-    source: Literal["filing", "screener", "derived"]
+    source: Literal["filing", "screener", "rbi", "derived"]
     label: str
     url: str | None
     quote: str | None
@@ -234,10 +238,35 @@ def _event_item(number: int, symbol: str, event: StoredEvent) -> EvidenceItem:
         kind="event",
         symbol=symbol,
         text=text,
-        source="filing",
+        source=event.citation.source,  # a filing, or an RBI press release (P15)
         label=event.citation.label,
         url=event.citation.url,
         quote=event.citation.quote,
+    )
+
+
+_STATUS_WORDS = {
+    "match": "match",
+    "partial": "partial match",
+    "no_match": "no match",
+    "not_enough_data": "not enough data",
+}
+
+
+def _match_item(number: int, match: StockMatch) -> EvidenceItem:
+    reasons = " ".join(reason.text for reason in match.reasons)
+    cautions = " ".join(f"Caution: {caution.text}" for caution in match.cautions)
+    shown = " ".join(part for part in (reasons, cautions) if part)
+    text = f"{match.symbol} · Match for your profile: {_STATUS_WORDS[match.status]}"
+    return EvidenceItem(
+        id=f"M{number}",
+        kind="match",
+        symbol=match.symbol,
+        text=f"{text} · {shown}" if shown else text,
+        source="derived",
+        label="Match for your profile",
+        url=None,
+        quote=shown or None,
     )
 
 
@@ -249,11 +278,12 @@ def build_evidence(
     passages: list[Result],
     events: dict[str, list[StoredEvent]] | None = None,
     sentiment: dict[str, Sentiment] | None = None,
+    matches: list[StockMatch] | None = None,
     max_facts: int = 30,
     max_passages: int = 8,
     max_events: int = 10,
 ) -> list[EvidenceItem]:
-    """Facts first, then derived values, then passages, then events, each kind numbered from 1."""
+    """Facts, derived values, matches, passages, events, in that order, each numbered from 1."""
     asked = set(question.metrics)
     fact_groups = [
         [(symbol, f) for f in facts.get(symbol, []) if not asked or f.metric in asked]
@@ -270,6 +300,8 @@ def build_evidence(
     ]
     chosen_passages = [r for r in passages if r.passage.symbol in question.symbols][:max_passages]
 
+    chosen_matches = [m for m in matches or [] if m.symbol in question.symbols]
+
     news = question.wants_events
     moods = [(s, (sentiment or {})[s]) for s in question.symbols if news and s in (sentiment or {})]
     event_groups = [
@@ -285,6 +317,7 @@ def build_evidence(
     return [
         *(_fact_item(n, symbol, f) for n, (symbol, f) in enumerate(chosen_facts, start=1)),
         *(replace(item, id=f"D{n}") for n, item in enumerate(derived_items, start=1)),
+        *(_match_item(n, m) for n, m in enumerate(chosen_matches, start=1)),
         *(_passage_item(n, r) for n, r in enumerate(chosen_passages, start=1)),
         *(_event_item(n, symbol, e) for n, (symbol, e) in enumerate(chosen_events, start=1)),
     ]

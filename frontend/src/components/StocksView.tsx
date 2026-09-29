@@ -13,7 +13,8 @@ const LOAD_FAILED = "We couldn't load your stocks. Reload the page to try again.
 const UPDATE_FAILED = "We couldn't update that follow. Please try again.";
 const SIGN_OUT_FAILED = "We couldn't sign you out. Please try again.";
 
-const isUnauthorized = (error: unknown): boolean => error instanceof ApiError && error.status === 401;
+const isUnauthorized = (error: unknown): boolean =>
+  error instanceof ApiError && error.status === 401;
 
 type Loaded = { ok: true; stocks: Stock[] } | { ok: false; unauthorized: boolean };
 
@@ -94,7 +95,8 @@ export function StocksView() {
       await signOut();
       router.replace('/');
     } catch (error) {
-      if (isUnauthorized(error)) router.replace('/'); // the session was already gone
+      if (isUnauthorized(error))
+        router.replace('/'); // the session was already gone
       else setProblem(SIGN_OUT_FAILED);
     }
   };

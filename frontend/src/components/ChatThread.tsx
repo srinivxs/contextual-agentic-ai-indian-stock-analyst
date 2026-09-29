@@ -22,12 +22,18 @@ function SourceLabel({ source }: { source: ChatSource }) {
     );
   }
   const link = sourceLink(source);
-  return link ? (
+  const label = link ? (
     <a href={link} target="_blank" rel="noopener noreferrer" className="doc-link">
       {source.label}
     </a>
   ) : (
     <span>{source.label}</span>
+  );
+  if (source.source !== 'rbi') return label;
+  return (
+    <>
+      <span className="pill">RBI</span> {label}
+    </>
   );
 }
 

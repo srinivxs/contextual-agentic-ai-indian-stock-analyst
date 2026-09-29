@@ -16,6 +16,7 @@ export function AppShell({ email, onSignOut, children }: Props) {
           <a href="/stocks/">Stocks</a>
           <a href="/documents/">Documents</a>
           <a href="/chat/">Chat</a>
+          <a href="/match/">Match</a>
         </nav>
         <span className="who">
           <span>{email}</span>

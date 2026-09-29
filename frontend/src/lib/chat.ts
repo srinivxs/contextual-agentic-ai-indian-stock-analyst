@@ -8,15 +8,15 @@
  */
 
 import { ApiError, apiFetch } from '@/lib/api';
-import { officialUrl, screenerUrl } from '@/lib/documents';
+import { officialUrl, rbiUrl, screenerUrl } from '@/lib/documents';
 
 const STATUSES = ['answered', 'abstained', 'out_of_scope', 'remembered'] as const;
-const SOURCE_KINDS = ['filing', 'screener', 'derived'] as const;
+const SOURCE_KINDS = ['filing', 'screener', 'rbi', 'derived'] as const;
 
 /** Where one numbered claim of an answer comes from. The answer's text refers to it as "[1]". */
 export type ChatSource = {
   marker: number;
-  /** A page of a filing, a screener.in figure, or a value the server computed from facts. */
+  /** A page of a filing, a screener.in figure, an RBI press release, or a value the server computed from facts. */
   source: (typeof SOURCE_KINDS)[number];
   label: string;
   url: string | null;
@@ -157,6 +157,7 @@ export async function getConversation(id: string): Promise<Conversation> {
 export function sourceLink(source: ChatSource): string | null {
   if (source.source === 'filing') return officialUrl(source.url);
   if (source.source === 'screener') return screenerUrl(source.url);
+  if (source.source === 'rbi') return rbiUrl(source.url);
   return null;
 }
 

@@ -1,8 +1,9 @@
 """Loading a stock's stored facts and events with their citations (P11c; shared with P12's chat).
 
 Facts come only from documents that are fully ingested (and screener.in facts always); events the
-same. Each row becomes a StoredFact / StoredEvent: the plain row app/derived.py computes with, plus
-the citation app/insights.py shows. Plain SQL, one short transaction owned by the caller.
+same, and (P15) events from RBI feed items, cited to the press release. Each row becomes a
+StoredFact / StoredEvent: the plain row app/derived.py computes with, plus the citation
+app/insights.py shows. Plain SQL, one short transaction owned by the caller.
 """
 
 from dataclasses import dataclass
@@ -13,7 +14,7 @@ from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.derived import EventRow, FactRow, Source
-from app.insights import StoredEvent, StoredFact, filing_citation, screener_citation
+from app.insights import Citation, StoredEvent, StoredFact, filing_citation, screener_citation
 from app.retrieval import filing_date
 
 
@@ -41,9 +42,13 @@ _FACTS = text(
 _EVENTS = text(
     """
     SELECT e.id, e.event_type, e.sentiment, e.impact, e.event_date, e.summary, e.quote,
-           e.page_number, d.kind, d.period AS document_period, d.title, d.source_url
-    FROM events e JOIN documents d ON d.id = e.document_id
-    WHERE e.stock_id = :stock AND d.status = 'completed'
+           e.page_number, e.feed_item_id, d.kind, d.period AS document_period, d.title,
+           d.source_url, f.canonical_url AS feed_url, f.published_at AS feed_published_at,
+           f.is_fixture AS feed_is_fixture
+    FROM events e
+    LEFT JOIN documents d ON d.id = e.document_id
+    LEFT JOIN feed_items f ON f.id = e.feed_item_id
+    WHERE e.stock_id = :stock AND (e.feed_item_id IS NOT NULL OR d.status = 'completed')
     """
 )
 
@@ -77,13 +82,29 @@ def _stored_fact(row: Row[Any]) -> StoredFact:
     return StoredFact(row=fact, citation=citation)
 
 
+def feed_citation(
+    published_at: datetime | None, url: str | None, is_fixture: bool, quote: str
+) -> Citation:
+    """ "RBI press release · 01 Sep 2026", linking to the release (a fixture item has no page)."""
+    label = "RBI press release"
+    if published_at is not None:
+        label += f" · {published_at.strftime('%d %b %Y')}"
+    return Citation(source="rbi", label=label, url=None if is_fixture else url, quote=quote)
+
+
 def _stored_event(row: Row[Any]) -> StoredEvent:
+    if row.feed_item_id is not None:
+        citation = feed_citation(
+            row.feed_published_at, row.feed_url, row.feed_is_fixture, row.quote
+        )
+    else:
+        citation = filing_citation(
+            row.kind, row.document_period, row.title, row.source_url, row.page_number, row.quote
+        )
     return StoredEvent(
         row=EventRow(row.id, row.event_type, row.sentiment, row.impact, row.event_date),
         summary=row.summary,
-        citation=filing_citation(
-            row.kind, row.document_period, row.title, row.source_url, row.page_number, row.quote
-        ),
+        citation=citation,
     )
 
 

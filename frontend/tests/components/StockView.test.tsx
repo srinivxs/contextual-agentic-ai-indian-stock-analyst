@@ -7,6 +7,7 @@ import {
   demoCitation,
   demoFact,
   demoInsights,
+  demoRbiCitation,
   demoScreenerCitation,
   installFakeApi,
 } from '../helpers/fakeApi';
@@ -367,5 +368,41 @@ describe('safety and failures', () => {
 
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
     expect(api.requests).toContain('POST /api/v1/auth/logout');
+  });
+});
+
+describe('the stock page, RBI citations', () => {
+  const withRbi = (citation = demoRbiCitation()) =>
+    installFakeApi({
+      insights: {
+        DEMOA: demoInsights({
+          events: [
+            {
+              event_type: 'regulatory',
+              sentiment: 'neutral',
+              impact: 'low',
+              event_date: '2026-09-12',
+              summary: 'An invented regulator notice.',
+              citation,
+            },
+          ],
+        }),
+      },
+    });
+
+  it('links an RBI press release to rbi.org.in, marked as RBI', async () => {
+    withRbi();
+    render(<StockView />);
+    const link = await screen.findByRole('link', { name: demoRbiCitation().label });
+    expect(link).toHaveAttribute('href', demoRbiCitation().url);
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(link).toHaveClass('chip', 'chip-rbi');
+  });
+
+  it('shows an RBI citation on another host as plain text', async () => {
+    withRbi(demoRbiCitation({ url: 'https://rbi.org.in.evil.example/x' }));
+    render(<StockView />);
+    expect(await screen.findByText(demoRbiCitation().label)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: demoRbiCitation().label })).toBeNull();
   });
 });

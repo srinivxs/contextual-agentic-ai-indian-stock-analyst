@@ -53,6 +53,8 @@ COMPOSE_VARIABLES = (
     "EMBEDDINGS_ENABLED",
     "EXTRACTION_ENABLED",
     "EXTRACTION_BUDGET_USD",
+    "FEED_MODE",
+    "FEED_POLL_MINUTES",
     "CHAT_ENABLED",
     "CHAT_BUDGET_USD",
     # A developer's temporary AWS pass (P10) must never reach a test stack, let alone Bedrock.

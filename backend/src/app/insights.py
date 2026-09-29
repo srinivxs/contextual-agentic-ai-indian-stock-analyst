@@ -60,7 +60,7 @@ _VIEWS = [
 
 @dataclass(frozen=True)
 class Citation:
-    source: Literal["filing", "screener"]
+    source: Literal["filing", "screener", "rbi"]  # rbi: an RBI press release (P15)
     label: str
     url: str | None
     quote: str | None

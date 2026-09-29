@@ -6,6 +6,8 @@ import { vi } from 'vitest';
 
 import type { ChatMessage, ChatSource, Conversation } from '@/lib/chat';
 import type { Citation, DerivedValue, KeyFact, StockInsights } from '@/lib/insights';
+import type { FeedItem } from '@/lib/feed';
+import type { MatchReason, MatchResult, StockMatch } from '@/lib/match';
 import type { Profile, ProfileChoice, ProfileFieldEntry } from '@/lib/profile';
 
 export type FakeStock = { symbol: string; name: string; bse_code: string; sector: string };
@@ -130,6 +132,27 @@ export const demoScreenerCitation = (overrides: Partial<Citation> = {}): Citatio
   quote: null,
   ...overrides,
 });
+
+/** A fictional RBI press-release citation; override any field. */
+export const demoRbiCitation = (overrides: Partial<Citation> = {}): Citation => ({
+  source: 'rbi',
+  label: 'RBI press release · 12 Sep 2026',
+  url: 'https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=00001',
+  quote: 'The policy rate is unchanged in this invented sample.',
+  ...overrides,
+});
+
+/** A fictional RBI feed item (synthetic text only); override any field. */
+export const demoFeedItem = (overrides: Partial<FeedItem> = {}): FeedItem => ({
+  title: 'Sample policy statement on the demo repo rate',
+  published_at: '2026-09-12T10:00:00Z',
+  summary: 'An invented summary of a press release, for tests only.',
+  url: 'https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=00001',
+  is_fixture: false,
+  ...overrides,
+});
+
+export const FEED_ATTRIBUTION = 'Source: Reserve Bank of India press releases (rbi.org.in)';
 
 /** A fictional DemoCo fact; override any field. */
 export const demoFact = (overrides: Partial<KeyFact> = {}): KeyFact => ({
@@ -376,7 +399,41 @@ export type Options = {
   chatUnavailable?: boolean;
   /** What is remembered about the user at the start (P13); the fake edits and forgets in place. */
   profileFields?: ProfileFieldEntry[];
+  /** What GET /api/v1/match answers (P14); default: an empty profile. */
+  matches?: MatchResult;
+  /** The RBI feed items (P15), newest first; default none. */
+  feed?: FeedItem[];
 };
+
+/** A fictional reason for the Match page; override any field. */
+export const demoReason = (overrides: Partial<MatchReason> = {}): MatchReason => ({
+  criterion: 'debt',
+  preference: 'avoid_high_debt',
+  hard: true,
+  outcome: 'pass',
+  text: 'Debt to equity is 0.25, within the 1.0 limit for avoiding high debt.',
+  citations: [demoCitation()],
+  ...overrides,
+});
+
+/** One fictional stock's match; override any field. */
+export const demoStockMatch = (overrides: Partial<StockMatch> = {}): StockMatch => ({
+  symbol: 'DEMOA',
+  name: 'DemoCo Alpha Limited',
+  status: 'match',
+  reasons: [demoReason()],
+  cautions: [],
+  ...overrides,
+});
+
+/** The match reply: an empty profile unless told otherwise. */
+export const demoMatches = (overrides: Partial<MatchResult> = {}): MatchResult => ({
+  profile_empty: true,
+  stocks: [],
+  disclaimer:
+    'Not investment advice. The rules compare stored figures with your stated preferences; share prices are not used.',
+  ...overrides,
+});
 
 export type FakeApi = {
   /** Every request made, as "METHOD /path". */
@@ -569,6 +626,10 @@ export function installFakeApi(options: Options = {}): FakeApi {
       if (!stock) return envelope(404, 'not_found');
       return json(200, options.insights?.[symbol] ?? emptyInsights(stock));
     }
+    if (key === 'GET /api/v1/feed') {
+      return json(200, { items: options.feed ?? [], attribution: FEED_ATTRIBUTION });
+    }
+    if (key === 'GET /api/v1/match') return json(200, options.matches ?? demoMatches());
     const chatted = chat(key, body);
     if (chatted) return chatted;
     const profiled = profile(key, body);

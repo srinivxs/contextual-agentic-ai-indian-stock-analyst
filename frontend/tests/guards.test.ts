@@ -38,10 +38,15 @@ describe('the source tree', () => {
 
   it('has no route handlers, middleware or proxy files (ADR 006)', () => {
     expect(allPaths.length).toBeGreaterThan(0); // an empty tree must not pass by accident
-    const forbidden = [...allPaths, ...['middleware.ts', 'middleware.js', 'proxy.ts', 'proxy.js']
-      .map((f) => join(ROOT, f))
-      .filter(existsSync)].map(posix);
-    expect(forbidden.filter((p) => /(^|\/)(route|middleware|proxy)\.(ts|tsx|js)$/.test(p))).toEqual([]);
+    const forbidden = [
+      ...allPaths,
+      ...['middleware.ts', 'middleware.js', 'proxy.ts', 'proxy.js']
+        .map((f) => join(ROOT, f))
+        .filter(existsSync),
+    ].map(posix);
+    expect(forbidden.filter((p) => /(^|\/)(route|middleware|proxy)\.(ts|tsx|js)$/.test(p))).toEqual(
+      [],
+    );
     expect(forbidden.filter((p) => p.startsWith('src/app/api'))).toEqual([]);
   });
 

@@ -186,6 +186,8 @@ def test_the_worker_gets_the_runtime_role_and_no_login_secrets(
         "EMBEDDINGS_ENABLED",
         "EXTRACTION_ENABLED",
         "EXTRACTION_BUDGET_USD",
+        "FEED_MODE",
+        "FEED_POLL_MINUTES",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
@@ -242,6 +244,19 @@ def test_reading_filings_with_the_llm_is_off_unless_switched_on(model: dict[str,
     assert "EXTRACTION_ENABLED" not in service(model, "api")["environment"]
     # The owner's approved cap unless set lower for a first test run (a cent, say).
     assert service(model, "worker")["environment"]["EXTRACTION_BUDGET_USD"] == "2.00"
+
+
+def test_the_rbi_feed_defaults_to_the_offline_fixtures_and_only_the_worker_polls(
+    model: dict[str, Any],
+) -> None:
+    """P15: a plain `compose up` never reaches rbi.org.in; the developer sets FEED_MODE=live. Only
+    the worker polls, so the api has neither variable."""
+    worker = service(model, "worker")["environment"]
+    assert worker["FEED_MODE"] == "fixture"
+    assert worker["FEED_POLL_MINUTES"] == "60"
+    api = service(model, "api")["environment"]
+    assert "FEED_MODE" not in api
+    assert "FEED_POLL_MINUTES" not in api
 
 
 def test_the_chat_is_off_unless_switched_on(model: dict[str, Any]) -> None:

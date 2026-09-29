@@ -3,7 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DocumentsView, REFRESH_MS } from '@/components/DocumentsView';
-import { demoDocument, installFakeApi, STOCKS } from '../helpers/fakeApi';
+import {
+  demoDocument,
+  demoFeedItem,
+  FEED_ATTRIBUTION,
+  installFakeApi,
+  STOCKS,
+} from '../helpers/fakeApi';
 
 const nav = vi.hoisted(() => {
   const replace = vi.fn();
@@ -50,6 +56,7 @@ describe('the documents page', () => {
       `${STOCKS[0]?.name}4`,
       `${STOCKS[1]?.name}0`,
       `${STOCKS[2]?.name}0`,
+      'RBI press releases',
     ]);
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName(STOCKS[0]?.name ?? '');
@@ -315,5 +322,106 @@ describe('the documents page', () => {
     api.expireSession();
     render(<DocumentsView />);
     await vi.waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
+  });
+});
+
+describe('the RBI press releases tab', () => {
+  const openTab = async (): Promise<void> => {
+    await userEvent.click(await screen.findByRole('tab', { name: /RBI press releases/ }));
+  };
+
+  it('comes after the stock tabs', async () => {
+    installFakeApi();
+    render(<DocumentsView />);
+    const tabs = await screen.findAllByRole('tab');
+    expect(tabs).toHaveLength(4);
+    expect(tabs[3]).toHaveTextContent('RBI press releases');
+    expect(tabs[3]).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('shows each item with title link, date, summary, and the attribution', async () => {
+    installFakeApi({ feed: [demoFeedItem()] });
+    render(<DocumentsView />);
+    await openTab();
+
+    const panel = screen.getByRole('tabpanel');
+    expect(panel).toHaveAccessibleName('RBI press releases');
+    const link = within(panel).getByRole('link', {
+      name: 'Sample policy statement on the demo repo rate',
+    });
+    expect(link).toHaveAttribute('href', demoFeedItem().url);
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(within(panel).getByText('12 Sep 2026')).toBeInTheDocument();
+    expect(within(panel).getByText(demoFeedItem().summary)).toBeInTheDocument();
+    expect(within(panel).getByText(FEED_ATTRIBUTION)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /RBI press releases/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('marks a fixture as a sample and does not link it', async () => {
+    installFakeApi({
+      feed: [demoFeedItem({ is_fixture: true, url: null, title: 'Fixture release' })],
+    });
+    render(<DocumentsView />);
+    await openTab();
+
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByText('Sample item (offline fixture)')).toBeInTheDocument();
+    expect(within(panel).getByText('Fixture release')).toBeInTheDocument();
+    expect(within(panel).queryByRole('link')).toBeNull();
+  });
+
+  it('shows a fixture as plain text even if it carries an allowed address', async () => {
+    installFakeApi({ feed: [demoFeedItem({ is_fixture: true, title: 'Fixture with url' })] });
+    render(<DocumentsView />);
+    await openTab();
+    expect(within(screen.getByRole('tabpanel')).queryByRole('link')).toBeNull();
+  });
+
+  it('shows a disallowed address as plain text', async () => {
+    installFakeApi({
+      feed: [demoFeedItem({ title: 'Odd release', url: 'https://rbi.org.in.evil.example/x' })],
+    });
+    render(<DocumentsView />);
+    await openTab();
+
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByText('Odd release')).toBeInTheDocument();
+    expect(within(panel).queryByRole('link')).toBeNull();
+  });
+
+  it('copes with an item that has no date', async () => {
+    installFakeApi({ feed: [demoFeedItem({ published_at: null })] });
+    render(<DocumentsView />);
+    await openTab();
+    expect(within(screen.getByRole('tabpanel')).getByText('Date not given')).toBeInTheDocument();
+  });
+
+  it('says so when there are no press releases yet', async () => {
+    installFakeApi({ feed: [] });
+    render(<DocumentsView />);
+    await openTab();
+    expect(
+      screen.getByText("No press releases yet. The worker checks RBI's feed every hour."),
+    ).toBeInTheDocument();
+  });
+
+  it('shows a short message when the feed cannot be loaded, keeping the stock tabs', async () => {
+    const api = installFakeApi();
+    api.failWith('GET /api/v1/feed', 500);
+    render(<DocumentsView />);
+    await openTab();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/press releases/i);
+    expect(screen.getAllByRole('tab')).toHaveLength(4);
+  });
+
+  it('does not stop the stock tabs from loading when the feed fails', async () => {
+    const api = installFakeApi({ documents: ALPHA_FILINGS });
+    api.failWith('GET /api/v1/feed', 500);
+    render(<DocumentsView />);
+    expect(await screen.findByRole('link', { name: 'Jul 2026' })).toBeInTheDocument();
   });
 });

@@ -17,10 +17,11 @@ import contextlib
 import logging
 import signal
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -33,6 +34,8 @@ from app.db.engine import create_db_engine, create_session_factory
 from app.embedding_jobs import embed_document, enqueue_embeddings
 from app.embeddings import BedrockEmbedder, Embedder, bedrock_client
 from app.extraction_jobs import EXTRACTOR_VERSION, enqueue_extractions, extract_document
+from app.feed_jobs import enqueue_poll, poll_feed
+from app.feeds.tagging import ALIASES
 from app.ingest import DocumentRejected, JobCannotSucceed, document_id_of, ingest_document
 from app.ingest import mark_document as _mark_document
 from app.jobs import ClaimedJob, claim_next, fail, retry_or_fail, still_mine
@@ -51,6 +54,9 @@ DISCOVERY_CHECK_SECONDS = 600.0
 EMBED_CHECK_SECONDS = 60.0
 # The same for facts and events: a new filing is read at most this long after it was ingested.
 EXTRACT_CHECK_SECONDS = 60.0
+# How often the loop asks "has this time slot's feed poll been queued?" One cheap query; the slot's
+# dedupe key (app/feed_jobs.py) is what keeps several workers from queueing it twice.
+FEED_CHECK_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -77,6 +83,11 @@ class WorkerContext:
     llm_input_usd_per_mtok: Decimal = Decimal("0.35")
     llm_output_usd_per_mtok: Decimal = Decimal("2.95")
     extraction_concurrency: int = 2
+    # The RBI feed (P15). "fixture" reads the synthetic items and never needs a client; "live"
+    # needs ``feed_http``, a client made only in that mode, so an offline worker cannot reach RBI.
+    feed_mode: Literal["live", "fixture"] = "fixture"
+    feed_http: httpx.AsyncClient | None = None
+    feed_aliases: Mapping[str, tuple[str, ...]] = field(default_factory=lambda: dict(ALIASES))
 
 
 async def mark_job_document(
@@ -115,6 +126,14 @@ async def handle(context: WorkerContext, job: ClaimedJob) -> None:
                 job,
                 limit=context.filings_max_bytes,
                 pause_seconds=context.fetch_pause_seconds,
+            )
+        elif job.kind == "poll_feed":
+            await poll_feed(
+                context.session_factory,
+                context.feed_http,
+                job,
+                mode=context.feed_mode,
+                aliases=context.feed_aliases,
             )
         elif job.kind == "extract_document" and context.llm is None:
             raise JobCannotSucceed("extraction is switched off (EXTRACTION_ENABLED)")
@@ -209,6 +228,17 @@ async def _queue_extractions(context: WorkerContext, model: str) -> None:
         logger.exception("extractions_queue_error")
 
 
+async def _queue_feed_poll(context: WorkerContext, every_minutes: int) -> None:
+    try:
+        async with context.session_factory() as db:
+            queued = await enqueue_poll(db, every_minutes=every_minutes)
+            await db.commit()
+        if queued:
+            logger.info("feed_poll_queued", extra={"mode": context.feed_mode})
+    except Exception:
+        logger.exception("feed_poll_queue_error")
+
+
 async def run_forever(
     context: WorkerContext,
     stop: asyncio.Event,
@@ -218,6 +248,8 @@ async def run_forever(
     embed_model: str | None = None,
     embed_check_seconds: float = EMBED_CHECK_SECONDS,
     extract_check_seconds: float = EXTRACT_CHECK_SECONDS,
+    feed_poll_minutes: int | None = None,
+    feed_check_seconds: float = FEED_CHECK_SECONDS,
 ) -> None:
     """Work through the queue until ``stop`` is set. The worker's small timers (ADR 008):
 
@@ -225,11 +257,14 @@ async def run_forever(
     - with ``embed_model``, every ``embed_check_seconds`` queue fingerprints for any ingested
       document still missing them under that model (P10);
     - with an LLM in the context, every ``extract_check_seconds`` queue a reading for facts and
-      events of any ingested document this extractor version and model have not read (P11).
+      events of any ingested document this extractor version and model have not read (P11);
+    - with ``feed_poll_minutes``, every ``feed_check_seconds`` make sure this time slot's RBI feed
+      poll is queued (P15; why that is safe with several workers: app/feed_jobs.py).
     """
     next_discovery_check = 0.0
     next_embed_check = 0.0
     next_extract_check = 0.0
+    next_feed_check = 0.0
     while True:
         if discovery_every_hours and time.monotonic() >= next_discovery_check:
             await _queue_discovery(context, discovery_every_hours)
@@ -240,6 +275,9 @@ async def run_forever(
         if context.llm is not None and time.monotonic() >= next_extract_check:
             await _queue_extractions(context, context.llm.model)
             next_extract_check = time.monotonic() + extract_check_seconds
+        if feed_poll_minutes and time.monotonic() >= next_feed_check:
+            await _queue_feed_poll(context, feed_poll_minutes)
+            next_feed_check = time.monotonic() + feed_check_seconds
         if stop.is_set():
             break
         try:
@@ -271,6 +309,8 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
         if settings.extraction_enabled
         else None
     )
+    # And RBI: a client exists only in live mode; fixture mode reads files shipped with the code.
+    feed_http = httpx.AsyncClient(timeout=30.0) if settings.feed_mode == "live" else None
     context = WorkerContext(
         session_factory=create_session_factory(engine),
         blob_store=FilesystemBlobStore(settings.blob_root),
@@ -286,6 +326,8 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
         llm_input_usd_per_mtok=settings.llm_input_usd_per_mtok,
         llm_output_usd_per_mtok=settings.llm_output_usd_per_mtok,
         extraction_concurrency=settings.extraction_concurrency,
+        feed_mode=settings.feed_mode,
+        feed_http=feed_http,
     )
     stop = asyncio.Event()
     for signal_number in (signal.SIGINT, signal.SIGTERM):
@@ -298,10 +340,13 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
             poll_seconds=settings.worker_poll_seconds,
             discovery_every_hours=settings.filings_refresh_hours if http else None,
             embed_model=embedder.model if embedder else None,
+            feed_poll_minutes=settings.feed_poll_minutes,
         )
     finally:
         if http is not None:
             await http.aclose()
+        if feed_http is not None:
+            await feed_http.aclose()
         await engine.dispose()
         logger.info("worker_stopped")
 

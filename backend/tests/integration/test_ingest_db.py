@@ -8,6 +8,7 @@ duplicates anything.
 
 import asyncio
 import hashlib
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -201,14 +202,21 @@ async def test_a_job_for_a_document_that_no_longer_exists_fails_without_retrying
 async def test_a_kind_of_job_this_worker_cannot_do_fails_without_retrying(
     context: WorkerContext, admin_engine: AsyncEngine
 ) -> None:
+    """Every kind the jobs table allows has a handler since P15, so the guard is reached by a
+    claimed job whose kind is swapped for one this worker does not know (a kind added to the
+    table before its handler, say)."""
     async with admin_engine.begin() as connection:
         await connection.execute(
-            text("INSERT INTO jobs (kind, dedupe_key) VALUES ('poll_feed', 'poll_feed:rbi')")
+            text("INSERT INTO jobs (kind, dedupe_key) VALUES ('poll_feed', 'poll_feed:test')")
         )
-    await run_once(context)
+    async with context.session_factory() as db:
+        job = await claim_next(db, lease_seconds=60)
+        await db.commit()
+    assert job is not None
+    await handle(context, replace(job, kind="mystery_job"))
     [(status, error)] = await rows(admin_engine, "SELECT status, last_error FROM jobs")
     assert status == "failed"
-    assert "poll_feed" in error
+    assert "mystery_job" in error
 
 
 # --- failures that may pass -----------------------------------------------------------------------

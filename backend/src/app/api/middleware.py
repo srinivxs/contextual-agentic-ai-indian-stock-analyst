@@ -38,7 +38,16 @@ def resolve_request_id(inbound: str | None) -> str:
 # `/api/v1/stocks` carries the caller's own follows. The prefixes end in a slash, so look-alikes
 # such as `/api/v1/stocks-archive` or `/api/v1/authors` are not caught.
 # `/api/v1/profile` (P13) is the caller's own investor profile.
-_NO_STORE_EXACT = frozenset({"/api/v1/me", "/api/v1/stocks", "/api/v1/search", "/api/v1/profile"})
+_NO_STORE_EXACT = frozenset(
+    {
+        "/api/v1/me",
+        "/api/v1/stocks",
+        "/api/v1/search",
+        "/api/v1/profile",
+        "/api/v1/match",
+        "/api/v1/feed",
+    }
+)
 # `/api/v1/documents/` (P9) needs a session, and a document's status changes as it is ingested.
 # `/api/v1/chat/` (P12) is each user's own questions and answers.
 _NO_STORE_PREFIXES = (

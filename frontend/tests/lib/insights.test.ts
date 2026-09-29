@@ -21,6 +21,7 @@ import {
   demoCitation,
   demoFact,
   demoInsights,
+  demoRbiCitation,
   demoScreenerCitation,
   installFakeApi,
 } from '../helpers/fakeApi';
@@ -306,5 +307,34 @@ describe('the stock page address', () => {
     expect(isTickerSymbol('demoa')).toBe(false);
     expect(isTickerSymbol('A/B')).toBe(false);
     expect(isTickerSymbol('A'.repeat(21))).toBe(false);
+  });
+});
+
+describe('RBI citations', () => {
+  it('links an RBI citation only to rbi.org.in', () => {
+    const citation = demoRbiCitation();
+    expect(citationLink(citation)).toBe(citation.url);
+    expect(citationLink(demoRbiCitation({ url: 'https://www.bseindia.com/x' }))).toBeNull();
+    expect(citationLink(demoRbiCitation({ url: null }))).toBeNull();
+  });
+
+  it('accepts an insights reply with an rbi citation', async () => {
+    installFakeApi({
+      insights: {
+        DEMOA: demoInsights({
+          events: [
+            {
+              event_type: 'regulatory',
+              sentiment: 'neutral',
+              impact: 'low',
+              event_date: '2026-09-12',
+              summary: 'x',
+              citation: demoRbiCitation(),
+            },
+          ],
+        }),
+      },
+    });
+    expect((await getInsights('DEMOA')).events[0]?.citation.source).toBe('rbi');
   });
 });

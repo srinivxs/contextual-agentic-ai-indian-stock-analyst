@@ -23,21 +23,22 @@ import {
 } from '@/lib/insights';
 
 /** A small source label: a link that opens the source in a new tab, or plain text if unsafe. */
-function CitationChip({ citation }: { citation: Citation }) {
+export function CitationChip({ citation }: { citation: Citation }) {
   const link = citationLink(citation);
   const title = citation.quote ?? undefined; // hovering shows the filing's own words
+  const className = citation.source === 'rbi' ? 'chip chip-rbi' : 'chip'; // marks RBI sources
   return link ? (
-    <a href={link} target="_blank" rel="noopener noreferrer" className="chip" title={title}>
+    <a href={link} target="_blank" rel="noopener noreferrer" className={className} title={title}>
       {citation.label}
     </a>
   ) : (
-    <span className="chip" title={title}>
+    <span className={className} title={title}>
       {citation.label}
     </span>
   );
 }
 
-function Citations({ citations }: { citations: Citation[] }) {
+export function Citations({ citations }: { citations: Citation[] }) {
   if (citations.length === 0) return null;
   return (
     <span className="chips">

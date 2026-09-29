@@ -27,13 +27,18 @@ export function useMe(): MeState {
     let cancelled = false;
     apiFetch('/api/v1/me')
       .then((body) => {
-        if (!cancelled) setState(isMe(body) ? { status: 'signed-in', user: body } : { status: 'error' });
+        if (!cancelled)
+          setState(isMe(body) ? { status: 'signed-in', user: body } : { status: 'error' });
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         // Only a 401 means "not signed in". A 500 or a dropped connection is a failure of ours,
         // and bouncing the user to the sign-in page would make it look like they were logged out.
-        setState(error instanceof ApiError && error.status === 401 ? { status: 'signed-out' } : { status: 'error' });
+        setState(
+          error instanceof ApiError && error.status === 401
+            ? { status: 'signed-out' }
+            : { status: 'error' },
+        );
       });
     return () => {
       cancelled = true;
