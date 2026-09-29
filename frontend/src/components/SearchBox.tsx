@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from 'react';
 
+import { SearchIcon } from '@/components/Icons';
 import { hitLabel, pageLink, searchFilings, type SearchHit } from '@/lib/search';
 
 const MIN_CHARS = 3; // the server refuses shorter questions
@@ -61,14 +62,17 @@ export function SearchBox({ symbol, stockName }: { symbol: string; stockName: st
   return (
     <section className="search" aria-label={`Search ${stockName}`}>
       <form role="search" className="search-form" onSubmit={(event) => void submit(event)}>
-        <input
-          type="search"
-          aria-label={`Search ${stockName}’s filings`}
-          placeholder="Search the filings, e.g. employee attrition"
-          value={question}
-          maxLength={300}
-          onChange={(event) => setQuestion(event.target.value)}
-        />
+        <span className="search-field">
+          <SearchIcon />
+          <input
+            type="search"
+            aria-label={`Search ${stockName}’s filings`}
+            placeholder="Search the filings, e.g. employee attrition"
+            value={question}
+            maxLength={300}
+            onChange={(event) => setQuestion(event.target.value)}
+          />
+        </span>
         <button type="submit" className="button" disabled={!ready}>
           Search
         </button>

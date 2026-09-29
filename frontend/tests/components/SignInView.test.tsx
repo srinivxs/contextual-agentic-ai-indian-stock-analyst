@@ -36,11 +36,25 @@ describe('the sign-in page', () => {
     expect(screen.queryByRole('link', { name: /sign in with google/i })).not.toBeInTheDocument();
   });
 
-  it('sends a signed-in user straight to the stocks page', async () => {
+  it('sends a signed-in user straight to the home page', async () => {
     installFakeApi({ signedIn: true });
     render(<SignInView />);
 
-    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/stocks/'));
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/home/'));
+  });
+
+  it('shows the brand, one honest line and the not-advice note', async () => {
+    installFakeApi({ signedIn: false });
+    const { container } = render(<SignInView />);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Indian Stock Analyst' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Research on RELIANCE, TCS and HDFC Bank from their official filings'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/not investment advice/i)).toBeInTheDocument();
+    expect(container.querySelector('.signin-mark svg')).not.toBeNull();
   });
 
   it('says so, and does not redirect, when the server cannot be reached', async () => {

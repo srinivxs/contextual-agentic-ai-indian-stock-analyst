@@ -5,14 +5,14 @@ import { describe, expect, it } from 'vitest';
 import { MemoryPanel } from '@/components/MemoryPanel';
 import { demoProfileField, installFakeApi } from '../helpers/fakeApi';
 
-const panel = (): HTMLElement => screen.getByRole('region', { name: 'What I remember' });
+const panel = (): HTMLElement => screen.getByRole('region', { name: 'Your investor profile' });
 
 describe('the memory panel', () => {
   it('shows the heading', async () => {
     installFakeApi();
     render(<MemoryPanel />);
     expect(
-      await within(panel()).findByRole('heading', { name: 'What I remember' }),
+      await within(panel()).findByRole('heading', { name: 'Your investor profile' }),
     ).toBeInTheDocument();
   });
 

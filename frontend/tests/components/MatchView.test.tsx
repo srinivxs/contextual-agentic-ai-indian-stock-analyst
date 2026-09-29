@@ -26,6 +26,24 @@ const profiled = (...stocks: ReturnType<typeof demoStockMatch>[]) =>
   demoMatches({ profile_empty: false, stocks });
 
 describe('the match page', () => {
+  it('marks Match as the current menu item', async () => {
+    installFakeApi({ matches: demoMatches() });
+    render(<MatchView />);
+    const main = await screen.findByRole('navigation', { name: 'Main' });
+    expect(within(main).getByRole('link', { name: 'Match' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it('marks a must-have and states each outcome in words, not by colour alone', async () => {
+    installFakeApi({ matches: profiled(demoStockMatch()) });
+    render(<MatchView />);
+    const card = await screen.findByRole('region', { name: 'DemoCo Alpha Limited' });
+    expect(within(card).getAllByRole('listitem')[0]).toHaveTextContent('must-have');
+    expect(within(card).getByText('DE', { selector: '.monogram' })).toBeInTheDocument();
+  });
+
   it('asks an empty profile to tell the chat first, with a link to the chat', async () => {
     installFakeApi({ matches: demoMatches() });
     render(<MatchView />);

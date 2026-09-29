@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 
+import { LeafIcon } from '@/components/Icons';
 import { sourceLink, splitMarkers, type ChatMessage, type ChatSource } from '@/lib/chat';
 
 /**
@@ -130,7 +131,12 @@ export function ChatThread({
           </li>
         ) : (
           <li key={message.id} className="chat-message assistant">
-            <Answer message={message} />
+            <span className="chat-avatar small" aria-hidden="true">
+              <LeafIcon size={16} />
+            </span>
+            <div className="answer-body">
+              <Answer message={message} />
+            </div>
           </li>
         ),
       )}

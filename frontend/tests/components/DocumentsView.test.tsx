@@ -45,6 +45,44 @@ describe('the documents page', () => {
       '/documents/',
     );
     expect(within(main).getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat/');
+    expect(within(main).getByRole('link', { name: 'Documents' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it('moves between the tabs with the arrow keys, Home and End', async () => {
+    installFakeApi({ documents: ALPHA_FILINGS });
+    render(<DocumentsView />);
+
+    const tabs = await screen.findAllByRole('tab');
+    expect(tabs.map((t) => t.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1']);
+    tabs[0]?.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'true');
+    expect(tabs[1]).toHaveFocus();
+    await userEvent.keyboard('{End}');
+    expect(tabs[3]).toHaveAttribute('aria-selected', 'true');
+    expect(tabs[3]).toHaveFocus();
+    await userEvent.keyboard('{ArrowRight}'); // wraps round to the first
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
+    await userEvent.keyboard('{ArrowLeft}'); // and back to the last
+    expect(tabs[3]).toHaveAttribute('aria-selected', 'true');
+    await userEvent.keyboard('{Home}');
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('shows a status pill on every document, including finished ones', async () => {
+    installFakeApi({
+      documents: [
+        demoDocument({ id: 1, status: 'completed', period: 'Jul 2026' }),
+        demoDocument({ id: 2, status: 'pending', period: 'Apr 2026' }),
+      ],
+    });
+    render(<DocumentsView />);
+
+    expect(await screen.findByText('Ready')).toHaveClass('pill', 'completed');
+    expect(screen.getByText('Waiting')).toHaveClass('pill', 'pending');
   });
 
   it('has one tab per stock, with how many documents it has, the first one open', async () => {
@@ -126,7 +164,7 @@ describe('the documents page', () => {
     installFakeApi();
     render(<DocumentsView />);
     await screen.findByText(/no documents yet/i);
-    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(screen.queryByRole('searchbox', { name: /filings/ })).toBeNull(); // the top bar's box finds stocks
   });
 
   it('switches to another stock', async () => {

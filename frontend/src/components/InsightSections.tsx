@@ -51,25 +51,22 @@ export function Citations({ citations }: { citations: Citation[] }) {
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function FactCell({ fact }: { fact: KeyFact | null }) {
-  if (fact === null) {
-    return (
-      <td className="fact-cell muted" aria-label="No figure">
-        –
-      </td>
-    );
-  }
+/** One period's figure: the amount, the period, any basis note, and where it came from. */
+function FactEntry({ fact }: { fact: KeyFact }) {
   const note = basisNote(fact.basis);
   const disputed = fact.status === 'disputed';
   return (
-    <td className="fact-cell">
+    <div className="fact">
       <span className="fact-value">{formatAmount(fact.value, fact.unit)}</span>
+      <span className="fact-period">{periodLabel(fact.period)}</span>
       {note && <span className="fact-note">{note}</span>}
       {disputed && <span className="pill disputed">disputed</span>}
       {fact.status === 'agreed' && fact.corroborated_by > 0 && (
         <span className="fact-note">{`agreed by ${plural(fact.corroborated_by, 'other source')}`}</span>
       )}
-      <CitationChip citation={fact.citation} />
+      <div>
+        <CitationChip citation={fact.citation} />
+      </div>
       {disputed && fact.disputed_by.length > 0 && (
         <details className="fact-dispute">
           <summary>Sources that disagree</summary>
@@ -82,60 +79,64 @@ function FactCell({ fact }: { fact: KeyFact | null }) {
           </ul>
         </details>
       )}
-    </td>
+    </div>
   );
 }
 
-/** One row per metric, one column per period, newest first. */
+/** One card per metric: the newest figure large, older periods listed underneath. */
 export function KeyFacts({ facts }: { facts: KeyFact[] }) {
   const table = factTable(facts);
   return (
-    <section aria-labelledby="key-facts" className="insight">
+    <section aria-labelledby="key-facts" className="stock-section">
       <h2 id="key-facts">Key facts</h2>
       {table.rows.length === 0 ? (
         <p className="muted">No facts extracted yet.</p>
       ) : (
-        <div className="facts-scroll">
-          <table className="facts">
-            <thead>
-              <tr>
-                <th scope="col">Metric</th>
-                {table.periods.map((period) => (
-                  <th scope="col" key={period}>
-                    {periodLabel(period)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {table.rows.map((row) => (
-                <tr key={row.metric}>
-                  <th scope="row">{row.label}</th>
-                  {row.cells.map((fact, index) => (
-                    <FactCell key={table.periods[index]} fact={fact} />
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="figures">
+          {table.rows.map((row) => {
+            const [latest, ...earlier] = row.cells.filter((cell): cell is KeyFact => cell !== null);
+            return (
+              <li key={row.metric} className="figure-card">
+                <h3>{row.label}</h3>
+                {latest && <FactEntry fact={latest} />}
+                {earlier.length > 0 && (
+                  <ul className="figure-earlier" aria-label={`Earlier ${row.label}`}>
+                    {earlier.map((fact) => (
+                      <li key={fact.period}>
+                        <FactEntry fact={fact} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </section>
   );
 }
 
+/** Growth reads green or red by its sign; nothing else is coloured. */
+function valueClass(item: DerivedValue): string {
+  if (item.status !== 'ok') return 'derived-value muted';
+  const growth = item.name === 'revenue_growth' || item.name === 'profit_growth';
+  const number = Number(item.value);
+  if (growth && number > 0) return 'derived-value rise';
+  if (growth && number < 0) return 'derived-value fall';
+  return 'derived-value';
+}
+
 /** Debt to equity, growth and dividend: the value (or why there is none), its reason and sources. */
 export function DerivedValues({ derived }: { derived: DerivedValue[] }) {
   return (
-    <section aria-labelledby="derived-values" className="insight">
+    <section aria-labelledby="derived-values" className="stock-section">
       <h2 id="derived-values">Derived values</h2>
-      <ul className="derived-list">
+      <ul className="figures derived-list">
         {derived.map((item) => (
-          <li key={item.name} className="derived">
+          <li key={item.name} className="figure-card derived">
             <span className="derived-name">{item.label}</span>
-            <span className={item.status === 'ok' ? 'derived-value' : 'derived-value muted'}>
-              {derivedValueLabel(item)}
-            </span>
+            <span className={valueClass(item)}>{derivedValueLabel(item)}</span>
             <p className="derived-reason">{item.reason}</p>
             <Citations citations={item.citations} />
           </li>
@@ -149,9 +150,9 @@ export function DerivedValues({ derived }: { derived: DerivedValue[] }) {
 export function RecentSentiment({ sentiment }: { sentiment: Sentiment }) {
   const known = sentiment.status === 'ok' && sentiment.label !== null;
   return (
-    <section aria-labelledby="recent-sentiment" className="insight">
+    <section aria-labelledby="recent-sentiment" className="stock-section">
       <h2 id="recent-sentiment">Recent sentiment</h2>
-      <p className="sentiment-line">
+      <p className="sentiment-line panel">
         <span className={known ? `sentiment ${sentiment.label}` : 'sentiment none'}>
           {sentimentLabel(sentiment)}
         </span>
@@ -168,12 +169,12 @@ export function RecentSentiment({ sentiment }: { sentiment: Sentiment }) {
 /** Newest first: date, type, sentiment and impact, the summary and its source. */
 export function RecentEvents({ events }: { events: StockEvent[] }) {
   return (
-    <section aria-labelledby="recent-events" className="insight">
+    <section aria-labelledby="recent-events" className="stock-section">
       <h2 id="recent-events">Recent events</h2>
       {events.length === 0 ? (
         <p className="muted">No events extracted yet.</p>
       ) : (
-        <ol className="events">
+        <ol className="events panel">
           {events.map((event, index) => (
             <li key={`${index}-${event.event_date}`} className="event">
               <p className="event-head">

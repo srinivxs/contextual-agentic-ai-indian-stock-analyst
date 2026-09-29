@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -21,17 +21,36 @@ const unfollowButton = (symbol: string): HTMLElement =>
   screen.getByRole('button', { name: `Unfollow ${symbol}` });
 
 describe('the stocks page', () => {
-  it('shows one card per stock with its name, symbol, BSE code and sector', async () => {
+  it('lists each stock as a watchlist row: monogram, ticker over the name, BSE code, sector', async () => {
     installFakeApi();
     render(<StocksView />);
 
-    for (const stock of STOCKS) {
-      expect(await screen.findByRole('heading', { name: stock.name })).toBeInTheDocument();
-      expect(screen.getAllByText(stock.symbol).length).toBeGreaterThan(0);
-      expect(screen.getByText(new RegExp(stock.bse_code))).toBeInTheDocument();
-      expect(screen.getByText(stock.sector)).toBeInTheDocument();
-    }
-    expect(screen.getAllByRole('article')).toHaveLength(STOCKS.length);
+    const list = await screen.findByRole('region', { name: 'Stocks' });
+    const rows = await within(list).findAllByRole('listitem');
+    expect(rows).toHaveLength(STOCKS.length);
+    STOCKS.forEach((stock, index) => {
+      const row = within(rows[index] as HTMLElement);
+      expect(row.getByRole('heading', { level: 2, name: stock.symbol })).toBeInTheDocument();
+      expect(row.getByText(stock.name)).toBeInTheDocument();
+      expect(row.getByText(new RegExp(stock.bse_code))).toBeInTheDocument();
+      expect(row.getByText(stock.sector)).toBeInTheDocument();
+      expect(rows[index]?.querySelector('.monogram')).not.toBeNull();
+    });
+  });
+
+  it('marks Stocks as the current menu item and offers the filings', async () => {
+    installFakeApi();
+    render(<StocksView />);
+
+    const menu = await screen.findByRole('navigation', { name: 'Main' });
+    expect(within(menu).getByRole('link', { name: 'Stocks' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(screen.getByRole('link', { name: /filings behind them/i })).toHaveAttribute(
+      'href',
+      '/documents/',
+    );
   });
 
   it('keeps the order the server gave', async () => {
@@ -39,7 +58,7 @@ describe('the stocks page', () => {
     render(<StocksView />);
 
     const headings = await screen.findAllByRole('heading', { level: 2 });
-    expect(headings.map((h) => h.textContent)).toEqual(STOCKS.map((s) => s.name));
+    expect(headings.map((h) => h.textContent)).toEqual(STOCKS.map((s) => s.symbol));
   });
 
   it('links each stock to its key facts page', async () => {
@@ -69,7 +88,7 @@ describe('the stocks page', () => {
     });
     const { container } = render(<StocksView />);
 
-    await screen.findByRole('heading', { name: '<img src=x onerror=alert(1)>' });
+    await screen.findByText('<img src=x onerror=alert(1)>');
     expect(container.querySelector('img')).toBeNull();
   });
 });

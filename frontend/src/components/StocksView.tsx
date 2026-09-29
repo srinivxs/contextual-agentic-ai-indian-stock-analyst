@@ -121,24 +121,31 @@ export function StocksView() {
   }
 
   return (
-    <AppShell email={me.user.email} onSignOut={() => void leave()}>
-      <h1>Stocks</h1>
-      <p className="muted">Follow the stocks you want to keep an eye on.</p>
+    <AppShell email={me.user.email} onSignOut={() => void leave()} active="stocks">
+      <div className="page-intro">
+        <h1>Stocks</h1>
+        <p className="muted">Follow the stocks you want to keep an eye on.</p>
+      </div>
       {problem && (
         <p role="alert" className="alert">
           {problem}
         </p>
       )}
-      <div className="grid">
-        {stocks?.map((stock) => (
-          <StockCard
-            key={stock.symbol}
-            stock={stock}
-            busy={busy.has(stock.symbol)}
-            onToggle={(chosen) => void toggle(chosen)}
-          />
-        ))}
-      </div>
+      <section className="watchlist" aria-label="Stocks">
+        <ul className="watch-list">
+          {stocks?.map((stock) => (
+            <StockCard
+              key={stock.symbol}
+              stock={stock}
+              busy={busy.has(stock.symbol)}
+              onToggle={(chosen) => void toggle(chosen)}
+            />
+          ))}
+        </ul>
+        <a className="button soft watch-foot" href="/documents/">
+          See the filings behind them
+        </a>
+      </section>
     </AppShell>
   );
 }

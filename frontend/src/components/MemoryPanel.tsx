@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react';
 
+import type { ReactNode } from 'react';
+
+import { ClockIcon, LeafIcon, PencilIcon, ShieldIcon, TrendIcon } from '@/components/Icons';
 import {
   forgetAll,
   forgetField,
@@ -18,12 +21,26 @@ import {
  * remember, that is the chat's job from the user's own words.
  */
 
-const HEADING = 'What I remember';
+const HEADING = 'Your investor profile';
 const EMPTY =
   "Nothing yet. Tell the chat about yourself, for example: I'm conservative, dividend-focused and I avoid high debt.";
 const LOAD_FAILED = "We couldn't load what we remember about you.";
 const SAVE_FAILED = "That choice wasn't accepted.";
 const ACTION_FAILED = 'Something went wrong. Try again.';
+
+const FIELD_ICONS: Record<ProfileFieldName, ReactNode> = {
+  risk_preference: <LeafIcon />,
+  debt_preference: <ShieldIcon />,
+  investment_style: <TrendIcon />,
+  other_preferences: <ClockIcon />,
+};
+
+/** The round, softly tinted icon at the start of a row. */
+const FieldIcon = ({ field }: { field: ProfileFieldName }) => (
+  <span className={`memory-icon ${field}`} aria-hidden="true">
+    {FIELD_ICONS[field]}
+  </span>
+);
 
 type Phase = 'loading' | 'ready' | 'error';
 type Busy = ProfileFieldName | 'all' | null;
@@ -108,39 +125,45 @@ function Remembered({
 }) {
   return (
     <>
-      <p className="memory-field-label">{choice.label}</p>
-      <p className="memory-chips">
-        {entry.labels.map((label) => (
-          <span key={label} className="memory-chip">
-            {label}
-          </span>
-        ))}
-      </p>
-      <p className="memory-source muted">
-        {entry.source === 'chat' && entry.quote ? `You said: “${entry.quote}”` : 'Set by you'}
-      </p>
-      <p className="memory-date muted">
-        <time dateTime={entry.updated_at}>{entry.updated_at.slice(0, 10)}</time>
-      </p>
-      <div className="memory-actions">
-        <button
-          type="button"
-          className="button secondary"
-          aria-label={`Edit ${choice.label}`}
-          disabled={busy}
-          onClick={onEdit}
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          className="button secondary"
-          aria-label={`Forget ${choice.label}`}
-          disabled={busy}
-          onClick={onForget}
-        >
-          Forget
-        </button>
+      <div className="memory-row">
+        <FieldIcon field={choice.field} />
+        <p className="memory-field-label">{choice.label}</p>
+        <p className="memory-chips">
+          {entry.labels.map((label) => (
+            <span key={label} className="memory-chip">
+              {label}
+            </span>
+          ))}
+        </p>
+      </div>
+      <div className="memory-detail">
+        <p className="memory-source muted">
+          {entry.source === 'chat' && entry.quote ? `You said: “${entry.quote}”` : 'Set by you'}
+        </p>
+        <p className="memory-date muted">
+          <time dateTime={entry.updated_at}>{entry.updated_at.slice(0, 10)}</time>
+        </p>
+        <div className="memory-actions">
+          <button
+            type="button"
+            className="memory-link"
+            aria-label={`Edit ${choice.label}`}
+            disabled={busy}
+            onClick={onEdit}
+          >
+            <PencilIcon />
+            Edit
+          </button>
+          <button
+            type="button"
+            className="memory-link"
+            aria-label={`Forget ${choice.label}`}
+            disabled={busy}
+            onClick={onForget}
+          >
+            Forget
+          </button>
+        </div>
       </div>
     </>
   );
@@ -262,18 +285,19 @@ export function MemoryPanel({ refreshSignal = 0 }: { refreshSignal?: number }) {
                     onForget={() => void forget(choice.field)}
                   />
                 ) : (
-                  <>
+                  <div className="memory-row">
+                    <FieldIcon field={choice.field} />
                     <p className="memory-field-label">{choice.label}</p>
                     <button
                       type="button"
-                      className="button secondary"
+                      className="memory-link"
                       aria-label={`Add ${choice.label}`}
                       disabled={busy !== null}
                       onClick={() => setEditing(choice.field)}
                     >
                       Add
                     </button>
-                  </>
+                  </div>
                 )}
               </li>
             );
@@ -307,7 +331,7 @@ export function MemoryPanel({ refreshSignal = 0 }: { refreshSignal?: number }) {
         ) : (
           <button
             type="button"
-            className="button secondary"
+            className="memory-link forget-all"
             onClick={() => setConfirmForgetAll(true)}
             disabled={busy !== null}
           >

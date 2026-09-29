@@ -47,16 +47,81 @@ describe('the chat page', () => {
     expect(within(main).getByRole('link', { name: 'Documents' })).toBeInTheDocument();
   });
 
-  it('says where answers come from, and that they are not investment advice', async () => {
+  it('titles the chat, and says honestly where answers come from', async () => {
     installFakeApi();
     render(<ChatView />);
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Chat' })).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Answers come only from the stored filings and screener.in figures, each with its source. Not investment advice.',
-      ),
+      await screen.findByRole('heading', { level: 1, name: 'Chat with your analyst' }),
     ).toBeInTheDocument();
+    expect(screen.getByText('Answers only from stored filings')).toBeInTheDocument();
+    expect(screen.queryByText(/live Indian market data/)).toBeNull();
+  });
+
+  it('marks Chat as the current menu item', async () => {
+    installFakeApi();
+    render(<ChatView />);
+    const main = await screen.findByRole('navigation', { name: 'Main' });
+    expect(within(main).getByRole('link', { name: 'Chat' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it('greets an empty conversation and says what the analyst can do', async () => {
+    installFakeApi();
+    render(<ChatView />);
+    expect(
+      await screen.findByText(/I can answer from the filings of RELIANCE/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/how each stock fits your preferences/)).toBeInTheDocument();
+  });
+
+  it('offers suggestions that fill the box without sending, and never advice prompts', async () => {
+    const api = installFakeApi();
+    render(<ChatView />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Compare TCS and HDFC Bank' }));
+
+    expect(box()).toHaveValue('Compare TCS and HDFC Bank');
+    expect(api.bodies).toEqual([]);
+    for (const name of [
+      'Analyse RELIANCE',
+      'Latest news on TCS',
+      'Which stocks have low debt?',
+      'Match me',
+    ]) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+    expect(screen.queryByText(/should I buy/i)).toBeNull();
+  });
+
+  it('hides the greeting and suggestions once a conversation has begun', async () => {
+    installFakeApi();
+    render(<ChatView />);
+    await ask('How did revenue grow?');
+    await screen.findByText(/reported revenue of/);
+    expect(screen.queryByRole('button', { name: 'Match me' })).toBeNull();
+    expect(screen.queryByText(/I can answer from the filings/)).toBeNull();
+  });
+
+  it('starts the box with the text of ?q=, and does not send it', async () => {
+    const api = installFakeApi();
+    window.history.pushState({}, '', '/chat/?q=Analyse%20RELIANCE');
+    try {
+      render(<ChatView />);
+      expect(await screen.findByRole('textbox', { name: 'Your question' })).toHaveValue(
+        'Analyse RELIANCE',
+      );
+      expect(api.bodies).toEqual([]);
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('starts with an empty box when there is no ?q=', async () => {
+    installFakeApi();
+    render(<ChatView />);
+    expect(await screen.findByRole('textbox', { name: 'Your question' })).toHaveValue('');
   });
 
   it('says so when there are no conversations yet', async () => {
@@ -69,7 +134,7 @@ describe('the chat page', () => {
     installFakeApi({ profileFields: [demoProfileField()] });
     render(<ChatView />);
 
-    const memory = await screen.findByRole('region', { name: 'What I remember' });
+    const memory = await screen.findByRole('region', { name: 'Your investor profile' });
     expect(await within(memory).findByText('Conservative')).toBeInTheDocument();
     expect(
       screen.getByText(

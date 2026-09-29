@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 
 import { AppShell } from '@/components/AppShell';
 import { ChatThread } from '@/components/ChatThread';
+import { LeafIcon, PlusIcon, SendIcon } from '@/components/Icons';
 import { MemoryPanel } from '@/components/MemoryPanel';
 import { ApiError } from '@/lib/api';
 import {
@@ -19,12 +20,24 @@ import { signOut, useMe } from '@/lib/session';
 const MIN_CHARS = 3; // the server refuses shorter questions
 const MAX_CHARS = 1000; // and longer ones
 
-const NOTE =
-  'Answers come only from the stored filings and screener.in figures, each with its source. Not investment advice.';
 const DISCLAIMER =
   'Not investment advice. Answers come only from stored filings and screener.in figures.';
-const HINT =
-  'Ask about RELIANCE, TCS or HDFC Bank: their results, borrowings, dividends, or what was said on a call.';
+const DESCRIPTION = 'Ask about RELIANCE, TCS or HDFC Bank. Every figure comes with its source.';
+const PILL = 'Answers only from stored filings';
+const CAPABILITIES = [
+  'Answer questions about RELIANCE, TCS and HDFC Bank from their filings',
+  'Show key figures and how they changed',
+  'Summarise recent news and its sentiment',
+  'Check how each stock fits your preferences',
+];
+// They fill the box; the user decides whether to send (an answer costs money).
+const SUGGESTIONS = [
+  'Analyse RELIANCE',
+  'Compare TCS and HDFC Bank',
+  'Latest news on TCS',
+  'Which stocks have low debt?',
+  'Match me',
+];
 const LOAD_FAILED = "We couldn't load the page. Reload the page to try again.";
 const LIST_FAILED = "We couldn't load your conversations.";
 const OPEN_FAILED = "We couldn't open that conversation.";
@@ -40,6 +53,12 @@ type Thread = {
 };
 
 const NEW_THREAD: Thread = { id: null, messages: [], phase: 'ready' };
+
+/** The text of `?q=` in the address (the Home page links here), read without a router hook. */
+function initialDraft(): string {
+  if (typeof window === 'undefined') return ''; // the static prerender has no address
+  return (new URLSearchParams(window.location.search).get('q') ?? '').slice(0, MAX_CHARS);
+}
 
 const isStatus = (error: unknown, status: number): boolean =>
   error instanceof ApiError && error.status === status;
@@ -64,12 +83,13 @@ export function ChatView() {
   const [listFailed, setListFailed] = useState(false);
   const [listVersion, setListVersion] = useState(0); // bumped to load the list again
   const [thread, setThread] = useState<Thread>(NEW_THREAD);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(initialDraft);
   const [pending, setPending] = useState<string | null>(null); // the question being answered
   const [problem, setProblem] = useState<string | null>(null);
   const [memoryRefresh, setMemoryRefresh] = useState(0); // bumped to refetch what is remembered
   // The conversation asked for last, so an older one that arrives late is ignored.
   const opening = useRef<string | null>(null);
+  const boxRef = useRef<HTMLTextAreaElement>(null);
 
   const busy = pending !== null;
   const ready = draft.trim().length >= MIN_CHARS && !busy && thread.phase !== 'loading';
@@ -152,6 +172,11 @@ export function ChatView() {
     }
   };
 
+  const suggest = (text: string) => {
+    setDraft(text);
+    boxRef.current?.focus();
+  };
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     void send();
@@ -187,11 +212,7 @@ export function ChatView() {
   const empty = thread.phase === 'ready' && thread.messages.length === 0 && !busy;
 
   return (
-    <AppShell email={me.user.email} onSignOut={leave}>
-      <div className="chat-head">
-        <h1>Chat</h1>
-        <p className="muted">{NOTE}</p>
-      </div>
+    <AppShell email={me.user.email} onSignOut={leave} active="chat">
       {listFailed && (
         <p role="alert" className="alert">
           {LIST_FAILED}
@@ -200,6 +221,7 @@ export function ChatView() {
       <div className="chat">
         <section className="chat-list" aria-label="Conversations">
           <button type="button" className="button secondary" onClick={startNew} disabled={busy}>
+            <PlusIcon />
             New conversation
           </button>
           {conversations.length === 0 ? (
@@ -223,6 +245,19 @@ export function ChatView() {
           )}
         </section>
         <section className="chat-main" aria-label="Conversation">
+          <header className="chat-card-head">
+            <span className="chat-avatar" aria-hidden="true">
+              <LeafIcon />
+            </span>
+            <div className="chat-card-title">
+              <h1>Chat with your analyst</h1>
+              <p className="muted">{DESCRIPTION}</p>
+            </div>
+            <span className="chat-pill">
+              <span className="dot" aria-hidden="true" />
+              {PILL}
+            </span>
+          </header>
           {thread.phase === 'loading' && (
             <p role="status" className="muted">
               Loading the conversation…
@@ -233,7 +268,37 @@ export function ChatView() {
               {OPEN_FAILED}
             </p>
           )}
-          {empty && <p className="muted">{HINT}</p>}
+          {empty && (
+            <div className="chat-greeting">
+              <div className="chat-message assistant">
+                <span className="chat-avatar small" aria-hidden="true">
+                  <LeafIcon size={16} />
+                </span>
+                <div className="answer-body">
+                  <p className="chat-text">
+                    Hello! I can answer from the filings of RELIANCE, TCS and HDFC Bank. I can:
+                  </p>
+                  <ul className="chat-can">
+                    {CAPABILITIES.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <div className="chat-suggestions" role="group" aria-label="Suggestions">
+                {SUGGESTIONS.map((text) => (
+                  <button
+                    key={text}
+                    type="button"
+                    className="chat-chip"
+                    onClick={() => suggest(text)}
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <ChatThread messages={thread.messages} pending={pending} />
           {busy && (
             <p role="status" className="muted">
@@ -247,17 +312,18 @@ export function ChatView() {
           )}
           <form className="chat-form" onSubmit={submit}>
             <textarea
+              ref={boxRef}
               aria-label="Your question"
               placeholder="Ask a question. Enter sends, Shift+Enter adds a line."
-              rows={3}
+              rows={2}
               maxLength={MAX_CHARS}
               value={draft}
               disabled={busy}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={onKeyDown}
             />
-            <button type="submit" className="button" disabled={!ready}>
-              Send
+            <button type="submit" className="chat-send" aria-label="Send" disabled={!ready}>
+              <SendIcon />
             </button>
           </form>
           <p className="chat-disclaimer muted">{DISCLAIMER}</p>

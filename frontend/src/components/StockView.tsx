@@ -4,6 +4,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { AppShell } from '@/components/AppShell';
+import { Monogram } from '@/components/Monogram';
+import { SearchBox } from '@/components/SearchBox';
 import {
   DerivedValues,
   KeyFacts,
@@ -25,9 +27,9 @@ type Outcome =
 
 function BackToStocks() {
   return (
-    <p>
-      <a href="/stocks/">Back to Stocks</a>
-    </p>
+    <a href="/stocks/" className="button soft">
+      Back to Stocks
+    </a>
   );
 }
 
@@ -97,25 +99,31 @@ export function StockView() {
 
   if (symbol === null || outcome?.phase === 'unknown') {
     return (
-      <AppShell email={me.user.email} onSignOut={leave}>
+      <AppShell email={me.user.email} onSignOut={leave} active="stocks">
         <h1>Key facts</h1>
         <p className="muted">
           {symbol === null
             ? 'Choose a stock from the Stocks page.'
             : `We don’t know a stock called ${symbol}.`}
         </p>
-        <BackToStocks />
+        <p>
+          <BackToStocks />
+        </p>
       </AppShell>
     );
   }
 
   const insights = outcome?.phase === 'ready' ? outcome.insights : null;
   return (
-    <AppShell email={me.user.email} onSignOut={leave}>
+    <AppShell email={me.user.email} onSignOut={leave} active="stocks">
       <div className="stock-head">
-        <h1>{insights?.name ?? symbol}</h1>
-        <p className="symbol">{symbol}</p>
-        <p className="muted">{NOT_ADVICE}</p>
+        <Monogram symbol={symbol} size="lg" />
+        <div className="stock-head-text">
+          <h1>{insights?.name ?? symbol}</h1>
+          <p className="symbol">{symbol}</p>
+          <p className="muted stock-note">{NOT_ADVICE}</p>
+        </div>
+        <BackToStocks />
       </div>
       {outcome?.phase === 'problem' && (
         <p role="alert" className="alert">
@@ -133,6 +141,12 @@ export function StockView() {
           <DerivedValues derived={insights.derived} />
           <RecentSentiment sentiment={insights.sentiment} />
           <RecentEvents events={insights.events} />
+          <section aria-labelledby="search-filings" className="stock-section">
+            <h2 id="search-filings">Search the filings</h2>
+            <div className="panel">
+              <SearchBox symbol={symbol} stockName={insights.name} />
+            </div>
+          </section>
         </>
       )}
     </AppShell>

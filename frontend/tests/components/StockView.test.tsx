@@ -46,6 +46,32 @@ describe('the stock page', () => {
     expect(api.requests).toContain('GET /api/v1/stocks/DEMOA/insights');
   });
 
+  it('has a header card with a monogram, a way back, and Stocks as the current menu item', async () => {
+    installFakeApi({ insights: { DEMOA: demoInsights() } });
+    const { container } = render(<StockView />);
+
+    await screen.findByRole('heading', { level: 1, name: 'DemoCo Alpha Limited' });
+    expect(container.querySelector('.stock-head .monogram.lg')).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'Back to Stocks' })).toHaveAttribute(
+      'href',
+      '/stocks/',
+    );
+    const menu = screen.getByRole('navigation', { name: 'Main' });
+    expect(within(menu).getByRole('link', { name: 'Stocks' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it('offers a search of this stock’s filings', async () => {
+    installFakeApi({ insights: { DEMOA: demoInsights() } });
+    render(<StockView />);
+
+    expect(
+      await screen.findByRole('searchbox', { name: 'Search DemoCo Alpha Limited’s filings' }),
+    ).toBeInTheDocument();
+  });
+
   it('shows a loading message until the insights arrive', async () => {
     const api = installFakeApi();
     const release = api.hold('GET /api/v1/stocks/DEMOA/insights');
@@ -58,31 +84,32 @@ describe('the stock page', () => {
 });
 
 describe('key facts', () => {
-  it('is a table with one row per metric and the periods newest first', async () => {
+  it('is one card per metric, newest figure first, older periods beneath', async () => {
     installFakeApi({ insights: { DEMOA: demoInsights() } });
     render(<StockView />);
 
-    const table = await screen.findByRole('table');
-    const headers = within(table)
-      .getAllByRole('columnheader')
+    const facts = await screen.findByRole('region', { name: 'Key facts' });
+    const labels = within(facts)
+      .getAllByRole('heading', { level: 3 })
       .map((h) => h.textContent);
-    expect(headers).toEqual(['Metric', 'FY2026', 'FY2025']);
-    const rows = within(table)
-      .getAllByRole('rowheader')
-      .map((h) => h.textContent);
-    expect(rows).toEqual(['Revenue from operations', 'Net profit']);
-    expect(within(table).getByText('₹1,23,456 crore')).toBeInTheDocument();
-    expect(within(table).getByText('₹1,10,000 crore')).toBeInTheDocument();
-    expect(within(table).getByText('₹12,345.5 crore')).toBeInTheDocument();
+    expect(labels).toEqual(['Revenue from operations', 'Net profit']);
+    const [revenue] = within(facts).getAllByRole('listitem');
+    const card = revenue as HTMLElement;
+    expect(card.querySelector('.fact-value')?.textContent).toBe('₹1,23,456 crore');
+    expect(card.querySelector('.fact-period')?.textContent).toBe('FY2026');
+    const earlier = within(card).getByRole('list', { name: 'Earlier Revenue from operations' });
+    expect(within(earlier).getByText('₹1,10,000 crore')).toBeInTheDocument();
+    expect(within(earlier).getByText('FY2025')).toBeInTheDocument();
+    expect(within(facts).getByText('₹12,345.5 crore')).toBeInTheDocument();
   });
 
-  it('shows a quarter as its own column', async () => {
+  it('shows a quarter with a space in its period', async () => {
     installFakeApi({
       insights: { DEMOA: demoInsights({ key_facts: [demoFact({ period: 'Q3FY2026' })] }) },
     });
     render(<StockView />);
 
-    expect(await screen.findByRole('columnheader', { name: 'Q3 FY2026' })).toBeInTheDocument();
+    expect(await screen.findByText('Q3 FY2026')).toBeInTheDocument();
   });
 
   it('cites each value with a link that opens the source in a new tab, safely', async () => {
@@ -192,7 +219,7 @@ describe('key facts', () => {
     render(<StockView />);
 
     expect(await screen.findByText('No facts extracted yet.')).toBeInTheDocument();
-    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByRole('heading', { level: 3 })).toBeNull();
   });
 });
 
@@ -224,7 +251,29 @@ describe('derived values', () => {
     ).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
-  it('puts a status that is not a value into words', async () => {
+  it('colours growth by its sign and nothing else', async () => {
+    const base = demoInsights();
+    installFakeApi({
+      insights: {
+        DEMOA: demoInsights({
+          derived: base.derived.map((d) =>
+            d.name === 'profit_growth' ? { ...d, status: 'ok', value: '-4.2' } : d,
+          ),
+        }),
+      },
+    });
+    render(<StockView />);
+
+    const derived = await screen.findByRole('region', { name: 'Derived values' });
+    expect(within(derived).getByText('+12.5%')).toHaveClass('rise');
+    expect(within(derived).getByText('-4.2%')).toHaveClass('fall');
+    expect(within(derived).getByText('0.25')).toHaveClass('derived-value');
+    expect(within(derived).getByText('0.25')).not.toHaveClass('rise');
+    expect(within(derived).getByText('0.25')).not.toHaveClass('fall');
+    expect(within(derived).queryByText('Not enough data')).toBeNull();
+  });
+
+  it('puts a status that is not a value into words, muted', async () => {
     const base = demoInsights();
     installFakeApi({
       insights: {
@@ -242,7 +291,7 @@ describe('derived values', () => {
     });
     render(<StockView />);
 
-    expect(await screen.findByText('Not applicable')).toBeInTheDocument();
+    expect(await screen.findByText('Not applicable')).toHaveClass('muted');
     expect(screen.getByText('Not used for banks.')).toBeInTheDocument();
     expect(screen.getByText('Not assessable')).toBeInTheDocument();
   });

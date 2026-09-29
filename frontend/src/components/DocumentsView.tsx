@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
 
 import { AppShell } from '@/components/AppShell';
 import { SearchBox } from '@/components/SearchBox';
@@ -42,10 +42,10 @@ const RBI_TAB = 'rbi';
 
 const CHECK_FAILED = "We couldn't start the check. Try again in a moment.";
 
-// A finished document needs no badge: the absence of one reads as "ready".
-const STATUS_BADGES: Partial<Record<DocumentStatus, string>> = {
+const STATUS_BADGES: Record<DocumentStatus, string> = {
   pending: 'Waiting',
   processing: 'Processing',
+  completed: 'Ready',
   failed: 'Failed',
 };
 
@@ -103,7 +103,7 @@ function DocumentRow({ document }: { document: StockDocument }) {
       </span>
       <span className="doc-pages">{pagesLabel(document.page_count)}</span>
       <span className="doc-status">
-        {badge && <span className={`pill ${document.status}`}>{badge}</span>}
+        <span className={`pill ${document.status}`}>{badge}</span>
       </span>
     </li>
   );
@@ -379,6 +379,21 @@ export function DocumentsView() {
     );
   }
 
+  const tabIds = [...(shelves ?? []).map((s) => s.stock.symbol), RBI_TAB];
+  /** Arrow keys, Home and End move between the tabs, as a tab list should. */
+  const onTabKey = (event: KeyboardEvent<HTMLDivElement>, activeId: string): void => {
+    const at = tabIds.indexOf(activeId);
+    let next = -1;
+    if (event.key === 'ArrowRight') next = (at + 1) % tabIds.length;
+    else if (event.key === 'ArrowLeft') next = (at - 1 + tabIds.length) % tabIds.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = tabIds.length - 1;
+    const target = tabIds[next];
+    if (target === undefined) return;
+    event.preventDefault();
+    setSelected(target);
+    document.getElementById(`tab-${target}`)?.focus();
+  };
   const rbiSelected = selected === RBI_TAB;
   const current = shelves?.find((s) => s.stock.symbol === selected) ?? shelves?.[0] ?? null;
 
@@ -386,13 +401,16 @@ export function DocumentsView() {
     <AppShell
       email={me.user.email}
       onSignOut={() => void signOut().finally(() => router.replace('/'))}
+      active="documents"
     >
-      <h1>Documents</h1>
-      <p className="muted">
-        Official BSE filings from the last three years (earnings calls, presentations, annual
-        reports and announcements), fetched automatically every day, when you follow a stock, and
-        when you ask. Open any one to read the original.
-      </p>
+      <div className="page-intro">
+        <h1>Documents</h1>
+        <p className="muted">
+          Official BSE filings from the last three years (earnings calls, presentations, annual
+          reports and announcements), fetched automatically every day, when you follow a stock, and
+          when you ask. Open any one to read the original.
+        </p>
+      </div>
       {problem && (
         <p role="alert" className="alert">
           {problem}
@@ -405,7 +423,12 @@ export function DocumentsView() {
       )}
       {shelves && current && (
         <div className="doc-card">
-          <div role="tablist" aria-label="Stocks" className="tabs">
+          <div
+            role="tablist"
+            aria-label="Stocks"
+            className="tabs"
+            onKeyDown={(event) => onTabKey(event, rbiSelected ? RBI_TAB : current.stock.symbol)}
+          >
             {shelves.map((shelf) => {
               const active = !rbiSelected && shelf.stock.symbol === current.stock.symbol;
               return (
@@ -415,6 +438,7 @@ export function DocumentsView() {
                   role="tab"
                   id={`tab-${shelf.stock.symbol}`}
                   aria-selected={active}
+                  tabIndex={active ? 0 : -1}
                   aria-controls={`panel-${shelf.stock.symbol}`}
                   className={active ? 'tab active' : 'tab'}
                   onClick={() => setSelected(shelf.stock.symbol)}
@@ -429,6 +453,7 @@ export function DocumentsView() {
               role="tab"
               id={`tab-${RBI_TAB}`}
               aria-selected={rbiSelected}
+              tabIndex={rbiSelected ? 0 : -1}
               aria-controls={`panel-${RBI_TAB}`}
               className={rbiSelected ? 'tab active' : 'tab'}
               onClick={() => setSelected(RBI_TAB)}

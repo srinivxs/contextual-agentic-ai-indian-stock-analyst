@@ -9,6 +9,7 @@ import type { Citation, DerivedValue, KeyFact, StockInsights } from '@/lib/insig
 import type { FeedItem } from '@/lib/feed';
 import type { MatchReason, MatchResult, StockMatch } from '@/lib/match';
 import type { Profile, ProfileChoice, ProfileFieldEntry } from '@/lib/profile';
+import type { Series, SeriesMetric, SeriesPoint } from '@/lib/series';
 
 export type FakeStock = { symbol: string; name: string; bse_code: string; sector: string };
 
@@ -403,6 +404,8 @@ export type Options = {
   matches?: MatchResult;
   /** The RBI feed items (P15), newest first; default none. */
   feed?: FeedItem[];
+  /** Each stock's net-profit series; a known stock left out gets an empty one. */
+  series?: Record<string, Series>;
 };
 
 /** A fictional reason for the Match page; override any field. */
@@ -434,6 +437,38 @@ export const demoMatches = (overrides: Partial<MatchResult> = {}): MatchResult =
     'Not investment advice. The rules compare stored figures with your stated preferences; share prices are not used.',
   ...overrides,
 });
+
+/**
+ * A fictional DemoCo net-profit series ending in FY2026: one value per year, oldest first, each
+ * with an invented screener.in citation. Pass the values in ₹ crore.
+ */
+export const demoSeries = (
+  symbol: string,
+  values: number[],
+  overrides: Partial<Series> = {},
+): Series => {
+  const lastYear = 2026;
+  const points: SeriesPoint[] = values.map((value, index) => {
+    const year = lastYear - (values.length - 1 - index);
+    return {
+      period: `FY${year}`,
+      value: String(value),
+      citation: demoScreenerCitation({
+        label: `screener.in · profit-loss · Net Profit · Mar ${year}`,
+        url: `https://www.screener.in/company/${symbol}/consolidated/`,
+      }),
+    };
+  });
+  return {
+    symbol,
+    metric: 'net_profit',
+    label: 'Net profit',
+    unit: 'INR_CRORE',
+    source: 'screener.in, consolidated',
+    points,
+    ...overrides,
+  };
+};
 
 export type FakeApi = {
   /** Every request made, as "METHOD /path". */
@@ -625,6 +660,13 @@ export function installFakeApi(options: Options = {}): FakeApi {
       const stock = stocks.find((s) => s.symbol === symbol);
       if (!stock) return envelope(404, 'not_found');
       return json(200, options.insights?.[symbol] ?? emptyInsights(stock));
+    }
+    const seriesCall = /^GET \/api\/v1\/stocks\/([^/?]+)\/series\?metric=([a-z_]+)$/.exec(key);
+    if (seriesCall) {
+      const symbol = decodeURIComponent(seriesCall[1] ?? '');
+      if (!stocks.some((s) => s.symbol === symbol)) return envelope(404, 'not_found');
+      const metric = (seriesCall[2] ?? '') as SeriesMetric;
+      return json(200, options.series?.[symbol] ?? demoSeries(symbol, [], { metric }));
     }
     if (key === 'GET /api/v1/feed') {
       return json(200, { items: options.feed ?? [], attribution: FEED_ATTRIBUTION });
