@@ -47,7 +47,7 @@ function RatioItem({ label, ratio, unit }: { label: string; ratio: PriceRatio; u
       {ratio.citations.length > 0 && (
         <span className="chips">
           {ratio.citations.map((citation, index) => (
-            <CitationChip key={`${index}-${citation.label}`} citation={citation} />
+            <CitationChip key={`${index}-${citation.label}`} citation={citation} icon />
           ))}
         </span>
       )}
@@ -121,7 +121,7 @@ export function PriceSection({ state, name }: { state: PriceState; name: string 
           </ul>
         )}
         <p className="price-source">
-          <CitationChip citation={latest.citation} />
+          <CitationChip citation={latest.citation} icon />
         </p>
       </>
     );

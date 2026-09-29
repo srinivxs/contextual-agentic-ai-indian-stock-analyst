@@ -140,7 +140,7 @@ describe('key facts', () => {
 
     const link = await screen.findByRole('link', { name: demoScreenerCitation().label });
     expect(link).toHaveAttribute('href', demoScreenerCitation().url);
-    expect(link).not.toHaveAttribute('title');
+    expect(link).toHaveAttribute('title', demoScreenerCitation().label); // no quote: the source
   });
 
   it('shows a citation it may not link to as plain text', async () => {
@@ -167,7 +167,19 @@ describe('key facts', () => {
     expect(await screen.findByText('agreed by 1 other source')).toBeInTheDocument();
   });
 
-  it('marks a disputed value and lists the sources that disagree', async () => {
+  it('shows a source as a small link icon, the full source in its name', async () => {
+    installFakeApi({ insights: { DEMOA: demoInsights() } });
+    render(<StockView />);
+
+    const link = await screen.findByRole('link', {
+      name: 'Annual report · Annual Report 2026 · p.44',
+    });
+    expect(link).toHaveClass('source-icon');
+    expect(link.textContent).toBe(''); // only the icon is drawn
+    expect(link.querySelector('svg')).not.toBeNull();
+  });
+
+  it('shows one figure where sources disagree, with no list of the others', async () => {
     installFakeApi({
       insights: {
         DEMOA: demoInsights({
@@ -184,14 +196,14 @@ describe('key facts', () => {
     });
     render(<StockView />);
 
-    expect(await screen.findByText('disputed')).toBeInTheDocument();
-    const details = screen.getByText('Sources that disagree').closest('details');
-    expect(details).not.toBeNull();
     expect(
-      within(details as HTMLElement).getByRole('link', {
-        name: 'screener.in · profit-loss · Sales · Mar 2026',
-      }),
-    ).toHaveAttribute('target', '_blank');
+      await screen.findByRole('link', { name: 'Annual report · Annual Report 2026 · p.44' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('disputed')).toBeNull();
+    expect(screen.queryByText('Sources that disagree')).toBeNull();
+    expect(
+      screen.queryByRole('link', { name: 'screener.in · profit-loss · Sales · Mar 2026' }),
+    ).toBeNull();
   });
 
   it('says when a value is standalone, or its basis is not stated', async () => {
@@ -454,7 +466,7 @@ describe('the stock page, RBI citations', () => {
     const link = await screen.findByRole('link', { name: demoRbiCitation().label });
     expect(link).toHaveAttribute('href', demoRbiCitation().url);
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
-    expect(link).toHaveClass('chip', 'chip-rbi');
+    expect(link).toHaveClass('source-icon', 'rbi');
   });
 
   it('shows an RBI citation on another host as plain text', async () => {

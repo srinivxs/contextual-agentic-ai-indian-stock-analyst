@@ -1,9 +1,11 @@
 /**
  * The four sections of the stock page: key facts, derived values, sentiment and events. Each one
- * only shows what the server sent, with its source beside it. React renders every value as text,
- * so nothing from the server is ever HTML.
+ * only shows what the server sent, with its source beside it: on this page as a small link icon
+ * (the owner, 2026-09-30), the full source in its name and on hover. React renders every value as
+ * text, so nothing from the server is ever HTML.
  */
 
+import { ExternalIcon } from '@/components/Icons';
 import {
   basisNote,
   citationLink,
@@ -22,11 +24,29 @@ import {
   type StockEvent,
 } from '@/lib/insights';
 
-/** A small source label: a link that opens the source in a new tab, or plain text if unsafe. */
-export function CitationChip({ citation }: { citation: Citation }) {
+/**
+ * A source: a link that opens it in a new tab, or plain text if its address is unsafe. ``icon``
+ * (the stock page) shows the link as a small icon; its name is still the full source, and hovering
+ * shows the filing's own words, or the source when there are none.
+ */
+export function CitationChip({ citation, icon = false }: { citation: Citation; icon?: boolean }) {
   const link = citationLink(citation);
   const title = citation.quote ?? undefined; // hovering shows the filing's own words
   const className = citation.source === 'rbi' ? 'chip chip-rbi' : 'chip'; // marks RBI sources
+  if (link && icon) {
+    return (
+      <a
+        href={link}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={citation.source === 'rbi' ? 'source-icon rbi' : 'source-icon'}
+        aria-label={citation.label}
+        title={title ?? citation.label}
+      >
+        <ExternalIcon />
+      </a>
+    );
+  }
   return link ? (
     <a href={link} target="_blank" rel="noopener noreferrer" className={className} title={title}>
       {citation.label}
@@ -38,12 +58,12 @@ export function CitationChip({ citation }: { citation: Citation }) {
   );
 }
 
-export function Citations({ citations }: { citations: Citation[] }) {
+export function Citations({ citations, icon = false }: { citations: Citation[]; icon?: boolean }) {
   if (citations.length === 0) return null;
   return (
     <span className="chips">
       {citations.map((citation, index) => (
-        <CitationChip key={`${index}-${citation.label}`} citation={citation} />
+        <CitationChip key={`${index}-${citation.label}`} citation={citation} icon={icon} />
       ))}
     </span>
   );
@@ -51,34 +71,23 @@ export function Citations({ citations }: { citations: Citation[] }) {
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-/** One period's figure: the amount, the period, any basis note, and where it came from. */
+/**
+ * One period's figure: the amount, the period, any basis note, and where it came from. Where
+ * sources disagree, only the figure the server chose (the best-ranked source, ADR 020) is shown,
+ * with its own source: the owner's choice for this page (2026-09-30); the chat still names the
+ * other source's figure beside it.
+ */
 function FactEntry({ fact }: { fact: KeyFact }) {
   const note = basisNote(fact.basis);
-  const disputed = fact.status === 'disputed';
   return (
     <div className="fact">
       <span className="fact-value">{formatAmount(fact.value, fact.unit)}</span>
       <span className="fact-period">{periodLabel(fact.period)}</span>
       {note && <span className="fact-note">{note}</span>}
-      {disputed && <span className="pill disputed">disputed</span>}
       {fact.status === 'agreed' && fact.corroborated_by > 0 && (
         <span className="fact-note">{`agreed by ${plural(fact.corroborated_by, 'other source')}`}</span>
       )}
-      <div>
-        <CitationChip citation={fact.citation} />
-      </div>
-      {disputed && fact.disputed_by.length > 0 && (
-        <details className="fact-dispute">
-          <summary>Sources that disagree</summary>
-          <ul>
-            {fact.disputed_by.map((citation, index) => (
-              <li key={`${index}-${citation.label}`}>
-                <CitationChip citation={citation} />
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      <CitationChip citation={fact.citation} icon />
     </div>
   );
 }
@@ -138,7 +147,7 @@ export function DerivedValues({ derived }: { derived: DerivedValue[] }) {
             <span className="derived-name">{item.label}</span>
             <span className={valueClass(item)}>{derivedValueLabel(item)}</span>
             <p className="derived-reason">{item.reason}</p>
-            <Citations citations={item.citations} />
+            <Citations citations={item.citations} icon />
           </li>
         ))}
       </ul>
@@ -183,7 +192,7 @@ export function RecentEvents({ events }: { events: StockEvent[] }) {
                 <span className="muted">{`${event.sentiment} · ${event.impact} impact`}</span>
               </p>
               <p className="event-summary">{event.summary}</p>
-              <CitationChip citation={event.citation} />
+              <CitationChip citation={event.citation} icon />
             </li>
           ))}
         </ol>

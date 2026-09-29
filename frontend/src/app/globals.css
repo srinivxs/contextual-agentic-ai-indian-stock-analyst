@@ -3133,3 +3133,25 @@ a.chat-source-chip:hover {
   background: var(--surface-2);
   color: var(--fall);
 }
+
+/* A source as a small link icon (the stock page): its name and hover give the full source. */
+.source-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin-left: 0.2rem;
+  border-radius: 8px;
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.source-icon:hover,
+.source-icon:focus-visible {
+  background: var(--surface-2);
+  color: var(--accent-strong);
+}
+
+.source-icon.rbi {
+  color: var(--accent);
+}

@@ -97,3 +97,11 @@ Two facts about the real data shaped this (found by reading the stored pages):
 - screener's layout can change; the parser then finds nothing and the facts simply stop updating.
 - Changing the prompt, the page selection or the vocabulary bumps `EXTRACTOR_VERSION` and runs the
   extraction again (about $0.70 each time).
+
+## Amendment (2026-09-30): the stock page shows one figure
+
+The owner asked for a cleaner stock page: where sources disagree, it now shows only the figure
+chosen by the conflict policy above (the best-ranked source), without the "disputed" tag or the
+list of sources that disagree, and every source there is a small link icon (its name and hover
+give the full source). Nothing changed in how figures are stored or chosen, and the chat still
+names another source's differing figure beside the one it uses (ADR 021 amendments).
