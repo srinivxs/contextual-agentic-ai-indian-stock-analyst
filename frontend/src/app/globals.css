@@ -1,54 +1,56 @@
 /*
- * Plain CSS, no framework. The look follows the owner's mockup: a pale sage canvas, white cards,
- * one leaf-green accent, a left menu. Colours are variables, so dark mode is one block.
+ * Plain CSS, no framework. A neutral look in two modes, light and dark, switched from the top bar
+ * (components/ThemeToggle.tsx sets <html data-theme>; a tiny script in the page head applies the
+ * stored choice, or the system's, before the page draws). Every colour is a variable, so dark
+ * mode is one set of overrides under :root[data-theme='dark'].
  *
- * Design tokens
- *   canvas #F5F8F6   surface #FFFFFF   ink #16231C   muted #5F6E66   line #E2E9E4
- *   leaf #1F7A4C (the one accent)   leaf-soft #E6F2EA (current menu item, chips)
- *   rise #1E8A4F / fall #C2412D: only for a figure that went up or down
+ * Design tokens (light / dark)
+ *   canvas #F7F7F8 / #0E0E10   surface #FFFFFF / #17171A   text #18181B / #F4F4F5
+ *   muted #6B6B76 / #A1A1AA    line #E4E4E7 / #2A2A2F      accent = the text colour
+ *   rise / fall: green and red, only for a figure that went up or down
  * Radii: 20px for the hero, 14px for cards, 10px for controls, 999px for chips.
- * Every figure shown carries its source; there are no prices anywhere (ADR 007).
+ * Every figure shown carries its source.
  */
 :root {
-  --bg: #f5f8f6;
+  --bg: #f7f7f8;
   --surface: #ffffff;
-  --surface-2: #f9fbfa;
-  --text: #16231c;
-  --muted: #5f6e66;
-  --border: #e2e9e4;
-  --accent: #1f7a4c;
-  --accent-strong: #17613c;
-  --accent-soft: #e6f2ea;
+  --surface-2: #f4f4f5;
+  --text: #18181b;
+  --muted: #6b6b76;
+  --border: #e4e4e7;
+  --accent: #18181b;
+  --accent-strong: #000000;
+  --accent-soft: #ededf0;
   --accent-text: #ffffff;
-  --rise: #1e8a4f;
-  --fall: #c2412d;
-  --danger-bg: #fbe9e6;
-  --danger-text: #8e2a1c;
-  --shadow: 0 1px 2px rgba(22, 35, 28, 0.04), 0 8px 24px rgba(22, 35, 28, 0.05);
+  --rise: #15803d;
+  --fall: #b91c1c;
+  --danger-bg: #fdecec;
+  --danger-text: #8e1c1c;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
   --radius-hero: 20px;
   --radius-card: 14px;
   --radius-control: 10px;
   --font: var(--font-sans), system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1512;
-    --surface: #161d19;
-    --surface-2: #1b231f;
-    --text: #e7eee9;
-    --muted: #9aaaa1;
-    --border: #26302b;
-    --accent: #5cc08b;
-    --accent-strong: #7fd3a6;
-    --accent-soft: #1c2c23;
-    --accent-text: #0c120f;
-    --rise: #5cc08b;
-    --fall: #ef8a78;
-    --danger-bg: #3a1f1a;
-    --danger-text: #ffb9ab;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  }
+:root[data-theme='dark'] {
+  --bg: #0e0e10;
+  --surface: #17171a;
+  --surface-2: #1e1e22;
+  --text: #f4f4f5;
+  --muted: #a1a1aa;
+  --border: #2a2a2f;
+  --accent: #f4f4f5;
+  --accent-strong: #ffffff;
+  --accent-soft: #26262b;
+  --accent-text: #17171a;
+  --rise: #4ade80;
+  --fall: #f87171;
+  --danger-bg: #3a1c1c;
+  --danger-text: #ffb4b4;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
 }
 
 * {
@@ -464,25 +466,23 @@ a {
 
 /* --- Stocks, stock detail, documents, search, sign-in ----------------------------------------- */
 :root {
-  --pill-bg: #edf2ef;
-  --pill-text: #3b4a42;
-  --row-hover: #f3f7f5;
+  --pill-bg: #f1f1f3;
+  --pill-text: #3f3f46;
+  --row-hover: #f6f6f7;
   --good-bg: #e6f2ea;
   --good-text: #1a6a41;
   --mixed-bg: #fdf3dc;
   --mixed-text: #7a5300;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --pill-bg: #232d28;
-    --pill-text: #c5d0c9;
-    --row-hover: #1b231f;
-    --good-bg: #1c2c23;
-    --good-text: #9fdcb2;
-    --mixed-bg: #3a2f14;
-    --mixed-text: #f2d08a;
-  }
+:root[data-theme='dark'] {
+  --pill-bg: #26262b;
+  --pill-text: #d4d4d8;
+  --row-hover: #1f1f23;
+  --good-bg: #1c2c23;
+  --good-text: #9fdcb2;
+  --mixed-bg: #3a2f14;
+  --mixed-text: #f2d08a;
 }
 
 .count {
@@ -920,7 +920,7 @@ a.chip:hover {
 }
 
 .tab.active .count {
-  background: rgba(255, 255, 255, 0.22);
+  background: color-mix(in srgb, var(--accent-text) 22%, transparent);
   color: inherit;
 }
 
@@ -1193,25 +1193,23 @@ a.chip:hover {
 /* Chat (P12): conversations on the left, the open one in a card, what is remembered on the right;
    one column on a small screen. */
 :root {
-  --chat-bubble: #f0f3f1;
-  --chat-mine: #dcefe3;
+  --chat-bubble: #f1f1f3;
+  --chat-mine: #e6e6ea;
   --highlight-bg: #fdf3dc;
   --warm-bg: #fdf6e6;
   --warm-border: #eedfb8;
   --warm-text: #6b4a00;
-  --ok-dot: #2aa363;
+  --ok-dot: #71717a;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --chat-bubble: #1e2722;
-    --chat-mine: #1f3a2b;
-    --highlight-bg: #3a2f14;
-    --warm-bg: #2b2412;
-    --warm-border: #4a3d1c;
-    --warm-text: #f2d08a;
-    --ok-dot: #5cc08b;
-  }
+:root[data-theme='dark'] {
+  --chat-bubble: #222226;
+  --chat-mine: #2d2d33;
+  --highlight-bg: #3a2f14;
+  --warm-bg: #2b2412;
+  --warm-border: #4a3d1c;
+  --warm-text: #f2d08a;
+  --ok-dot: #a1a1aa;
 }
 
 .chat {
@@ -1603,36 +1601,11 @@ a.chip:hover {
   color: var(--accent-strong);
 }
 
-.memory-icon.debt_preference {
-  background: #e2eef3;
-  color: #1d5a70;
-}
-
-.memory-icon.investment_style {
-  background: #ece8f4;
-  color: #4d3f7a;
-}
-
+.memory-icon.debt_preference,
+.memory-icon.investment_style,
 .memory-icon.other_preferences {
-  background: #f3eedf;
-  color: #7a5a14;
-}
-
-@media (prefers-color-scheme: dark) {
-  .memory-icon.debt_preference {
-    background: #1b2a30;
-    color: #8fc6dc;
-  }
-
-  .memory-icon.investment_style {
-    background: #262238;
-    color: #b9aee0;
-  }
-
-  .memory-icon.other_preferences {
-    background: #2e2916;
-    color: #e0c375;
-  }
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 .memory-field-label {
@@ -2004,30 +1977,19 @@ a.chip:hover {
   font-size: 1rem;
 }
 
-.monogram.tint-a {
-  background: #e3f1e8;
-  color: #1f6b44;
-}
-
-.monogram.tint-b {
-  background: #e2eef3;
-  color: #1d5a70;
-}
-
-.monogram.tint-c {
-  background: #f3eedf;
-  color: #7a5a14;
-}
-
+.monogram.tint-a,
+.monogram.tint-b,
+.monogram.tint-c,
 .monogram.tint-d {
-  background: #ece8f4;
-  color: #4d3f7a;
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 /* --- Home (redesign) -------------------------------------------------------------------------- */
 
 :root {
-  --home-hero-bg: #f0f7f3;
+  --home-hero-bg: #f4f4f5;
   --home-gap: 1.15rem;
 }
 
@@ -2646,10 +2608,8 @@ a.home-news-title:hover {
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --home-hero-bg: #132019;
-  }
+:root[data-theme='dark'] {
+  --home-hero-bg: #1b1b1f;
 }
 
 /* --- Prices ------------------------------------------------------------------------------------ */
@@ -2767,4 +2727,47 @@ a.home-news-title:hover {
 
 .price-note {
   font-size: 0.82rem;
+}
+
+/* --- the light / dark switch in the top bar ------------------------------------------------ */
+
+.theme-switch {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.theme-switch-track {
+  display: inline-flex;
+  align-items: center;
+  width: 2.9rem;
+  height: 1.6rem;
+  padding: 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.theme-switch-thumb {
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  transition: transform 160ms ease;
+}
+
+.theme-switch[aria-checked='true'] .theme-switch-thumb {
+  transform: translateX(1.25rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-switch-thumb {
+    transition: none;
+  }
 }

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 import { ChatIcon, FileIcon, HomeIcon, LeafIcon, StarIcon, TargetIcon } from '@/components/Icons';
 import { StockJump } from '@/components/StockJump';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 export type Section = 'home' | 'chat' | 'stocks' | 'documents' | 'match';
 
@@ -62,6 +63,7 @@ export function AppShell({ email, onSignOut, active, children }: Props) {
         <header className="topbar">
           <StockJump />
           <div className="who">
+            <ThemeToggle />
             <span className="avatar" aria-hidden="true">
               {initials(email)}
             </span>

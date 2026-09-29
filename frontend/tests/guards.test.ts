@@ -66,10 +66,39 @@ describe('the source code', () => {
     ['injected HTML', /dangerouslySetInnerHTML/],
     ['script-visible storage', /localStorage|sessionStorage|document\.cookie|indexedDB/],
     ['build-time public env vars', /NEXT_PUBLIC_/],
-  ])('never uses %s', (_label, pattern) => {
+  ])('never uses %s', (label, pattern) => {
     expect(sourceFiles.length).toBeGreaterThan(0); // nothing to scan must not count as clean
-    const offenders = sourceFiles.filter((file) => pattern.test(read(file))).map(posix);
+    const offenders = sourceFiles
+      .filter((file) => pattern.test(withoutThemeException(label, posix(file), read(file))))
+      .map(posix);
     expect(offenders).toEqual([]);
+  });
+
+  // Two narrow exceptions for the light / dark switch (2026-09-29), each allowed in ONE file as
+  // ONE exact text: localStorage keeps only the display choice "light" or "dark" (never a secret;
+  // the session stays in its HttpOnly cookie), and one constant script of our own, in the page
+  // head, applies it before the page draws. Any other use, anywhere, is still caught.
+  const THEME_EXCEPTIONS: Record<string, { file: string; text: string }> = {
+    'injected HTML': {
+      file: 'src/app/layout.tsx',
+      text: 'dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }}',
+    },
+    'script-visible storage': { file: 'src/lib/theme.ts', text: 'localStorage' },
+  };
+
+  function withoutThemeException(label: string, file: string, text: string): string {
+    const exception = THEME_EXCEPTIONS[label];
+    if (exception === undefined || exception.file !== file) return text;
+    return text.split(exception.text).join('');
+  }
+
+  it('keeps the theme exceptions narrow: nothing else of their kind in those files', () => {
+    const layout = read(join(ROOT, 'src/app/layout.tsx'));
+    expect(layout.split('dangerouslySetInnerHTML').length - 1).toBe(1);
+    expect(layout).toContain('dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }}');
+    const theme = read(join(ROOT, 'src/lib/theme.ts'));
+    expect(theme).not.toMatch(/sessionStorage|document\.cookie|indexedDB/);
+    expect(theme).toContain("export const THEME_KEY = 'theme';");
   });
 
   // The app only ever calls its own origin. The ONLY absolute URLs allowed in the source are two

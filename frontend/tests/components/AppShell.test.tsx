@@ -30,6 +30,7 @@ describe('the app shell', () => {
       </AppShell>,
     );
     expect(screen.getByText('reader@example.test')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Dark mode' })).toBeInTheDocument();
     expect(screen.getByText('RE')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(onSignOut).toHaveBeenCalledOnce();

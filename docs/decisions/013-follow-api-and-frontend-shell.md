@@ -166,3 +166,13 @@ Nothing above is rewritten; this updates two statements that were true when they
   `http://localhost:3000` from containers. They use the same port and cannot run at the same time. With
   the containers the api is not published, and its `PUBLIC_BASE_URL` is derived by Compose from
   `WEB_PORT`, so the redirect URI already registered for port 3000 keeps working.
+
+## Amendment (2026-09-29): the light / dark switch
+
+The owner asked for a neutral look with light and dark modes and a switch in the top bar. The
+choice ("light" or "dark", nothing else) is kept in `localStorage` so it survives page loads (a
+static export loads each page afresh), and one constant script of our own in the page head
+applies it before the page draws (no flash). Both break a guard rule written for secrets and
+injected markup, so `tests/guards.test.ts` allows each in exactly one file as one exact text
+(`src/lib/theme.ts`, `src/app/layout.tsx`) and still catches any other use. The session never
+leaves its HttpOnly cookie.
