@@ -10,9 +10,9 @@ A reason is one criterion the profile asks for, judged on one stored figure:
     pass            the figure meets the criterion                      none
     miss            a soft criterion is not met                         match -> partial
     fail            a HARD criterion is not met                         -> no_match
-    not_assessable  cannot be judged here (debt for a bank; value and   ignored, but shown
-                    momentum need share prices, which the app lacks;
-                    a horizon changes no rule)
+    not_assessable  cannot be judged here (debt for a bank; P/E after a   ignored, but shown
+                    bonus or split, or with no prices at all;
+                    a loss)
     no_data         the figure is not in the data                       hard: not_enough_data
 
 Status of a stock: any fail -> no_match; else a hard no_data -> not_enough_data; else nothing
@@ -36,9 +36,9 @@ Criterion = Literal[
     "revenue_growth",  # growth style or aggressive: latest revenue (a bank: net interest income)
     "profit_growth",  # growth style: >= 10%; stability and conservative: >= 0% (no fall)
     "quality",  # quality style: latest return on equity >= 15%
-    "value",  # value style: not assessable (no prices)
-    "momentum",  # momentum style: EARNINGS momentum (profit growth speeding up), not prices
-    "horizon",  # long or short term: not assessable (no price history), shown once
+    "value",  # value style: P/E <= 20 from the latest close and full-year basic EPS (ADR 025)
+    "momentum",  # momentum style: six-month price return >= 0; else EARNINGS momentum
+    "horizon",  # short term: one-year volatility <= 30%; long term: profit did not fall
     "sentiment",  # cautions only: the rolling news sentiment is negative
 ]
 

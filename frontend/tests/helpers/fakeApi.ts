@@ -9,6 +9,7 @@ import type { Citation, DerivedValue, KeyFact, StockInsights } from '@/lib/insig
 import type { FeedItem } from '@/lib/feed';
 import type { MatchReason, MatchResult, StockMatch } from '@/lib/match';
 import type { Profile, ProfileChoice, ProfileFieldEntry } from '@/lib/profile';
+import type { PriceRatio, Prices } from '@/lib/prices';
 import type { Series, SeriesMetric, SeriesPoint } from '@/lib/series';
 
 export type FakeStock = { symbol: string; name: string; bse_code: string; sector: string };
@@ -406,6 +407,8 @@ export type Options = {
   feed?: FeedItem[];
   /** Each stock's net-profit series; a known stock left out gets an empty one. */
   series?: Record<string, Series>;
+  /** Each stock's end-of-day prices; a known stock left out gets none yet (latest null). */
+  prices?: Record<string, Prices>;
 };
 
 /** A fictional reason for the Match page; override any field. */
@@ -469,6 +472,60 @@ export const demoSeries = (
     ...overrides,
   };
 };
+
+/** A fictional price ratio (P/E or dividend yield); override any field. */
+export const demoRatio = (overrides: Partial<PriceRatio> = {}): PriceRatio => ({
+  status: 'ok',
+  value: '12.5',
+  reason: 'Invented sample: close divided by stored earnings per share.',
+  citations: [],
+  ...overrides,
+});
+
+/**
+ * Invented end-of-day prices for a fictional stock: a close of 101.50 after 100.00 (+1.5%), five
+ * adjusted closes, one corporate action. Pass `latest: null, history: []` for "no prices yet".
+ */
+export const demoPrices = (symbol: string, overrides: Partial<Prices> = {}): Prices => ({
+  symbol,
+  source: 'BSE daily price file (end of day, not live)',
+  latest: {
+    date: '2026-09-28',
+    close: '101.5',
+    prev_close: '100',
+    change_pct: '1.5',
+    citation: {
+      source: 'filing',
+      label: 'BSE daily price file · 28 Sep 2026',
+      url: 'https://www.bseindia.com/download/BhavCopy/Equity/BhavCopy_BSE_CM_0_0_0_20260928_F_0000.CSV',
+      quote: null,
+    },
+  },
+  history: [
+    { date: '2026-09-22', close: '96' },
+    { date: '2026-09-23', close: '97.5' },
+    { date: '2026-09-24', close: '99' },
+    { date: '2026-09-25', close: '100' },
+    { date: '2026-09-28', close: '101.5' },
+  ],
+  returns: { '1m': '4.2', '3m': null, '6m': '-3.1', '1y': null },
+  volatility_1y: '18.6',
+  pe: demoRatio({ value: '12.5' }),
+  dividend_yield: demoRatio({ value: '1.2' }),
+  actions: [],
+  ...overrides,
+});
+
+/** No prices yet, as the server answers while the price sync is off or still filling. */
+export const noPrices = (symbol: string): Prices =>
+  demoPrices(symbol, {
+    latest: null,
+    history: [],
+    returns: { '1m': null, '3m': null, '6m': null, '1y': null },
+    volatility_1y: null,
+    pe: demoRatio({ status: 'not_assessable', value: null, reason: 'No price yet.' }),
+    dividend_yield: demoRatio({ status: 'not_assessable', value: null, reason: 'No price yet.' }),
+  });
 
 export type FakeApi = {
   /** Every request made, as "METHOD /path". */
@@ -667,6 +724,12 @@ export function installFakeApi(options: Options = {}): FakeApi {
       if (!stocks.some((s) => s.symbol === symbol)) return envelope(404, 'not_found');
       const metric = (seriesCall[2] ?? '') as SeriesMetric;
       return json(200, options.series?.[symbol] ?? demoSeries(symbol, [], { metric }));
+    }
+    const pricesCall = /^GET \/api\/v1\/stocks\/([^/?]+)\/prices$/.exec(key);
+    if (pricesCall) {
+      const symbol = decodeURIComponent(pricesCall[1] ?? '');
+      if (!stocks.some((s) => s.symbol === symbol)) return envelope(404, 'not_found');
+      return json(200, options.prices?.[symbol] ?? noPrices(symbol));
     }
     if (key === 'GET /api/v1/feed') {
       return json(200, { items: options.feed ?? [], attribution: FEED_ATTRIBUTION });

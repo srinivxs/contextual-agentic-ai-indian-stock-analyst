@@ -21,6 +21,7 @@ from app.api import (
     health,
     insights,
     match,
+    prices,
     profile,
     search,
     series,
@@ -102,6 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(search.router)
     app.include_router(insights.router)
     app.include_router(series.router)
+    app.include_router(prices.router)
     app.include_router(chat.router)
     app.include_router(profile.router)
     app.include_router(feed.router)

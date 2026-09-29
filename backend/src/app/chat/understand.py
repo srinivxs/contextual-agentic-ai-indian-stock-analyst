@@ -32,6 +32,8 @@ Metrics (whole words, any case). The longer phrases are read first and then blan
 Growth: grow, growth, change, increase, decrease, rise, fall (and their other forms), vs, versus,
 compare(d), yoy. Events: news, event(s), sentiment, announcement(s), announced. A match (P14):
 "match me/my", "suits/fits me/my", "best/right/good for me", "which ... suits/fits/aligns/matches".
+Prices (ADR 025): share/stock price, close(d), trading at, P/E, price to earnings, valuation,
+expensive, cheap, return(s) (not "return on equity"), volatile/volatility, dividend yield.
 
 Periods: every "FY26", "FY2026", "FY'26", "FY 2025-26", "2025-26", "Q3 FY26", "Q3FY2026" or
 "3QFY26" in the text, read by app/fact_validation.py's ``parse_period`` into codes such as
@@ -78,6 +80,14 @@ _GROWTH = re.compile(
     re.IGNORECASE,
 )
 _EVENTS = re.compile(r"\b(?:news|events?|sentiment|announcements?|announced)\b", re.IGNORECASE)
+# Share prices (ADR 025): the price, where it closed, returns, valuation, volatility, yield.
+# "return on equity" is a fundamentals ratio, not a price return.
+_PRICE = re.compile(
+    r"\b(?:share|stock)\s+prices?\b|\bprices?\b|\bclos(?:e|ed|ing)\b|\btrad(?:ing|ed)\s+at\b"
+    r"|\bp\s*/\s*e\b|\bpe\s+ratio\b|\bprice\s+to\s+earnings\b|\bvaluation\b|\bexpensive\b"
+    r"|\bcheap\b|\breturns?\b(?!\s+on\s+equity)|\bvolatil\w*|\bdividend\s+yield\b",
+    re.IGNORECASE,
+)
 # "Match me" (P14): the investor asks how the stocks fit them, not what a figure is.
 _MATCH = re.compile(
     r"\bmatch(?:es)?\s+(?:me|my)\b|\b(?:suits?|fits?)\s+(?:me|my)\b|\bfit\s+for\s+me\b"
@@ -104,6 +114,7 @@ class Question:
     periods: tuple[str, ...]  # "FY2026", "Q3FY2026", ... in order of mention
     from_history: bool  # the stocks came from an earlier user turn
     wants_match: bool = False  # "Match me", "which one suits me?" (P14)
+    wants_price: bool = False  # the share price, returns, valuation (ADR 025)
 
 
 def symbols_in(text: str) -> tuple[str, ...]:
@@ -155,4 +166,5 @@ def understand(question: str, *, history: list[Turn]) -> Question:
         periods=_periods_in(question),
         from_history=from_history,
         wants_match=_MATCH.search(question) is not None,
+        wants_price=_PRICE.search(question) is not None,
     )

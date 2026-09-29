@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { PriceChart } from '@/components/PriceChart';
 import { ProfitChart } from '@/components/ProfitChart';
 import { Sparkline, linePoints } from '@/components/Sparkline';
 import type { SeriesPoint } from '@/lib/series';
@@ -102,5 +103,49 @@ describe('ProfitChart', () => {
     render(<ProfitChart points={[]} name="DemoCo Alpha" label="Net profit" />);
     expect(screen.queryByRole('img')).toBeNull();
     expect(screen.getByText(/No net profit figures stored yet for DemoCo Alpha/)).toBeVisible();
+  });
+});
+
+describe('PriceChart', () => {
+  const history = [
+    { date: '2026-09-24', close: '99' },
+    { date: '2026-09-25', close: '100' },
+    { date: '2026-09-28', close: '101.5' },
+  ];
+
+  it('has an accessible name that says what, in rupees, and which dates', () => {
+    render(<PriceChart history={history} name="DemoCo Alpha" changePct="1.5" />);
+    expect(
+      screen.getByRole('img', {
+        name: 'Share price of DemoCo Alpha, ₹, end-of-day closes, 24 Sep 2026 to 28 Sep 2026',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the latest close and the day change in the callout', () => {
+    render(<PriceChart history={history} name="DemoCo Alpha" changePct="-0.6" />);
+    const callout = screen.getByTestId('chart-callout');
+    expect(callout).toHaveTextContent('28 Sep 2026');
+    expect(callout).toHaveTextContent('₹101.50');
+    expect(callout).toHaveTextContent('−0.6% on the day');
+  });
+
+  it('leaves the change out when the server sent none', () => {
+    render(<PriceChart history={history} name="DemoCo Alpha" changePct={null} />);
+    expect(screen.getByTestId('chart-callout')).not.toHaveTextContent('on the day');
+  });
+
+  it('holds every close in a hidden table', () => {
+    render(<PriceChart history={history} name="DemoCo Alpha" changePct="1.5" />);
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(4);
+    expect(within(table).getByRole('rowheader', { name: '25 Sep 2026' })).toBeInTheDocument();
+    expect(within(table).getByRole('cell', { name: '₹100.00' })).toBeInTheDocument();
+  });
+
+  it('says so, and draws nothing, when there are no closes', () => {
+    render(<PriceChart history={[]} name="DemoCo Alpha" changePct={null} />);
+    expect(screen.getByText('No share prices stored yet for DemoCo Alpha.')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).toBeNull();
   });
 });

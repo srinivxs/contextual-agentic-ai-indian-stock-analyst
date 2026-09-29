@@ -16,6 +16,8 @@ from app.chat.understand import Question
 from app.derived import EventRow, Sentiment
 from app.insights import Citation, DerivedView, KeyFact, StoredEvent
 from app.matching.model import Reason, StockMatch
+from app.prices.derived import PriceSnapshot, PriceValue
+from app.prices.model import DailyPrice
 from app.retrieval import Passage, Result
 
 BSE = "https://www.bseindia.com/xml-data/corpfiling/AttachHis/demo.pdf"
@@ -29,6 +31,7 @@ def question(
     *,
     wants_growth: bool = False,
     wants_events: bool = False,
+    wants_price: bool = False,
 ) -> Question:
     return Question(
         symbols=symbols,
@@ -37,6 +40,7 @@ def question(
         wants_events=wants_events,
         periods=(),
         from_history=False,
+        wants_price=wants_price,
     )
 
 
@@ -597,3 +601,81 @@ def test_an_rbi_event_keeps_its_rbi_source() -> None:
         sentiment={},
     )
     assert (item.source, item.label) == ("rbi", "RBI press release · 10 Jul 2026")
+
+
+# --- share prices (ADR 025) -----------------------------------------------------------------------
+
+
+def a_snapshot(latest: bool = True) -> PriceSnapshot:
+    day = DailyPrice(
+        bse_code="999901",
+        trade_date=date(2026, 9, 28),
+        open=Decimal("210"),
+        high=Decimal("212"),
+        low=Decimal("205"),
+        close=Decimal("210.5"),
+        prev_close=Decimal("200"),
+        volume=10,
+    )
+    return PriceSnapshot(
+        latest=day if latest else None,
+        day_change=Decimal("5.3") if latest else None,
+        returns={"1m": Decimal("-2.1"), "3m": None, "6m": Decimal("4"), "1y": None},
+        volatility=Decimal("22.4"),
+        pe=PriceValue("ok", Decimal("21"), "Close over FY2026 basic EPS of Rs 10.", None),
+        dividend_yield=PriceValue("not_assessable", None, "No dividend per share on record.", None),
+        actions=[],
+    )
+
+
+def test_price_questions_get_the_latest_close_as_a_cited_figure_and_the_rest_computed() -> None:
+    items = build_evidence(
+        question=question(wants_price=True),
+        facts={},
+        derived={},
+        passages=[],
+        prices={"TCS": a_snapshot()},
+    )
+    assert [(item.id, item.kind) for item in items] == [
+        ("F1", "fact"),
+        ("D1", "derived"),
+        ("D2", "derived"),
+        ("D3", "derived"),
+        ("D4", "derived"),
+    ]
+    close = items[0]
+    assert close.text == (
+        "TCS · Share price · 28 Sep 2026 · close ₹210.5 per share, previous close ₹200 per "
+        "share, change 5.3% · BSE daily price file"
+    )
+    assert (close.source, close.label, close.url) == (
+        "filing",
+        "BSE daily price file · 28 Sep 2026",
+        "https://www.bseindia.com/download/BhavCopy/Equity/BhavCopy_BSE_CM_0_0_0_20260928_F_0000.CSV",
+    )
+    assert [item.text for item in items[1:]] == [
+        "TCS · Share price returns, adjusted for bonus issues and splits · 1 month -2.1% · "
+        "3 months not enough history · 6 months 4% · 1 year not enough history",
+        "TCS · One-year share price volatility · 22.4%",
+        "TCS · Price to earnings · 21 · Close over FY2026 basic EPS of Rs 10.",
+        "TCS · Dividend yield · not assessable · No dividend per share on record.",
+    ]
+
+
+def test_price_items_are_left_out_unless_asked_and_say_when_none_are_loaded() -> None:
+    assert (
+        build_evidence(
+            question=question(), facts={}, derived={}, passages=[], prices={"TCS": a_snapshot()}
+        )
+        == []
+    )
+    [item] = build_evidence(
+        question=question(wants_price=True),
+        facts={},
+        derived={},
+        passages=[],
+        prices={"TCS": a_snapshot(latest=False)},
+    )
+    assert item.text == (
+        "TCS · Share price · not in the data yet (end-of-day prices from BSE's daily files)"
+    )

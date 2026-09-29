@@ -246,12 +246,44 @@ describe('the match page', () => {
     });
     render(<MatchView />);
     expect(
-      await screen.findByText(/Nothing in your profile can be checked against the filings yet/),
+      await screen.findByText(
+        /Nothing in your profile can be checked against the stored figures and prices yet/,
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'DemoCo Alpha Limited' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Open the chat' })).toHaveAttribute('href', '/chat/');
     expect(screen.getByRole('note', { name: 'Not judged for any stock' })).toHaveTextContent(
       /Value needs share prices/,
     );
+  });
+
+  it('keeps a judged value reason, or one judged for only some stocks, in its card', async () => {
+    const judged = demoReason({
+      criterion: 'value',
+      preference: 'value',
+      hard: false,
+      outcome: 'pass',
+      text: 'Price to earnings is 12.5, at or below 20.',
+    });
+    const oneOnly = demoReason({
+      criterion: 'value',
+      preference: 'value',
+      hard: false,
+      outcome: 'not_assessable',
+      text: 'A bonus since the EPS year: per-share figures no longer compare.',
+      citations: [],
+    });
+    installFakeApi({
+      matches: profiled(
+        demoStockMatch({ reasons: [demoReason(), judged] }),
+        demoStockMatch({ symbol: 'DEMOB', name: 'DemoCo Beta', reasons: [demoReason(), oneOnly] }),
+      ),
+    });
+    render(<MatchView />);
+    const alpha = await screen.findByRole('region', { name: 'DemoCo Alpha Limited' });
+    expect(within(alpha).getByText(/Price to earnings is 12.5/)).toBeInTheDocument();
+    const beta = screen.getByRole('region', { name: 'DemoCo Beta' });
+    expect(within(beta).getByText(/A bonus since the EPS year/)).toBeInTheDocument();
+    expect(screen.queryByRole('note', { name: 'Not judged for any stock' })).toBeNull();
   });
 });

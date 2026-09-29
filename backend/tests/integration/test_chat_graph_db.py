@@ -556,3 +556,46 @@ async def test_without_a_profile_a_match_question_gets_no_verdicts(
     llm = FakeLlm(grounded)
     await ask(session_factory, llm, "Which stock suits me? What was TCS's net profit in FY2026?")
     assert "Match for your profile" not in llm.calls[0][1]
+
+
+# --- share prices (ADR 025) -----------------------------------------------------------------------
+
+
+async def seed_prices(engine: AsyncEngine) -> None:
+    """Two invented trading days for the followed stock (synthetic, never real prices)."""
+    async with engine.begin() as connection:
+        for day, close, prev in ((date(2026, 9, 25), 200, 199), (date(2026, 9, 28), 210, 200)):
+            await connection.execute(
+                text(
+                    "INSERT INTO prices (stock_id, trade_date, open, high, low, close, "
+                    "prev_close, volume) SELECT id, :day, :close, :close, :close, :close, "
+                    ":prev, 1 FROM stocks WHERE symbol = 'TCS'"
+                ),
+                {"day": day, "close": close, "prev": prev},
+            )
+
+
+async def test_a_price_question_is_answered_from_the_stored_close_with_its_bse_file(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    await seed_prices(admin_engine)
+    try:
+
+        def from_price(system: str, user_text: str, tool: ToolSpec) -> dict[str, Any]:
+            fid = evidence_id(user_text, "Share price · 28 Sep 2026")
+            return {
+                "outcome": "answer",
+                "claims": [{"text": "TCS closed at ₹210 on 28 Sep 2026.", "citations": [fid]}],
+            }
+
+        llm = FakeLlm(from_price)
+        reply = await ask(session_factory, llm, "What is TCS's share price?")
+        assert reply.status == "answered"
+        assert reply.sources[0].label == "BSE daily price file · 28 Sep 2026"
+        assert reply.sources[0].url is not None
+        assert "BhavCopy_BSE_CM_0_0_0_20260928" in reply.sources[0].url
+        assert "end of day" in llm.calls[0][0]  # the system prompt says prices are not live
+    finally:
+        async with admin_engine.begin() as connection:
+            await connection.execute(text("DELETE FROM prices"))

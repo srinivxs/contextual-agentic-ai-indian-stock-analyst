@@ -49,6 +49,7 @@ from app.matching.rules import match_all
 from app.memory.extract import describe, extract_preferences, preferences_text, profile_summary
 from app.memory.store import get_profile, remember
 from app.memory.vocabulary import Preference, StoredPreference
+from app.prices.derived import PriceSnapshot, snapshot
 from app.retrieval import Result, search
 
 logger = logging.getLogger("app.chat")
@@ -181,12 +182,15 @@ class GraphChatEngine:
         events: dict[str, list[StoredEvent]] = {}
         sentiment: dict[str, Sentiment] = {}
         stocks: list[StockRows] = []
+        prices: dict[str, PriceSnapshot] = {}
         async with self._session_factory() as db:
             for symbol in question.symbols:
                 stock = await load_stock(db, symbol)
                 if stock is not None:  # pragma: no branch - understand() names only seeded stocks
                     stocks.append(stock)
                     facts[symbol] = key_facts(stock.facts)
+                    if question.wants_price:  # ADR 025: end-of-day prices, cited to BSE's file
+                        prices[symbol] = snapshot(stock.prices, facts[symbol])
                     derived[symbol] = derived_views(stock.facts, is_financial=stock.is_financial)
                     events[symbol] = stock.events
                     rows = [event.row for event in stock.events]
@@ -206,6 +210,7 @@ class GraphChatEngine:
             events=events,
             sentiment=sentiment,
             matches=matches,
+            prices=prices,
         )
         return {"evidence": evidence}
 

@@ -16,18 +16,29 @@ and never change it.
                     conservative                     debt to equity <= 0.5 (both: > 1.0    soft
                                                      fail, 0.5 to 1.0 miss, <= 0.5 pass)
     dividend        income                           latest dividend per share > 0         soft
-                                                     (no prices: paid or not, not a yield)
+                                                     (paid or not, not a yield)
     revenue_growth  growth, or aggressive            revenue growth >= GROWTH_MIN 10%      soft
                                                      (a bank: net interest income growth)
     profit_growth   growth                           net profit growth >= 10%              soft
                     stability or conservative        net profit growth >= 0% (no fall)     soft
                     (several ask: the strictest)
     quality         quality                          latest full-year ROE >= 15%           soft
-    momentum        momentum                         earnings momentum: net profit growth  soft
-                                                     this year above last year's, three
+    momentum        momentum                         PRICE momentum: six-month return >= 0% soft
+                                                     (ADR 025); when prices do not reach back
+                                                     six months, EARNINGS momentum: net profit
+                                                     growth this year above last year's, three
                                                      years in a row from one source
-    value           value                            not assessable: needs share prices
-    horizon         long_term or short_term          not assessable: no price history
+    value           value                            P/E <= VALUE_PE_MAX 20 (latest close  soft
+                                                     over the latest full-year basic EPS);
+                                                     not assessable after a bonus or split
+                                                     since that year, without prices or with
+                                                     a loss; no EPS is no data
+    horizon         short_term                       one-year volatility <=                soft
+                                                     SHORT_TERM_VOL_MAX 30% (steadier for a
+                                                     short holding); no data without a year
+                    long_term                        net profit did not fall over the      soft
+                                                     three-year chain (each year >= the
+                                                     one before); no data without a chain
     sentiment       (always, as a caution)           rolling news sentiment is negative
 
 Reasons come in Criterion order, one per criterion, each with its figure, its threshold and the
@@ -52,15 +63,26 @@ from app.insights import (
 from app.insights_store import StockRows
 from app.matching.model import Criterion, Outcome, Reason, Status, StockMatch
 from app.memory.vocabulary import StoredPreference
+from app.prices.derived import (
+    adjusted_closes,
+    corporate_actions,
+    latest_key_fact,
+    pe_ratio,
+    period_return,
+    price_citation,
+    volatility,
+)
+from app.prices.model import DailyPrice
 
 DEBT_LIMIT = Decimal("1.0")  # avoid_high_debt (hard)
 CONSERVATIVE_DEBT_LIMIT = Decimal("0.5")  # conservative (soft)
 GROWTH_MIN = Decimal("10")  # percent, a growth style
 NO_FALL_MIN = Decimal("0")  # percent, stability or conservative
 QUALITY_ROE_MIN = Decimal("15")  # percent, a quality style
+VALUE_PE_MAX = Decimal("20")  # price to earnings, a value style
+SHORT_TERM_VOL_MAX = Decimal("30")  # percent a year, a short holding
+MOMENTUM_MONTHS = 6
 CAUTION_CITATIONS = 3  # the most recent negative events cited
-
-NO_PRICES = "needs share prices, which this app does not have"
 
 
 def _reason(
@@ -139,7 +161,7 @@ def _dividend(wanted: set[str], views: list[DerivedView], facts: list[KeyFact]) 
         text = "No dividend per share is in the data, so this cannot be judged."
         return _reason("dividend", "income", "no_data", text)
     shown = _dividend_text(view.value, facts)
-    note = "Without share prices this judges whether a dividend is paid, not its yield."
+    note = "This judges whether a dividend is paid, not its yield."
     if view.value > 0:
         text = f"The latest dividend is {shown}, so the company pays one. {note}"
     else:
@@ -205,23 +227,37 @@ def _quality(wanted: set[str], facts: list[KeyFact]) -> Reason | None:
     )
 
 
-# --- momentum: earnings, not share prices ---------------------------------------------------------
+# --- momentum: price when six months of prices exist, else earnings -------------------------------
 
 
 def _rate(before: Decimal, after: Decimal) -> Decimal:
     return ((after - before) / before * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
 
 
-def _momentum(wanted: set[str], facts: list[StoredFact]) -> Reason | None:
-    """Earnings momentum: net profit growth this year faster than the year before, from three
-    years in a row of one source (derived.growth_chain). Share-price momentum needs prices."""
-    if "momentum" not in wanted:
+def _price_momentum(share_prices: list[DailyPrice]) -> Reason | None:
+    """The six-month return of the adjusted close; None when the prices do not reach back."""
+    if not share_prices:
         return None
+    latest = share_prices[-1].trade_date
+    change = period_return(adjusted_closes(share_prices), months=MOMENTUM_MONTHS, as_of=latest)
+    if change is None:
+        return None
+    direction = "up" if change >= 0 else "down"
+    text = (
+        f"Share price is {direction} {_percent(abs(change))} over six months "
+        f"(to {latest:%d %b %Y}), from BSE's daily price files."
+    )
+    return _reason("momentum", "momentum", _judge(change >= 0), text, (price_citation(latest),))
+
+
+def _earnings_momentum(facts: list[StoredFact]) -> Reason:
+    """Net profit growth this year faster than the year before, from three years in a row of one
+    source (derived.growth_chain): the fallback when prices do not reach back six months."""
     chain = growth_chain([stored.row for stored in facts], "net_profit")
     if chain is None:
         text = (
-            "Earnings momentum needs three years of net profit in a row from one source, which "
-            "are not in the data."
+            "Momentum needs six months of share prices or three years of net profit in a row "
+            "from one source, which are not in the data."
         )
         return _reason("momentum", "momentum", "no_data", text)
     first, middle, latest = chain
@@ -235,26 +271,90 @@ def _momentum(wanted: set[str], facts: list[StoredFact]) -> Reason | None:
     text = (
         f"Net profit changed by {_percent(after)} in {latest.period} against "
         f"{_percent(before)} in {middle.period}: earnings are "
-        f"{'speeding up' if speeding else 'not speeding up'} (earnings momentum; the app has no "
-        "share prices)."
+        f"{'speeding up' if speeding else 'not speeding up'} (earnings momentum, used because "
+        "six months of share prices are not in the data)."
     )
     return _reason("momentum", "momentum", _judge(speeding), text, cites)
 
 
-# --- styles that cannot be judged -----------------------------------------------------------------
-
-
-def _unassessable(criterion: Criterion, wanted: set[str]) -> Reason | None:
-    if criterion not in wanted:
+def _momentum(
+    wanted: set[str], facts: list[StoredFact], share_prices: list[DailyPrice]
+) -> Reason | None:
+    if "momentum" not in wanted:
         return None
-    return _reason(criterion, criterion, "not_assessable", f"{criterion.capitalize()} {NO_PRICES}.")
+    return _price_momentum(share_prices) or _earnings_momentum(facts)
 
 
-def _horizon(wanted: set[str]) -> Reason | None:
-    for preference in ("long_term", "short_term"):
-        if preference in wanted:
-            text = "The app has no price history, so a horizon does not change the result."
-            return _reason("horizon", preference, "not_assessable", text)
+# --- value: price to earnings ---------------------------------------------------------------------
+
+
+def _value(wanted: set[str], share_prices: list[DailyPrice], facts: list[KeyFact]) -> Reason | None:
+    if "value" not in wanted:
+        return None
+    if not share_prices:
+        text = "Value needs share prices, which are not in the data yet."
+        return _reason("value", "value", "not_assessable", text)
+    latest = share_prices[-1]
+    basic_eps = latest_key_fact(facts, "eps_basic")
+    result = pe_ratio(latest, basic_eps, corporate_actions(share_prices))
+    cites = (price_citation(latest.trade_date),) + ((basic_eps.citation,) if basic_eps else ())
+    if basic_eps is None:
+        text = "Price to earnings is not in the data: no yearly basic EPS is on record."
+        return _reason("value", "value", "no_data", text, cites[:1])
+    if result.value is None:
+        return _reason("value", "value", "not_assessable", result.reason, cites)
+    limit = f"the {_plain(VALUE_PE_MAX)} wanted for a value style"
+    relation = "at or below" if result.value <= VALUE_PE_MAX else "above"
+    text = f"Price to earnings is {_plain(result.value)}, {relation} {limit}. {result.reason}"
+    return _reason("value", "value", _judge(result.value <= VALUE_PE_MAX), text, cites)
+
+
+# --- horizon: steady prices for a short holding, steady earnings for a long one -------------------
+
+
+def _short_term(share_prices: list[DailyPrice]) -> Reason:
+    swing = volatility(adjusted_closes(share_prices))
+    if swing is None:
+        text = "A short holding is judged on a year of share price swings, not in the data."
+        return _reason("horizon", "short_term", "no_data", text)
+    cites = (price_citation(share_prices[-1].trade_date),)
+    relation = "at or below" if swing <= SHORT_TERM_VOL_MAX else "above"
+    text = (
+        f"Share price swings over the last year are {_percent(swing)} a year, {relation} the "
+        f"{_percent(SHORT_TERM_VOL_MAX)} that suits a short holding."
+    )
+    return _reason("horizon", "short_term", _judge(swing <= SHORT_TERM_VOL_MAX), text, cites)
+
+
+def _long_term(facts: list[StoredFact]) -> Reason:
+    chain = growth_chain([stored.row for stored in facts], "net_profit")
+    if chain is None:
+        text = (
+            "A long holding is judged on net profit over three years in a row from one source, "
+            "which is not in the data."
+        )
+        return _reason("horizon", "long_term", "no_data", text)
+    citations = {stored.row.id: stored.citation for stored in facts}
+    cites = tuple(citations[row.id] for row in chain)
+    steady = chain[0].value <= chain[1].value <= chain[2].value
+    years = ", ".join(f"{row.period} {format_amount(row.value, row.unit)}" for row in chain)
+    outcome = "did not fall" if steady else "fell in at least one year"
+    return _reason(
+        "horizon",
+        "long_term",
+        _judge(steady),
+        f"Net profit {outcome} over three years ({years}).",
+        cites,
+    )
+
+
+def _horizon(
+    wanted: set[str], share_prices: list[DailyPrice], facts: list[StoredFact]
+) -> Reason | None:
+    if "long_term" in wanted:
+        return _long_term(facts)
+    if "short_term" in wanted:
+        return _short_term(share_prices)
     return None
 
 
@@ -303,9 +403,9 @@ def match_stock(profile: list[StoredPreference], stock: StockRows, *, today: dat
         _revenue_growth(wanted, views),
         _profit_growth(wanted, views),
         _quality(wanted, facts),
-        _unassessable("value", wanted),
-        _momentum(wanted, stock.facts),
-        _horizon(wanted),
+        _value(wanted, stock.prices, facts),
+        _momentum(wanted, stock.facts, stock.prices),
+        _horizon(wanted, stock.prices, stock.facts),
     )
     reasons = tuple(reason for reason in candidates if reason is not None)
     if not profile:

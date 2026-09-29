@@ -24,12 +24,14 @@ import {
 } from '@/components/Icons';
 import { Monogram } from '@/components/Monogram';
 import { ProfitChart } from '@/components/ProfitChart';
+import { PriceChart } from '@/components/PriceChart';
 import { Sparkline } from '@/components/Sparkline';
 import { ApiError } from '@/lib/api';
 import { getFeed, type FeedItem } from '@/lib/feed';
 import { latestNews } from '@/lib/homeNews';
 import { citationLink, getInsights, stockPageHref, type StockInsights } from '@/lib/insights';
 import { getMatches, STATUS_LABELS, type MatchResult, type MatchStatus } from '@/lib/match';
+import { getPrices, hasPrices, priceLabel, signedPercent, type Prices } from '@/lib/prices';
 import { getProfile, type Profile, type ProfileFieldName } from '@/lib/profile';
 import { change, direction, getSeries, percentLabel, rupees, type Series } from '@/lib/series';
 import { signOut, useMe } from '@/lib/session';
@@ -117,6 +119,30 @@ const PROFILE_ICONS: Record<ProfileFieldName, ReactNode> = {
 };
 
 type SeriesByStock = (Series | null)[];
+type PricesByStock = (Prices | null)[];
+
+const NO_PRICES = 'Prices not loaded yet';
+
+/**
+ * What one stock's prices give the cards and rows: the latest close and the day's change. Null
+ * unless there is a latest close, so a missing price is never shown as a zero.
+ */
+function priceSummary(prices: Prices | null | undefined) {
+  if (!hasPrices(prices) || !prices.latest) return null;
+  const { close, change_pct: changePct } = prices.latest;
+  return {
+    close: priceLabel(close),
+    percent: signedPercent(changePct),
+    tone: direction(changePct === null ? null : Number(changePct)),
+    values: prices.history.map((p) => Number(p.close)),
+  };
+}
+
+/** "FY2026 net profit ₹120 crore", the smaller line under a price. */
+const profitLine = (latest: { period: string; value: number }): string =>
+  `${latest.period} net profit ${rupees(latest.value)} crore`;
+
+type ChartView = 'price' | 'profit';
 
 /** The latest figure and change of one stock's series, worked out once for the cards and rows. */
 function summary(series: Series | null | undefined) {
@@ -129,9 +155,18 @@ function summary(series: Series | null | undefined) {
   };
 }
 
-function Hero({ stocks, series }: { stocks: Loadable<Stock[]>; series: Loadable<SeriesByStock> }) {
+function Hero({
+  stocks,
+  series,
+  prices,
+}: {
+  stocks: Loadable<Stock[]>;
+  series: Loadable<SeriesByStock>;
+  prices: Loadable<PricesByStock>;
+}) {
   const titleId = useId();
   const [chosen, setChosen] = useState<string | null>(null);
+  const [picked, setPicked] = useState<ChartView | null>(null);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const tabsId = useId();
 
@@ -142,6 +177,10 @@ function Hero({ stocks, series }: { stocks: Loadable<Stock[]>; series: Loadable<
   );
   const stock = list[index];
   const current = series.status === 'ready' ? series.data[index] : undefined;
+  const stockPrices = prices.status === 'ready' ? prices.data[index] : undefined;
+  const priced = hasPrices(stockPrices);
+  // Without prices there is nothing to choose: the net profit view stands alone.
+  const view: ChartView = priced ? (picked ?? 'price') : 'profit';
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     const last = list.length - 1;
@@ -164,6 +203,23 @@ function Hero({ stocks, series }: { stocks: Loadable<Stock[]>; series: Loadable<
   let body: ReactNode = <p className="muted">Loading…</p>;
   if (stocks.status === 'error') {
     body = <p className="muted">The chart needs your stock list, which could not load.</p>;
+  } else if (stock && prices.status === 'loading') {
+    body = <p className="muted">Loading…</p>;
+  } else if (stock && stockPrices && stockPrices.latest && view === 'price') {
+    const source = citationLink(stockPrices.latest.citation);
+    body = (
+      <>
+        <PriceChart
+          history={stockPrices.history}
+          name={stock.name}
+          changePct={stockPrices.latest.change_pct}
+        />
+        <p className="home-caption muted">
+          End-of-day closes, adjusted for bonus issues and splits ·{' '}
+          {source ? <a href={source}>BSE daily price files</a> : 'BSE daily price files'}
+        </p>
+      </>
+    );
   } else if (stock && series.status === 'error') {
     body = <p className="muted">{`We couldn't load the net profit figures.`}</p>;
   } else if (stock && series.status === 'ready') {
@@ -176,6 +232,7 @@ function Hero({ stocks, series }: { stocks: Loadable<Stock[]>; series: Loadable<
       const source = lastPoint ? citationLink(lastPoint.citation) : null;
       body = (
         <>
+          {!priced && <p className="home-caption muted">{NO_PRICES}</p>}
           <ProfitChart points={current.points} name={stock.name} label={current.label} />
           <p className="home-caption muted">
             {current.label}, ₹ crore, consolidated ·{' '}
@@ -202,6 +259,26 @@ function Hero({ stocks, series }: { stocks: Loadable<Stock[]>; series: Loadable<
         </p>
       </div>
       <div className="home-hero-chart">
+        {priced && (
+          <div className="home-toggle" role="group" aria-label="Chart shows">
+            {(
+              [
+                ['price', 'Share price'],
+                ['profit', 'Net profit'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className="home-toggle-option"
+                aria-pressed={view === value}
+                onClick={() => setPicked(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         {list.length > 0 && (
           <div
             className="home-tabs"
@@ -241,8 +318,39 @@ function Hero({ stocks, series }: { stocks: Loadable<Stock[]>; series: Loadable<
   );
 }
 
-function StatCard({ stock, series }: { stock: Stock; series: Series | null | undefined }) {
+function StatCard({
+  stock,
+  series,
+  prices,
+  pricesSettled,
+}: {
+  stock: Stock;
+  series: Series | null | undefined;
+  prices: Prices | null | undefined;
+  pricesSettled: boolean;
+}) {
   const { latest, percent, tone, values } = summary(series);
+  const price = priceSummary(prices);
+  if (price) {
+    return (
+      <a className="home-card home-stat" href={stockPageHref(stock.symbol)}>
+        <span className="home-stat-label">{stock.name}</span>
+        <span className="home-stat-body">
+          <span className="home-stat-figure">
+            <span className="home-big num">{price.close}</span>
+            <span className="home-stat-sub">
+              {price.percent && (
+                <span className={`home-change ${price.tone}`}>{price.percent}</span>
+              )}
+              <span className="muted">on the day</span>
+            </span>
+            {latest && <span className="home-stat-small muted">{profitLine(latest)}</span>}
+          </span>
+          {price.values.length > 1 && <Sparkline values={price.values} tone={price.tone} />}
+        </span>
+      </a>
+    );
+  }
   let figure: ReactNode = <span className="muted">Loading…</span>;
   if (series === null) figure = <span className="muted">Unavailable</span>;
   else if (series && !latest) figure = <span className="muted">No figures yet</span>;
@@ -266,6 +374,7 @@ function StatCard({ stock, series }: { stock: Stock; series: Series | null | und
               <span className="muted">{latest.period} net profit</span>
             </span>
           )}
+          {pricesSettled && <span className="home-stat-small muted">{NO_PRICES}</span>}
         </span>
         {latest && values.length > 1 && <Sparkline values={values} tone={tone} />}
       </span>
@@ -315,10 +424,12 @@ function MatchCard({ match }: { match: Loadable<MatchResult> }) {
 function YourStocks({
   stocks,
   series,
+  prices,
   match,
 }: {
   stocks: Loadable<Stock[]>;
   series: Loadable<SeriesByStock>;
+  prices: Loadable<PricesByStock>;
   match: Loadable<MatchResult>;
 }) {
   const titleId = useId();
@@ -336,6 +447,7 @@ function YourStocks({
         {followed.map((stock) => {
           const position = all.findIndex((s) => s.symbol === stock.symbol);
           const { latest } = summary(series.status === 'ready' ? series.data[position] : undefined);
+          const price = priceSummary(prices.status === 'ready' ? prices.data[position] : undefined);
           const status = matches.find((m) => m.symbol === stock.symbol)?.status;
           return (
             <li key={stock.symbol}>
@@ -346,10 +458,25 @@ function YourStocks({
                   <span className="muted">{stock.name}</span>
                 </span>
                 <span className="home-row-figure">
-                  {latest && (
+                  {price ? (
                     <>
-                      <span className="num">{rupees(latest.value)} crore</span>
-                      <span className="muted">{latest.period} net profit</span>
+                      <span className="num">
+                        {price.close}{' '}
+                        {price.percent && (
+                          <span className={`home-change ${price.tone}`}>{price.percent}</span>
+                        )}
+                      </span>
+                      {latest && <span className="muted">{profitLine(latest)}</span>}
+                    </>
+                  ) : (
+                    <>
+                      {latest && (
+                        <>
+                          <span className="num">{rupees(latest.value)} crore</span>
+                          <span className="muted">{latest.period} net profit</span>
+                        </>
+                      )}
+                      {prices.status !== 'loading' && <span className="muted">{NO_PRICES}</span>}
                     </>
                   )}
                   {status && (
@@ -572,12 +699,14 @@ export function HomeView() {
   const stockList = stocks.status === 'ready' ? stocks.data : [];
   const stocksReady = stocks.status === 'ready';
   const seriesLoaded = useLoad(() => eachStock(stockList, (s) => getSeries(s)), stocksReady);
+  const pricesLoaded = useLoad(() => eachStock(stockList, (s) => getPrices(s)), stocksReady);
   const insightsLoaded = useLoad(
     async () => ({ insights: await eachStock(stockList, (s) => getInsights(s)) }),
     stocksReady,
   );
   // Without the stock list neither can start; say so instead of waiting for ever.
   const series: Loadable<SeriesByStock> = stocks.status === 'error' ? stocks : seriesLoaded;
+  const prices: Loadable<PricesByStock> = stocks.status === 'error' ? stocks : pricesLoaded;
   const insights: Loadable<NewsSources> =
     stocks.status === 'error' ? { status: 'error' } : insightsLoaded;
 
@@ -619,19 +748,21 @@ export function HomeView() {
         </p>
       )}
       <div className="home">
-        <Hero stocks={stocks} series={series} />
+        <Hero stocks={stocks} series={series} prices={prices} />
         <section className="home-stats" aria-label="At a glance">
           {stockList.map((stock, position) => (
             <StatCard
               key={stock.symbol}
               stock={stock}
               series={series.status === 'ready' ? series.data[position] : undefined}
+              prices={prices.status === 'ready' ? prices.data[position] : undefined}
+              pricesSettled={prices.status !== 'loading'}
             />
           ))}
           <MatchCard match={match} />
         </section>
         <div className="home-columns">
-          <YourStocks stocks={stocks} series={series} match={match} />
+          <YourStocks stocks={stocks} series={series} prices={prices} match={match} />
           <ChatCard />
           <div className="home-side">
             <News insights={insights} feed={feed} />
@@ -639,8 +770,8 @@ export function HomeView() {
           </div>
         </div>
         <p className="muted home-foot">
-          Not investment advice. Every figure comes from official filings or screener.in and is
-          shown with its source.
+          Not investment advice. Every figure comes from official filings, BSE&apos;s end-of-day
+          price files or screener.in and is shown with its source.
         </p>
       </div>
     </AppShell>

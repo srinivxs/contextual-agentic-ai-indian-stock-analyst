@@ -13,7 +13,8 @@ P14's matching turn them into rules.
 
 Merge rule: a newer statement about a field replaces that field's values entirely ("I'm
 aggressive" after "I'm conservative" leaves aggressive); fields the statement does not mention
-are kept. Value and momentum can be remembered but not matched (no prices): P14 says so.
+are kept. Value, momentum and a horizon are judged from end-of-day prices when they exist
+(ADR 025).
 """
 
 from dataclasses import dataclass

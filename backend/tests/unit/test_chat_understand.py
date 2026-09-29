@@ -219,3 +219,31 @@ def test_match_questions_ask_for_a_match(text: str) -> None:
 )
 def test_other_questions_do_not_ask_for_a_match(text: str) -> None:
     assert ask(text).wants_match is False
+
+
+# --- share prices (ADR 025) -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What is TCS's share price?",
+        "Where did Reliance close yesterday?",
+        "How has HDFC Bank's stock price moved?",
+        "What is the P/E of TCS?",
+        "Is TCS expensive on a price to earnings basis?",
+        "What were Reliance's returns over six months?",
+        "How volatile is HDFC Bank?",
+        "What is the dividend yield of TCS?",
+    ],
+)
+def test_price_questions_ask_for_prices(text: str) -> None:
+    assert ask(text).wants_price is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["What was TCS's net profit in FY2026?", "What is TCS's return on equity?", "Match me"],
+)
+def test_other_questions_do_not_ask_for_prices(text: str) -> None:
+    assert ask(text).wants_price is False

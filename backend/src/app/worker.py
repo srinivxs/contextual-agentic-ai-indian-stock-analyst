@@ -17,7 +17,7 @@ import contextlib
 import logging
 import signal
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -40,6 +40,7 @@ from app.ingest import DocumentRejected, JobCannotSucceed, document_id_of, inges
 from app.ingest import mark_document as _mark_document
 from app.jobs import ClaimedJob, claim_next, fail, retry_or_fail, still_mine
 from app.llm import BedrockLlm, StructuredLlm, bedrock_llm_client
+from app.price_jobs import LEASE_SHARE, enqueue_sync, sync_prices
 
 logger = logging.getLogger("app.worker")
 
@@ -57,6 +58,8 @@ EXTRACT_CHECK_SECONDS = 60.0
 # How often the loop asks "has this time slot's feed poll been queued?" One cheap query; the slot's
 # dedupe key (app/feed_jobs.py) is what keeps several workers from queueing it twice.
 FEED_CHECK_SECONDS = 60.0
+# The same for the price sync (ADR 025): is this slot's run queued, and is anything left to fetch?
+PRICES_CHECK_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -88,6 +91,14 @@ class WorkerContext:
     feed_mode: Literal["live", "fixture"] = "fixture"
     feed_http: httpx.AsyncClient | None = None
     feed_aliases: Mapping[str, tuple[str, ...]] = field(default_factory=lambda: dict(ALIASES))
+    # Share prices (ADR 025): a client for BSE's daily files exists only with PRICES_ENABLED. The
+    # pause and clock are injectable so tests never wait.
+    prices_http: httpx.AsyncClient | None = None
+    prices_history_days: int = 365
+    prices_per_run: int = 12
+    prices_pause_seconds: float = 20.0
+    prices_sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
+    prices_clock: Callable[[], float] = time.monotonic
 
 
 async def mark_job_document(
@@ -134,6 +145,19 @@ async def handle(context: WorkerContext, job: ClaimedJob) -> None:
                 job,
                 mode=context.feed_mode,
                 aliases=context.feed_aliases,
+            )
+        elif job.kind == "sync_prices":
+            await sync_prices(
+                context.session_factory,
+                context.prices_http,
+                job,
+                today=context.today(),
+                history_days=context.prices_history_days,
+                per_run=context.prices_per_run,
+                pause_seconds=context.prices_pause_seconds,
+                max_seconds=context.lease_seconds * LEASE_SHARE,
+                sleep=context.prices_sleep,
+                clock=context.prices_clock,
             )
         elif job.kind == "extract_document" and context.llm is None:
             raise JobCannotSucceed("extraction is switched off (EXTRACTION_ENABLED)")
@@ -239,6 +263,22 @@ async def _queue_feed_poll(context: WorkerContext, every_minutes: int) -> None:
         logger.exception("feed_poll_queue_error")
 
 
+async def _queue_price_sync(context: WorkerContext, every_minutes: int) -> None:
+    try:
+        async with context.session_factory() as db:
+            queued = await enqueue_sync(
+                db,
+                every_minutes=every_minutes,
+                history_days=context.prices_history_days,
+                today=context.today(),
+            )
+            await db.commit()
+        if queued:
+            logger.info("price_sync_queued")
+    except Exception:
+        logger.exception("price_sync_queue_error")
+
+
 async def run_forever(
     context: WorkerContext,
     stop: asyncio.Event,
@@ -250,6 +290,8 @@ async def run_forever(
     extract_check_seconds: float = EXTRACT_CHECK_SECONDS,
     feed_poll_minutes: int | None = None,
     feed_check_seconds: float = FEED_CHECK_SECONDS,
+    prices_run_minutes: int | None = None,
+    prices_check_seconds: float = PRICES_CHECK_SECONDS,
 ) -> None:
     """Work through the queue until ``stop`` is set. The worker's small timers (ADR 008):
 
@@ -259,12 +301,15 @@ async def run_forever(
     - with an LLM in the context, every ``extract_check_seconds`` queue a reading for facts and
       events of any ingested document this extractor version and model have not read (P11);
     - with ``feed_poll_minutes``, every ``feed_check_seconds`` make sure this time slot's RBI feed
-      poll is queued (P15; why that is safe with several workers: app/feed_jobs.py).
+      poll is queued (P15; why that is safe with several workers: app/feed_jobs.py);
+    - with ``prices_run_minutes``, every ``prices_check_seconds`` make sure this time slot's price
+      sync is queued when days are left to fetch (ADR 025; app/price_jobs.py).
     """
     next_discovery_check = 0.0
     next_embed_check = 0.0
     next_extract_check = 0.0
     next_feed_check = 0.0
+    next_prices_check = 0.0
     while True:
         if discovery_every_hours and time.monotonic() >= next_discovery_check:
             await _queue_discovery(context, discovery_every_hours)
@@ -278,6 +323,9 @@ async def run_forever(
         if feed_poll_minutes and time.monotonic() >= next_feed_check:
             await _queue_feed_poll(context, feed_poll_minutes)
             next_feed_check = time.monotonic() + feed_check_seconds
+        if prices_run_minutes and time.monotonic() >= next_prices_check:
+            await _queue_price_sync(context, prices_run_minutes)
+            next_prices_check = time.monotonic() + prices_check_seconds
         if stop.is_set():
             break
         try:
@@ -311,6 +359,8 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
     )
     # And RBI: a client exists only in live mode; fixture mode reads files shipped with the code.
     feed_http = httpx.AsyncClient(timeout=30.0) if settings.feed_mode == "live" else None
+    # And BSE's price files: a client exists only with PRICES_ENABLED.
+    prices_http = httpx.AsyncClient(timeout=60.0) if settings.prices_enabled else None
     context = WorkerContext(
         session_factory=create_session_factory(engine),
         blob_store=FilesystemBlobStore(settings.blob_root),
@@ -328,6 +378,10 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
         extraction_concurrency=settings.extraction_concurrency,
         feed_mode=settings.feed_mode,
         feed_http=feed_http,
+        prices_http=prices_http,
+        prices_history_days=settings.prices_history_days,
+        prices_per_run=settings.prices_per_run,
+        prices_pause_seconds=settings.prices_pause_seconds,
     )
     stop = asyncio.Event()
     for signal_number in (signal.SIGINT, signal.SIGTERM):
@@ -341,12 +395,15 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
             discovery_every_hours=settings.filings_refresh_hours if http else None,
             embed_model=embedder.model if embedder else None,
             feed_poll_minutes=settings.feed_poll_minutes,
+            prices_run_minutes=settings.prices_run_minutes if prices_http else None,
         )
     finally:
         if http is not None:
             await http.aclose()
         if feed_http is not None:
             await feed_http.aclose()
+        if prices_http is not None:
+            await prices_http.aclose()
         await engine.dispose()
         logger.info("worker_stopped")
 

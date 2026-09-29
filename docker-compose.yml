@@ -154,6 +154,9 @@ services:
       # items shipped with the code and never touches the network; "live" fetches rbi.org.in.
       FEED_MODE: ${FEED_MODE:-fixture}
       FEED_POLL_MINUTES: ${FEED_POLL_MINUTES:-60}
+      # Share prices from BSE's daily files (ADR 025): off unless switched on; slow by design
+      # (BSE answers 406 to requests a few seconds apart).
+      PRICES_ENABLED: ${PRICES_ENABLED:-false}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}

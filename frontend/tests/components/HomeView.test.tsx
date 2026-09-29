@@ -8,6 +8,7 @@ import {
   demoFeedItem,
   demoInsights,
   demoMatches,
+  demoPrices,
   demoRbiCitation,
   demoProfileField,
   demoSeries,
@@ -550,7 +551,7 @@ describe('the home page: session and words', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't sign you out/i);
   });
 
-  it('says it is not investment advice and never uses price or advice words', async () => {
+  it('says it is not investment advice and never uses advice words', async () => {
     api({
       followed: ['DEMOA'],
       profileFields: [demoProfileField()],
@@ -564,6 +565,161 @@ describe('the home page: session and words', () => {
 
     expect(screen.getAllByText(/Not investment advice/).length).toBeGreaterThan(0);
     const words = container.querySelector('main')?.textContent ?? '';
-    expect(words).not.toMatch(/\b(buy|sell|price|prices|priced|recommend\w*|should)\b/i);
+    expect(words).not.toMatch(/\b(buy|sell|recommend\w*|should)\b/i);
+  });
+});
+
+const PRICES = {
+  DEMOA: demoPrices('DEMOA'),
+  DEMOB: demoPrices('DEMOB', {
+    latest: {
+      ...demoPrices('DEMOB').latest!,
+      close: '2050.25',
+      prev_close: '2062.5',
+      change_pct: '-0.6',
+    },
+  }),
+  // DEMOC has no prices yet (the fake's default).
+};
+
+const withPrices = (options: Options = {}) => api({ prices: PRICES, ...options });
+
+async function pricesLoaded(): Promise<void> {
+  await screen.findByRole('img', { name: /^Share price of DemoCo Alpha Limited/ });
+}
+
+describe('the home page: share prices', () => {
+  it('opens on the share price chart with its callout, caption and source', async () => {
+    withPrices();
+    render(<HomeView />);
+    await pricesLoaded();
+
+    const callout = screen.getByTestId('chart-callout');
+    expect(callout).toHaveTextContent('28 Sep 2026');
+    expect(callout).toHaveTextContent('₹101.50');
+    expect(callout).toHaveTextContent('+1.5% on the day');
+    const hero = region('Your personal Indian stock analyst');
+    expect(
+      within(hero).getByText(/End-of-day closes, adjusted for bonus issues and splits/),
+    ).toBeInTheDocument();
+    expect(within(hero).getByRole('link', { name: 'BSE daily price files' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('https://www.bseindia.com/download/BhavCopy/'),
+    );
+    expect(screen.queryByRole('img', { name: /^Net profit of/ })).toBeNull();
+  });
+
+  it('switches to net profit and back with a labelled toggle group', async () => {
+    const user = userEvent.setup();
+    withPrices();
+    render(<HomeView />);
+    await pricesLoaded();
+
+    const group = screen.getByRole('group', { name: 'Chart shows' });
+    const price = within(group).getByRole('button', { name: 'Share price' });
+    const profit = within(group).getByRole('button', { name: 'Net profit' });
+    expect(price).toHaveAttribute('aria-pressed', 'true');
+    expect(profit).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(profit);
+    expect(await screen.findByRole('img', { name: /^Net profit of DemoCo Alpha/ })).toBeVisible();
+    expect(profit).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('img', { name: /^Share price of/ })).toBeNull();
+
+    price.focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByRole('img', { name: /^Share price of/ })).toBeInTheDocument();
+  });
+
+  it('keeps the chosen view when another stock tab is picked', async () => {
+    const user = userEvent.setup();
+    withPrices();
+    render(<HomeView />);
+    await pricesLoaded();
+    await user.click(screen.getByRole('button', { name: 'Net profit' }));
+    await user.click(screen.getAllByRole('tab')[1]!);
+    expect(await screen.findByRole('img', { name: /^Net profit of DemoCo Beta/ })).toBeVisible();
+  });
+
+  it('shows the latest close and the day change on each card, net profit as the small line', async () => {
+    withPrices();
+    render(<HomeView />);
+    await pricesLoaded();
+
+    const cards = region('At a glance');
+    const alpha = within(cards).getByRole('link', { name: /DemoCo Alpha Limited/ });
+    expect(alpha).toHaveTextContent('₹101.50');
+    expect(alpha).toHaveTextContent('+1.5%');
+    expect(alpha.querySelector('.home-change')).toHaveClass('rise');
+    expect(alpha).toHaveTextContent('FY2026 net profit ₹120 crore');
+    const beta = within(cards).getByRole('link', { name: /DemoCo Beta Limited/ });
+    expect(beta).toHaveTextContent('₹2,050.25');
+    expect(beta).toHaveTextContent('−0.6%');
+    expect(beta.querySelector('.home-change')).toHaveClass('fall');
+  });
+
+  it('shows the close and change in the followed rows', async () => {
+    withPrices({ followed: ['DEMOB'] });
+    render(<HomeView />);
+    await pricesLoaded();
+    const row = await within(region('Your stocks')).findByRole('link', { name: /DEMOB/ });
+    expect(row).toHaveTextContent('₹2,050.25');
+    expect(row).toHaveTextContent('−0.6%');
+    expect(row).toHaveTextContent('FY2026 net profit ₹150 crore');
+  });
+
+  it('falls back to net profit and says prices are not loaded when a stock has none', async () => {
+    withPrices();
+    render(<HomeView />);
+    await pricesLoaded();
+    await userEvent.click(screen.getAllByRole('tab')[2]!);
+
+    // DEMOC has no net profit either; the message names the gap rather than drawing a zero.
+    const hero = region('Your personal Indian stock analyst');
+    expect(await within(hero).findByText('Prices not loaded yet')).toBeInTheDocument();
+    expect(within(hero).queryByRole('group', { name: 'Chart shows' })).toBeNull();
+    expect(within(hero).queryByRole('img', { name: /^Share price of/ })).toBeNull();
+  });
+
+  it('shows the net profit view and a muted note when no stock has prices', async () => {
+    api();
+    render(<HomeView />);
+    await loaded();
+    const hero = region('Your personal Indian stock analyst');
+    expect(within(hero).getByText('Prices not loaded yet')).toHaveClass('muted');
+    expect(within(hero).queryByRole('group', { name: 'Chart shows' })).toBeNull();
+
+    const alpha = within(region('At a glance')).getByRole('link', { name: /DemoCo Alpha/ });
+    expect(alpha).toHaveTextContent('Prices not loaded yet');
+    expect(alpha).toHaveTextContent('₹120');
+    expect(alpha).not.toHaveTextContent('₹0');
+  });
+
+  it('treats a failed prices call like no prices, without hiding the rest', async () => {
+    const fake = withPrices();
+    fake.failWith('GET /api/v1/stocks/DEMOA/prices', 500);
+    render(<HomeView />);
+    await loaded();
+    const alpha = within(region('At a glance')).getByRole('link', { name: /DemoCo Alpha/ });
+    expect(alpha).toHaveTextContent('Prices not loaded yet');
+    expect(within(region('At a glance')).getByRole('link', { name: /Beta/ })).toHaveTextContent(
+      '₹2,050.25',
+    );
+  });
+
+  it('sends the user to sign in when the prices call says the session ended', async () => {
+    nav.replace.mockClear();
+    const fake = withPrices();
+    fake.failWith('GET /api/v1/stocks/DEMOA/prices', 401);
+    render(<HomeView />);
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
+  });
+
+  it('never uses advice words or calls the prices live', async () => {
+    withPrices({ followed: ['DEMOA'] });
+    const { container } = render(<HomeView />);
+    await pricesLoaded();
+    const words = container.querySelector('main')?.textContent ?? '';
+    expect(words).not.toMatch(/\b(buy|sell|live|recommend\w*|should)\b/i);
   });
 });

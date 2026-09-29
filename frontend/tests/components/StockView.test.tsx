@@ -7,6 +7,9 @@ import {
   demoCitation,
   demoFact,
   demoInsights,
+  demoPrices,
+  demoRatio,
+  noPrices,
   demoRbiCitation,
   demoScreenerCitation,
   installFakeApi,
@@ -453,5 +456,137 @@ describe('the stock page, RBI citations', () => {
     render(<StockView />);
     expect(await screen.findByText(demoRbiCitation().label)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: demoRbiCitation().label })).toBeNull();
+  });
+});
+
+describe('the share price card', () => {
+  const show = (prices = demoPrices('DEMOA')) => {
+    const api = installFakeApi({ insights: { DEMOA: demoInsights() }, prices: { DEMOA: prices } });
+    render(<StockView />);
+    return api;
+  };
+  const card = async (): Promise<ReturnType<typeof within>> => {
+    const region = await screen.findByRole('region', { name: 'Share price' });
+    await waitFor(() => expect(within(region).queryByText(/Loading share price/)).toBeNull());
+    return within(region);
+  };
+
+  it('shows the latest close with its date and the day change, and the chart', async () => {
+    show();
+    const c = await card();
+    expect(c.getByText('₹101.50', { selector: '.price-close' })).toBeInTheDocument();
+    expect(c.getByText('close on 28 Sep 2026')).toBeInTheDocument();
+    for (const day of c.getAllByText('+1.5% on the day')) expect(day).toHaveClass('rise');
+    expect(
+      c.getByRole('img', { name: /^Share price of DemoCo Alpha Limited/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('sits above the key facts', async () => {
+    show();
+    const price = await screen.findByRole('region', { name: 'Share price' });
+    const facts = await screen.findByRole('region', { name: 'Key facts' });
+    expect(price.compareDocumentPosition(facts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('lists the four returns, saying "not enough history" for a missing one', async () => {
+    show();
+    const c = await card();
+    const returns = c.getByRole('list', { name: 'Returns' });
+    const item = (label: string) => within(returns).getByText(label).closest('li') as HTMLElement;
+    expect(item('1 month')).toHaveTextContent('+4.2%');
+    expect(item('3 months')).toHaveTextContent('not enough history');
+    expect(item('6 months')).toHaveTextContent('−3.1%');
+    expect(item('1 year')).toHaveTextContent('not enough history');
+  });
+
+  it('shows one-year volatility, P/E and dividend yield with their reasons', async () => {
+    show();
+    const c = await card();
+    expect(c.getByText('18.6%')).toBeInTheDocument();
+    const pe = c.getByText('P/E').closest('li') as HTMLElement;
+    expect(pe).toHaveTextContent('12.5');
+    expect(pe).toHaveTextContent('Invented sample');
+    const yieldItem = c.getByText('Dividend yield').closest('li') as HTMLElement;
+    expect(yieldItem).toHaveTextContent('1.2%');
+  });
+
+  it('gives the reason when P/E and dividend yield are not assessable, never a number', async () => {
+    show(
+      demoPrices('DEMOA', {
+        volatility_1y: null,
+        pe: demoRatio({ status: 'not_assessable', value: null, reason: 'Earnings are missing.' }),
+        dividend_yield: demoRatio({
+          status: 'not_assessable',
+          value: null,
+          reason: 'No dividend stored.',
+        }),
+      }),
+    );
+    const c = await card();
+    const pe = c.getByText('P/E').closest('li') as HTMLElement;
+    expect(pe).toHaveTextContent('Not assessable');
+    expect(pe).toHaveTextContent('Earnings are missing.');
+    expect(pe).not.toHaveTextContent(/\d/);
+    const yieldItem = c.getByText('Dividend yield').closest('li') as HTMLElement;
+    expect(yieldItem).toHaveTextContent('No dividend stored.');
+    expect(c.getByText('Volatility, 1 year').closest('li')).toHaveTextContent('not enough history');
+  });
+
+  it('lists a bonus issue or split plainly', async () => {
+    show(demoPrices('DEMOA', { actions: [{ date: '2025-08-26', factor: '0.5' }] }));
+    const c = await card();
+    expect(
+      c.getByText('26 Aug 2025: bonus issue or split, factor 0.5; earlier prices adjusted'),
+    ).toBeInTheDocument();
+  });
+
+  it('lists no corporate actions when there are none', async () => {
+    show();
+    const c = await card();
+    expect(c.queryByText(/bonus issue or split/)).toBeNull();
+  });
+
+  it('links the latest price file with a citation chip', async () => {
+    show();
+    const c = await card();
+    const chip = await c.findByRole('link', { name: /BSE daily price file · 28 Sep 2026/ });
+    expect(chip).toHaveAttribute('href', expect.stringContaining('https://www.bseindia.com/'));
+    expect(chip).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('says the prices are end of day and not advice, and uses no advice words', async () => {
+    show();
+    await card();
+    const region = screen.getByRole('region', { name: 'Share price' });
+    expect(region).toHaveTextContent(
+      "End-of-day prices from BSE's daily price files. Not live, not investment advice.",
+    );
+    const words = (region.textContent ?? '').replace(/not live/gi, '');
+    expect(words).not.toMatch(/\b(buy|sell|live|recommend\w*|should)\b/i);
+  });
+
+  it('says prices are not loaded yet, with no number, when there are none', async () => {
+    show(noPrices('DEMOA'));
+    const c = await card();
+    expect(await c.findByText('Prices not loaded yet')).toBeInTheDocument();
+    expect(c.queryByRole('img')).toBeNull();
+    expect(c.queryByText(/₹/)).toBeNull();
+  });
+
+  it('shows a short message, and the rest of the page, when the prices cannot load', async () => {
+    const api = installFakeApi({ insights: { DEMOA: demoInsights() } });
+    api.failWith('GET /api/v1/stocks/DEMOA/prices', 500);
+    render(<StockView />);
+    const c = await card();
+    expect(await c.findByText(/couldn't load the share price/i)).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Key facts' })).toBeInTheDocument();
+  });
+
+  it('sends the visitor to sign in when the prices call says the session ended', async () => {
+    const api = installFakeApi({ insights: { DEMOA: demoInsights() } });
+    api.failWith('GET /api/v1/stocks/DEMOA/prices', 401);
+    render(<StockView />);
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
   });
 });

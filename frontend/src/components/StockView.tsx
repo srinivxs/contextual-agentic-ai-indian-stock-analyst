@@ -12,8 +12,10 @@ import {
   RecentEvents,
   RecentSentiment,
 } from '@/components/InsightSections';
+import { PriceSection, type PriceState } from '@/components/PriceSection';
 import { ApiError } from '@/lib/api';
 import { getInsights, isTickerSymbol, type StockInsights } from '@/lib/insights';
+import { getPrices } from '@/lib/prices';
 import { signOut, useMe } from '@/lib/session';
 
 const LOAD_FAILED = "We couldn't load the key facts. Reload the page to try again.";
@@ -47,6 +49,13 @@ export function StockView() {
   // Kept together with the stock it belongs to, so a result for another stock counts as loading.
   const [result, setResult] = useState<{ symbol: string; outcome: Outcome } | null>(null);
   const outcome = result !== null && result.symbol === symbol ? result.outcome : null;
+  const [priceResult, setPriceResult] = useState<{ symbol: string; state: PriceState } | null>(
+    null,
+  );
+  const priceState: PriceState =
+    priceResult !== null && priceResult.symbol === symbol
+      ? priceResult.state
+      : { phase: 'loading' };
   const signedIn = me.status === 'signed-in';
 
   useEffect(() => {
@@ -69,6 +78,25 @@ export function StockView() {
         } else {
           setResult({ symbol, outcome: { phase: 'problem' } });
         }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn, symbol, router]);
+
+  // The price card loads on its own: a failure here never hides the key facts, and the reverse.
+  useEffect(() => {
+    if (!signedIn || symbol === null) return;
+    let cancelled = false;
+    getPrices(symbol).then(
+      (prices) => {
+        if (!cancelled) setPriceResult({ symbol, state: { phase: 'ready', prices } });
+      },
+      (error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 401) router.replace('/');
+        else setPriceResult({ symbol, state: { phase: 'problem' } });
       },
     );
     return () => {
@@ -134,6 +162,9 @@ export function StockView() {
         <p role="status" className="muted">
           Loading key facts…
         </p>
+      )}
+      {outcome?.phase !== 'problem' && (
+        <PriceSection state={priceState} name={insights?.name ?? symbol} />
       )}
       {insights && (
         <>

@@ -28,8 +28,8 @@ from app.memory.vocabulary import StoredPreference
 router = APIRouter(prefix="/api/v1", tags=["match"])
 
 DISCLAIMER = (
-    "Not investment advice. The rules compare stored figures with your stated preferences; "
-    "share prices are not used."
+    "Not investment advice. The rules compare stored figures and end-of-day share prices with "
+    "your stated preferences."
 )
 
 

@@ -126,8 +126,8 @@ async def test_the_json_shape(
             }
         ],
         "disclaimer": (
-            "Not investment advice. The rules compare stored figures with your stated "
-            "preferences; share prices are not used."
+            "Not investment advice. The rules compare stored figures and end-of-day share "
+            "prices with your stated preferences."
         ),
     }
 

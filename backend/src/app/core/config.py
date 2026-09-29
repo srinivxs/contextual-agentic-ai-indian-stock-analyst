@@ -115,6 +115,17 @@ class CommonSettings(BaseSettings):
     # How often the worker queues a poll. 15 minutes is the floor: it is a public site.
     feed_poll_minutes: int = Field(default=60, ge=15, le=1440)
 
+    # --- share prices (ADR 025) ----------------------------------------------------------------
+    # Off unless switched on: only then does the worker fetch BSE's daily price files.
+    prices_enabled: bool = False
+    # How many days back from today to fill in (one file per trading day).
+    prices_history_days: int = Field(default=365, ge=30, le=1100)
+    # BSE answers 406 to requests a few seconds apart, so a run fetches a few files, slowly.
+    prices_per_run: int = Field(default=12, ge=1, le=50)
+    prices_pause_seconds: float = Field(default=20, ge=0, le=120)
+    # How often the worker queues a run (one per time slot; the next run continues the work).
+    prices_run_minutes: int = Field(default=5, ge=1, le=1440)
+
     @field_validator("database_url")
     @classmethod
     def _require_the_asyncpg_driver(cls, value: SecretStr) -> SecretStr:

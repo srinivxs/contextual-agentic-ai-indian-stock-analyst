@@ -6,7 +6,7 @@ StoredFact / StoredEvent: the plain row app/derived.py computes with, plus the c
 app/insights.py shows. Plain SQL, one short transaction owned by the caller.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.derived import EventRow, FactRow, Source
 from app.insights import Citation, StoredEvent, StoredFact, filing_citation, screener_citation
+from app.prices.model import DailyPrice
+from app.prices.store import load_prices
 from app.retrieval import filing_date
 
 
@@ -26,6 +28,7 @@ class StockRows:
     is_financial: bool
     facts: list[StoredFact]
     events: list[StoredEvent]
+    prices: list[DailyPrice] = field(default_factory=list)  # oldest first (ADR 025)
 
 
 _STOCK = text("SELECT id, symbol, name, is_financial FROM stocks WHERE symbol = :symbol")
@@ -109,10 +112,11 @@ def _stored_event(row: Row[Any]) -> StoredEvent:
 
 
 async def load_stock(db: AsyncSession, symbol: str) -> StockRows | None:
-    """The stock and its stored facts and events; None for an unknown symbol."""
+    """The stock with its stored facts, events and prices; None for an unknown symbol."""
     stock = (await db.execute(_STOCK, {"symbol": symbol})).one_or_none()
     if stock is None:
         return None
     facts = [_stored_fact(row) for row in await db.execute(_FACTS, {"stock": stock.id})]
     events = [_stored_event(row) for row in await db.execute(_EVENTS, {"stock": stock.id})]
-    return StockRows(stock.id, stock.symbol, stock.name, stock.is_financial, facts, events)
+    prices = await load_prices(db, stock.id)
+    return StockRows(stock.id, stock.symbol, stock.name, stock.is_financial, facts, events, prices)

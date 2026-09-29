@@ -22,22 +22,32 @@ const LOAD_FAILED = "We couldn't load the match. Reload the page to try again.";
 const EMPTY_PROFILE =
   "Tell the chat your preferences first, for example: I'm conservative, dividend-focused and I avoid high debt.";
 
-/** Preferences no stock can be judged on (they need share prices): shown once, above the cards. */
-const PROFILE_WIDE = new Set(['value', 'horizon']);
 const NOTHING_TO_CHECK =
-  "Nothing in your profile can be checked against the filings yet. Value and a time horizon need share prices, which this app doesn't have. Add a debt or risk preference, or a dividend, growth, quality or momentum style, in the chat or its profile panel.";
+  'Nothing in your profile can be checked against the stored figures and prices yet. Add a debt or risk preference, or a dividend, growth, quality or momentum style, in the chat or its profile panel.';
 
-/** The stocks without the profile-wide reasons, and those reasons once each. */
+/** A reason that cannot be judged for any stock, in the same words: said once, above the cards. */
+function sharedKey(reason: MatchReason): string | null {
+  return reason.outcome === 'not_assessable' ? `${reason.criterion}|${reason.text}` : null;
+}
+
+/** The stocks without the reasons every one of them shares as "can't be judged", and those once. */
 export function splitProfileWide(stocks: StockMatch[]): {
   cards: StockMatch[];
   wide: MatchReason[];
 } {
+  const perStock = stocks.map(
+    (stock) => new Set(stock.reasons.map(sharedKey).filter((key) => key !== null)),
+  );
+  const isShared = (reason: MatchReason) => {
+    const key = sharedKey(reason);
+    return key !== null && perStock.length > 0 && perStock.every((keys) => keys.has(key));
+  };
   const wide = new Map<string, MatchReason>();
   const cards = stocks.map((stock) => ({
     ...stock,
     reasons: stock.reasons.filter((reason) => {
-      if (!PROFILE_WIDE.has(reason.criterion)) return true;
-      wide.set(reason.criterion, reason);
+      if (!isShared(reason)) return true;
+      wide.set(sharedKey(reason) ?? '', reason);
       return false;
     }),
   }));

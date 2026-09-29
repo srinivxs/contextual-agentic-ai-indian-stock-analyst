@@ -39,7 +39,7 @@ async def test_the_migration_is_at_head(admin_engine: AsyncEngine) -> None:
         version = (
             await connection.execute(text("SELECT version_num FROM alembic_version"))
         ).scalar()
-    assert version == "0010"  # the head moves on as later phases add migrations
+    assert version == "0011"  # the head moves on as later phases add migrations
 
 
 async def test_users_has_the_agreed_columns_and_only_those(admin_engine: AsyncEngine) -> None:
@@ -205,6 +205,6 @@ async def test_no_other_application_tables_exist_yet(admin_engine: AsyncEngine) 
     assert tables == [
         "alembic_version", "chunks", "conversations", "document_pages", "documents",
         "embeddings", "events", "extraction_calls", "facts", "feed_items",
-        "feed_state", "investor_profiles", "jobs", "messages", "sessions", "stocks",
-        "user_follows", "users",
+        "feed_state", "investor_profiles", "jobs", "messages", "price_days", "prices",
+        "sessions", "stocks", "user_follows", "users",
     ]  # fmt: skip

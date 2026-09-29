@@ -45,6 +45,8 @@ from app.derived import Sentiment
 from app.extraction_prompts import document_block
 from app.insights import DerivedView, KeyFact, StoredEvent, filing_citation, recent_events
 from app.matching.model import StockMatch
+from app.prices.derived import PriceSnapshot, PriceValue, price_citation
+from app.prices.model import PRICE_SOURCE_LABEL, DailyPrice
 from app.retrieval import Result, excerpt
 
 PASSAGE_CHARS = 600  # the model reads this much of a passage; the source shows EXCERPT_CHARS
@@ -245,6 +247,73 @@ def _event_item(number: int, symbol: str, event: StoredEvent) -> EvidenceItem:
     )
 
 
+# --- share prices (ADR 025) -----------------------------------------------------------------------
+
+_RETURN_WORDS = {"1m": "1 month", "3m": "3 months", "6m": "6 months", "1y": "1 year"}
+_NO_HISTORY = "not enough history"
+
+
+def _price_fact(symbol: str, day: DailyPrice, change: Decimal | None) -> EvidenceItem:
+    """The latest close, a stored figure cited to that day's BSE file (numbered with the facts)."""
+    citation = price_citation(day.trade_date)
+    close = format_amount(day.close, "INR_PER_SHARE")
+    previous = format_amount(day.prev_close, "INR_PER_SHARE")
+    text = (
+        f"{symbol} · Share price · {day.trade_date:%d %b %Y} · close {close}, previous close "
+        f"{previous}, change {_plain(change or Decimal(0))}% · {PRICE_SOURCE_LABEL}"
+    )
+    return EvidenceItem(
+        id="F0",
+        kind="fact",
+        symbol=symbol,
+        text=text,
+        source="filing",
+        label=citation.label,
+        url=citation.url,
+        quote=None,
+        metric="share_price",
+        period=day.trade_date.isoformat(),
+    )
+
+
+def _computed(symbol: str, label: str, shown: str, reason: str | None = None) -> EvidenceItem:
+    return EvidenceItem(
+        id="D0",
+        kind="derived",
+        symbol=symbol,
+        text=f"{symbol} · {label} · {shown}" + (f" · {reason}" if reason else ""),
+        source="derived",
+        label=label,
+        url=None,
+        quote=reason,
+    )
+
+
+def _ratio(symbol: str, label: str, value: PriceValue, unit: str = "") -> EvidenceItem:
+    if value.status == "ok" and value.value is not None:
+        return _computed(symbol, label, f"{_plain(value.value)}{unit}", value.reason)
+    return _computed(symbol, label, "not assessable", value.reason)
+
+
+def _price_views(symbol: str, snap: PriceSnapshot) -> list[EvidenceItem]:
+    if snap.latest is None:
+        shown = "not in the data yet (end-of-day prices from BSE's daily files)"
+        return [_computed(symbol, "Share price", shown)]
+    returns = " · ".join(
+        f"{_RETURN_WORDS[key]} {_plain(value)}%"
+        if value is not None
+        else f"{_RETURN_WORDS[key]} {_NO_HISTORY}"
+        for key, value in snap.returns.items()
+    )
+    volatility = f"{_plain(snap.volatility)}%" if snap.volatility is not None else _NO_HISTORY
+    return [
+        _computed(symbol, "Share price returns, adjusted for bonus issues and splits", returns),
+        _computed(symbol, "One-year share price volatility", volatility),
+        _ratio(symbol, "Price to earnings", snap.pe),
+        _ratio(symbol, "Dividend yield", snap.dividend_yield, "%"),
+    ]
+
+
 _STATUS_WORDS = {
     "match": "match",
     "partial": "partial match",
@@ -279,6 +348,7 @@ def build_evidence(
     events: dict[str, list[StoredEvent]] | None = None,
     sentiment: dict[str, Sentiment] | None = None,
     matches: list[StockMatch] | None = None,
+    prices: dict[str, PriceSnapshot] | None = None,
     max_facts: int = 30,
     max_passages: int = 8,
     max_events: int = 10,
@@ -310,12 +380,26 @@ def build_evidence(
     ]
     chosen_events = _in_turn(event_groups, max_events) if news else []
 
+    snaps = [
+        (s, (prices or {})[s])
+        for s in question.symbols
+        if question.wants_price and s in (prices or {})
+    ]
+    fact_items = [
+        *(_fact_item(0, symbol, f) for symbol, f in chosen_facts),
+        *(
+            _price_fact(symbol, snap.latest, snap.day_change)
+            for symbol, snap in snaps
+            if snap.latest is not None
+        ),
+    ]
     derived_items = [
         *(_derived_item(0, symbol, v, facts.get(symbol, [])) for symbol, v in chosen_views),
         *(_sentiment_item(0, symbol, mood) for symbol, mood in moods),
+        *(item for symbol, snap in snaps for item in _price_views(symbol, snap)),
     ]
     return [
-        *(_fact_item(n, symbol, f) for n, (symbol, f) in enumerate(chosen_facts, start=1)),
+        *(replace(item, id=f"F{n}") for n, item in enumerate(fact_items, start=1)),
         *(replace(item, id=f"D{n}") for n, item in enumerate(derived_items, start=1)),
         *(_match_item(n, m) for n, m in enumerate(chosen_matches, start=1)),
         *(_passage_item(n, r) for n, r in enumerate(chosen_passages, start=1)),

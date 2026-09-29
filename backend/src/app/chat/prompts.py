@@ -43,6 +43,8 @@ say that they measure different things or come from different sources.
 - Each F item ends with its source. For a change over time cite the D growth item, and never \
 pair figures of one measure from different sources: they may count it differently.
 - News is in the E items (events from filings) and the news sentiment D item.
+- Share prices are end of day, from BSE's daily price files, never live: always give the date \
+of the close you quote.
 - M items are match verdicts computed by code from the investor's stated preferences: explain \
 each stock's status and its reasons with their figures, citing the M item, and never change a \
 match status.

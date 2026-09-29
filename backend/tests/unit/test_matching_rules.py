@@ -8,9 +8,11 @@ Three synthetic stocks (never tied to a real company) cover the interesting shap
     DEMOBARE  DemoBare   almost no data
 
 The golden tests pin each profile's status per stock; the rest test one rule edge at a time.
+DEMO has a steady rising synthetic price, DEMOBANK a falling and jumpy one; DEMOGROW and DEMOBARE
+have no prices at all (ADR 025: their momentum falls back to earnings).
 """
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -21,6 +23,7 @@ from app.insights_store import StockRows
 from app.matching.model import Reason, StockMatch
 from app.matching.rules import match_all, match_stock
 from app.memory.vocabulary import Field, StoredPreference
+from app.prices.model import DailyPrice
 
 TODAY = date(2026, 9, 29)
 BSE = "https://www.bseindia.com/xml-data/corpfiling/AttachHis/demo.pdf"
@@ -89,14 +92,57 @@ def event(event_id: int, day: date, sentiment: str, impact: str = "high") -> Sto
     )
 
 
+LAST_DAY = date(2026, 9, 28)  # the newest synthetic price file
+
+
+def prices(
+    first: str,
+    last: str,
+    *,
+    days: int = 400,
+    zigzag: str = "0",
+    end: date = LAST_DAY,
+) -> list[DailyPrice]:
+    """One synthetic row per calendar day, closes rising in a straight line from first to last;
+    a zigzag alternates each close up and down by that fraction. prev_close is the day before's
+    close, so there is no corporate action."""
+    low, high, wiggle = Decimal(first), Decimal(last), Decimal(zigzag)
+    closes = []
+    for index in range(days):
+        line = low + (high - low) * index / (days - 1)
+        closes.append((line * (1 + wiggle * (1 if index % 2 else -1))).quantize(Decimal("0.01")))
+    rows = []
+    for index, close in enumerate(closes):
+        rows.append(
+            DailyPrice(
+                bse_code="500999",
+                trade_date=end - timedelta(days=days - 1 - index),
+                open=close,
+                high=close,
+                low=close,
+                close=close,
+                prev_close=closes[index - 1] if index else close,
+                volume=1000,
+            )
+        )
+    return rows
+
+
+def eps(value: str, period: str = "FY2026") -> StoredFact:
+    return fact(8, "eps_basic", period, value, unit="INR_PER_SHARE")
+
+
 def stock(
     symbol: str,
     facts: list[StoredFact],
     *,
     financial: bool = False,
     events: list[StoredEvent] | None = None,
+    share_prices: list[DailyPrice] | None = None,
 ) -> StockRows:
-    return StockRows(1, symbol, f"Name {symbol}", financial, facts, events or [])
+    return StockRows(
+        1, symbol, f"Name {symbol}", financial, facts, events or [], share_prices or []
+    )
 
 
 def profile(**fields: str | tuple[str, ...]) -> list[StoredPreference]:
@@ -122,8 +168,14 @@ def outcomes(match: StockMatch) -> dict[str, str]:
     return {r.criterion: r.outcome for r in match.reasons}
 
 
-def run(prefs: list[StoredPreference], *facts: StoredFact, financial: bool = False) -> StockMatch:
-    return match_stock(prefs, stock("DEMOX", list(facts), financial=financial), today=TODAY)
+def run(
+    prefs: list[StoredPreference],
+    *facts: StoredFact,
+    financial: bool = False,
+    share_prices: list[DailyPrice] | None = None,
+) -> StockMatch:
+    rows = stock("DEMOX", list(facts), financial=financial, share_prices=share_prices)
+    return match_stock(prefs, rows, today=TODAY)
 
 
 # --- the synthetic stocks -------------------------------------------------------------------------
@@ -141,7 +193,9 @@ def demo_stocks() -> list[StockRows]:
             fact(20, "net_profit", "FY2024", "48"),  # growth 4.2% then 4%: slowing
             dividend("5"),
             roe("12"),
+            eps("8"),  # a close of 120 makes P/E 15
         ],
+        share_prices=prices("100", "120"),  # steady, up over six months
     )
     demo_bank = stock(
         "DEMOBANK",
@@ -150,8 +204,10 @@ def demo_stocks() -> list[StockRows]:
             *pair(7, "net_profit", "40", "44"),
             dividend("0"),
             roe("16"),
+            eps("5"),  # a close of 150 makes P/E 30
         ],
         financial=True,
+        share_prices=prices("200", "150", zigzag="0.015"),  # falling and jumpy
     )
     demo_grow = stock(
         "DEMOGROW",
@@ -190,7 +246,7 @@ GOLDEN = [
     ),
     pytest.param(
         profile(investment_style=("value", "momentum"), other_preferences="long_term"),
-        ["partial", "not_enough_data", "match", "not_enough_data"],  # momentum from earnings
+        ["match", "partial", "match", "not_enough_data"],
         id="value-momentum-long-term",
     ),
     pytest.param(
@@ -229,7 +285,7 @@ def test_golden_conservative_avoid_debt_income_reasons() -> None:
     )
     assert only(demo, "dividend").text == (
         "The latest dividend is ₹5 per share, so the company pays one. "
-        "Without share prices this judges whether a dividend is paid, not its yield."
+        "This judges whether a dividend is paid, not its yield."
     )
     assert (
         only(grow, "debt").text
@@ -266,19 +322,51 @@ def test_golden_quality_text_and_citation() -> None:
     assert [c.quote for c in reason.citations] == ["return_on_equity 12"]
 
 
-def test_golden_unassessable_styles_and_horizon() -> None:
+def test_golden_price_styles_and_a_short_horizon() -> None:
     prefs = profile(investment_style=("value", "momentum"), other_preferences="short_term")
-    demo, *_ = match_all(prefs, demo_stocks(), today=TODAY)
-    assert [(r.criterion, r.outcome) for r in demo.reasons] == [
-        ("value", "not_assessable"),
-        ("momentum", "miss"),
-        ("horizon", "not_assessable"),
+    demo, bank, grow, bare = match_all(prefs, demo_stocks(), today=TODAY)
+    assert outcomes(demo) == {"value": "pass", "momentum": "pass", "horizon": "pass"}
+    assert outcomes(bank) == {"value": "miss", "momentum": "miss", "horizon": "miss"}
+    # no prices at all: value cannot be judged, momentum falls back to earnings, no swings known
+    assert outcomes(grow) == {"value": "not_assessable", "momentum": "pass", "horizon": "no_data"}
+    assert outcomes(bare) == {
+        "value": "not_assessable",
+        "momentum": "no_data",
+        "horizon": "no_data",
+    }
+    assert [m.status for m in (demo, bank, grow, bare)] == [
+        "match",
+        "partial",
+        "partial",
+        "not_enough_data",
     ]
-    assert only(demo, "value").text == "Value needs share prices, which this app does not have."
     assert only(demo, "horizon").preference == "short_term"
-    assert only(demo, "horizon").text == (
-        "The app has no price history, so a horizon does not change the result."
+    assert only(grow, "value").text == "Value needs share prices, which are not in the data yet."
+
+
+def test_golden_price_texts_and_citations() -> None:
+    demo, bank, *_ = match_all(
+        profile(investment_style=("value", "momentum"), other_preferences="short_term"),
+        demo_stocks(),
+        today=TODAY,
     )
+    bse = "BSE daily price file · 28 Sep 2026"
+    assert only(demo, "value").text == (
+        "Price to earnings is 15, at or below the 20 wanted for a value style. Share price "
+        "₹120 (28 Sep 2026) divided by basic EPS of ₹8 for FY2026 (latest full year on record)."
+    )
+    assert only(demo, "value").citations[0].label == bse
+    assert len(only(demo, "value").citations) == 2
+    assert only(bank, "value").text.startswith(
+        "Price to earnings is 30.5, above the 20 wanted for a value style."
+    )
+    assert only(demo, "momentum").text.endswith("(to 28 Sep 2026), from BSE's daily price files.")
+    assert only(demo, "momentum").text.startswith("Share price is up ")
+    assert only(bank, "momentum").text.startswith("Share price is down ")
+    assert [c.label for c in only(demo, "momentum").citations] == [bse]
+    assert only(demo, "horizon").text.startswith("Share price swings over the last year are ")
+    assert "at or below the 30% that suits a short holding." in only(demo, "horizon").text
+    assert "above the 30% that suits a short holding." in only(bank, "horizon").text
 
 
 def test_horizon_long_term_is_named_when_both_are_given() -> None:
@@ -402,7 +490,7 @@ def test_earnings_momentum_passes_when_profit_growth_speeds_up() -> None:
     assert reason.outcome == "pass"
     assert reason.text == (
         "Net profit changed by 30% in FY2026 against 11.1% in FY2025: earnings are speeding "
-        "up (earnings momentum; the app has no share prices)."
+        "up (earnings momentum, used because six months of share prices are not in the data)."
     )
     assert [c.label for c in reason.citations] == [
         "Annual report · Annual Report 2024 · p.21",
@@ -413,23 +501,27 @@ def test_earnings_momentum_passes_when_profit_growth_speeds_up() -> None:
 
 
 def test_earnings_momentum_misses_when_profit_growth_slows() -> None:
-    demo, *_ = match_all(profile(investment_style="momentum"), demo_stocks(), today=TODAY)
-    reason = only(demo, "momentum")
+    demo_facts = [
+        *pair(7, "net_profit", "50", "52"),
+        fact(20, "net_profit", "FY2024", "48"),  # growth 4.2% then 4%: slowing
+    ]
+    match = run(profile(investment_style="momentum"), *demo_facts)
+    reason = only(match, "momentum")
     assert reason.outcome == "miss"
     assert reason.text == (
         "Net profit changed by 4% in FY2026 against 4.2% in FY2025: earnings are not speeding "
-        "up (earnings momentum; the app has no share prices)."
+        "up (earnings momentum, used because six months of share prices are not in the data)."
     )
-    assert demo.status == "partial"
+    assert match.status == "partial"
 
 
-def test_earnings_momentum_needs_three_years_in_a_row() -> None:
+def test_momentum_needs_prices_or_three_years_in_a_row() -> None:
     match = run(profile(investment_style="momentum"), *pair(1, "net_profit", "10", "12"))
     reason = only(match, "momentum")
     assert reason.outcome == "no_data"
     assert reason.text == (
-        "Earnings momentum needs three years of net profit in a row from one source, which "
-        "are not in the data."
+        "Momentum needs six months of share prices or three years of net profit in a row "
+        "from one source, which are not in the data."
     )
     assert match.status == "not_enough_data"
 
@@ -659,3 +751,165 @@ def test_reasons_come_in_criterion_order() -> None:
         "momentum",
         "horizon",
     ]
+
+
+# --- prices (ADR 025): momentum, value and horizon ------------------------------------------------
+
+MOMENTUM = profile(investment_style="momentum")
+VALUE = profile(investment_style="value")
+SHORT = profile(other_preferences="short_term")
+LONG = profile(other_preferences="long_term")
+
+
+def test_price_momentum_passes_at_exactly_zero_percent() -> None:
+    reason = only(run(MOMENTUM, share_prices=prices("100", "100")), "momentum")
+    assert reason.outcome == "pass"
+    assert reason.text.startswith("Share price is up 0% over six months")
+
+
+def test_price_momentum_misses_when_the_price_fell() -> None:
+    reason = only(run(MOMENTUM, share_prices=prices("100", "90")), "momentum")
+    assert reason.outcome == "miss"
+    assert reason.text.startswith("Share price is down ")
+    assert reason.hard is False
+
+
+def test_price_momentum_wins_over_earnings_momentum() -> None:
+    slowing = [*pair(7, "net_profit", "50", "52"), fact(20, "net_profit", "FY2024", "48")]
+    reason = only(run(MOMENTUM, *slowing, share_prices=prices("100", "130")), "momentum")
+    assert reason.outcome == "pass"
+    assert "Share price" in reason.text
+
+
+def test_short_price_history_falls_back_to_earnings_momentum() -> None:
+    speeding = [*pair(7, "net_profit", "10", "13"), fact(20, "net_profit", "FY2024", "9")]
+    reason = only(run(MOMENTUM, *speeding, share_prices=prices("100", "90", days=150)), "momentum")
+    assert reason.outcome == "pass"  # the price fell but is not used
+    assert "earnings momentum, used because six months of share prices" in reason.text
+
+
+def test_history_just_short_of_six_months_falls_back() -> None:
+    # the start (28 Mar 2026) is the earliest date needed; 184 rows reach only 29 Mar
+    assert only(run(MOMENTUM, share_prices=prices("100", "120", days=184)), "momentum").outcome == (
+        "no_data"
+    )
+    assert only(run(MOMENTUM, share_prices=prices("100", "120", days=185)), "momentum").outcome == (
+        "pass"
+    )
+
+
+def test_price_momentum_is_measured_across_a_bonus_without_a_fake_crash() -> None:
+    rows = prices("100", "100")
+    for index in range(200, len(rows)):  # a 1:1 bonus: the price halves at row 200
+        row = rows[index]
+        half = row.close / 2
+        rows[index] = DailyPrice(
+            row.bse_code,
+            row.trade_date,
+            half,
+            half,
+            half,
+            half,
+            half,
+            row.volume,
+        )
+    reason = only(run(MOMENTUM, share_prices=rows), "momentum")
+    assert reason.outcome == "pass"
+    assert reason.text.startswith("Share price is up 0% ")
+
+
+@pytest.mark.parametrize(
+    ("last", "eps_value", "outcome"),
+    [("200", "10", "pass"), ("201", "10", "miss"), ("100", "5", "pass"), ("300", "10", "miss")],
+)
+def test_value_needs_a_pe_of_at_most_twenty(last: str, eps_value: str, outcome: str) -> None:
+    match = run(VALUE, eps(eps_value), share_prices=prices(last, last))
+    reason = only(match, "value")
+    assert (reason.outcome, reason.hard, reason.preference) == (outcome, False, "value")
+
+
+def test_value_without_eps_is_no_data() -> None:
+    match = run(VALUE, roe("10"), share_prices=prices("100", "100"))
+    reason = only(match, "value")
+    assert reason.outcome == "no_data"
+    assert reason.text == "Price to earnings is not in the data: no yearly basic EPS is on record."
+    assert [c.label for c in reason.citations] == ["BSE daily price file · 28 Sep 2026"]
+
+
+def test_value_without_prices_is_not_assessable_and_not_judged() -> None:
+    match = run(VALUE, eps("10"))
+    assert only(match, "value").outcome == "not_assessable"
+    assert match.status == "not_enough_data"
+
+
+def test_value_with_a_loss_is_not_assessable() -> None:
+    reason = only(run(VALUE, eps("-2"), share_prices=prices("100", "100")), "value")
+    assert reason.outcome == "not_assessable"
+    assert "zero or negative" in reason.text
+
+
+def test_value_after_a_bonus_since_the_eps_year_is_not_assessable() -> None:
+    rows = prices("100", "100", days=400)
+    # a 1:1 bonus on 1 May 2026, after FY2026 (year end 31 Mar 2026)
+    index = next(i for i, row in enumerate(rows) if row.trade_date == date(2026, 5, 1))
+    for i in range(index, len(rows)):
+        row = rows[i]
+        half = Decimal(50)
+        rows[i] = DailyPrice(row.bse_code, row.trade_date, half, half, half, half, half, 1)
+    reason = only(run(VALUE, eps("10"), share_prices=rows), "value")
+    assert reason.outcome == "not_assessable"
+    assert "bonus issue or split on 1 May 2026" in reason.text
+    assert len(reason.citations) == 2  # the price and the EPS
+
+
+def test_value_with_a_bonus_before_the_eps_year_end_is_judged() -> None:
+    rows = prices("100", "100", days=400)
+    index = next(i for i, row in enumerate(rows) if row.trade_date == date(2026, 2, 1))
+    for i in range(index, len(rows)):
+        row = rows[i]
+        half = Decimal(50)
+        rows[i] = DailyPrice(row.bse_code, row.trade_date, half, half, half, half, half, 1)
+    assert only(run(VALUE, eps("10"), share_prices=rows), "value").outcome == "pass"
+
+
+def test_short_term_needs_a_year_of_swings_of_at_most_thirty_percent() -> None:
+    steady = only(run(SHORT, share_prices=prices("100", "110")), "horizon")
+    assert (steady.outcome, steady.preference) == ("pass", "short_term")
+    jumpy = only(run(SHORT, share_prices=prices("100", "110", zigzag="0.02")), "horizon")
+    assert jumpy.outcome == "miss"
+
+
+def test_short_term_without_enough_history_is_no_data() -> None:
+    assert only(run(SHORT, share_prices=prices("100", "110", days=50)), "horizon").outcome == (
+        "no_data"
+    )
+    assert only(run(SHORT), "horizon").outcome == "no_data"
+
+
+def test_long_term_passes_when_net_profit_did_not_fall() -> None:
+    rising = [*pair(7, "net_profit", "50", "50"), fact(20, "net_profit", "FY2024", "48")]
+    reason = only(run(LONG, *rising), "horizon")
+    assert (reason.outcome, reason.preference) == ("pass", "long_term")
+    assert reason.text == (
+        "Net profit did not fall over three years "
+        "(FY2024 ₹48 crore, FY2025 ₹50 crore, FY2026 ₹50 crore)."
+    )
+    assert len(reason.citations) == 3
+
+
+def test_long_term_misses_when_a_year_fell() -> None:
+    dipping = [*pair(7, "net_profit", "50", "60"), fact(20, "net_profit", "FY2024", "55")]
+    reason = only(run(LONG, *dipping), "horizon")
+    assert reason.outcome == "miss"
+    assert reason.text.startswith("Net profit fell in at least one year over three years")
+
+
+def test_long_term_without_a_three_year_chain_is_no_data() -> None:
+    reason = only(run(LONG, *pair(7, "net_profit", "50", "60")), "horizon")
+    assert reason.outcome == "no_data"
+    assert match_stock(LONG, stock("DEMOX", []), today=TODAY).status == "not_enough_data"
+
+
+def test_long_term_is_used_when_both_horizons_are_asked() -> None:
+    both = profile(other_preferences=("short_term", "long_term"))
+    assert only(run(both, share_prices=prices("100", "110")), "horizon").preference == "long_term"

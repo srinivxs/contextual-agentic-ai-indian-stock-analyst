@@ -188,6 +188,7 @@ def test_the_worker_gets_the_runtime_role_and_no_login_secrets(
         "EXTRACTION_BUDGET_USD",
         "FEED_MODE",
         "FEED_POLL_MINUTES",
+        "PRICES_ENABLED",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
@@ -257,6 +258,14 @@ def test_the_rbi_feed_defaults_to_the_offline_fixtures_and_only_the_worker_polls
     api = service(model, "api")["environment"]
     assert "FEED_MODE" not in api
     assert "FEED_POLL_MINUTES" not in api
+
+
+def test_share_prices_are_off_unless_switched_on_and_only_the_worker_fetches_them(
+    model: dict[str, Any],
+) -> None:
+    """ADR 025: a plain `compose up` never reaches bseindia.com; the api has no such switch."""
+    assert service(model, "worker")["environment"]["PRICES_ENABLED"] == "false"
+    assert "PRICES_ENABLED" not in service(model, "api")["environment"]
 
 
 def test_the_chat_is_off_unless_switched_on(model: dict[str, Any]) -> None:
