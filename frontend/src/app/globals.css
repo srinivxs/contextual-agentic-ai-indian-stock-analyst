@@ -11,6 +11,7 @@
  * Radii: 20px for the hero, 14px for cards, 10px for controls, 999px for chips.
  * Every figure shown carries its source.
  */
+
 :root {
   --bg: #f7f7f8;
   --surface: #ffffff;
@@ -465,6 +466,7 @@ a {
 }
 
 /* --- Stocks, stock detail, documents, search, sign-in ----------------------------------------- */
+
 :root {
   --pill-bg: #f1f1f3;
   --pill-text: #3f3f46;
@@ -501,6 +503,7 @@ a {
 }
 
 /* A softer button: the "already done" or "go elsewhere" action beside a primary one. */
+
 .button.soft {
   background: var(--accent-soft);
   border-color: transparent;
@@ -525,6 +528,7 @@ a {
 }
 
 /* The watchlist: a monogram, the ticker over the name, figures of record on the right. */
+
 .watchlist {
   padding: 0.25rem 1.25rem 1.25rem;
   background: var(--surface);
@@ -614,6 +618,7 @@ a {
 }
 
 /* The stock page: a header card, then figure cards, sentiment, events and search. */
+
 .stock-head {
   display: flex;
   flex-wrap: wrap;
@@ -764,6 +769,7 @@ a {
 }
 
 /* A source: a small quiet pill, a link when it is safe to be one. */
+
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -868,6 +874,7 @@ a.chip:hover {
 }
 
 /* Kept for the Match page, which builds its cards from it. */
+
 .insight {
   margin-top: 1.25rem;
   padding: 1rem 1.25rem;
@@ -881,6 +888,7 @@ a.chip:hover {
 }
 
 /* Documents: the stock tabs as one segmented pill, then the rows. */
+
 .doc-card {
   margin-top: 1.25rem;
   padding: 1.25rem;
@@ -937,6 +945,7 @@ a.chip:hover {
 }
 
 /* "Last checked 14:05 (12 minutes ago)" on the left, the check button on the right. */
+
 .doc-freshness {
   display: flex;
   flex-wrap: wrap;
@@ -964,6 +973,7 @@ a.chip:hover {
 }
 
 /* Off because of the hourly limit, not because something is loading. */
+
 .doc-check .button:disabled {
   cursor: not-allowed;
 }
@@ -1048,6 +1058,7 @@ a.chip:hover {
 }
 
 /* Status pills carry a small dot; the word is what carries the meaning. */
+
 .doc-status .pill::before {
   content: '';
   display: inline-block;
@@ -1085,6 +1096,7 @@ a.chip:hover {
 }
 
 /* "Search the filings": one field, then the passages found, each under its filing and page. */
+
 .search {
   margin-bottom: 1.25rem;
 }
@@ -1146,6 +1158,7 @@ a.chip:hover {
 }
 
 /* Sign-in: one centred card. */
+
 .signin {
   display: grid;
   place-items: center;
@@ -1192,6 +1205,7 @@ a.chip:hover {
 
 /* Chat (P12): conversations on the left, the open one in a card, what is remembered on the right;
    one column on a small screen. */
+
 :root {
   --chat-bubble: #f1f1f3;
   --chat-mine: #e6e6ea;
@@ -1360,6 +1374,7 @@ a.chip:hover {
 }
 
 /* The user's questions sit on the right, in green; a question still waiting is faded. */
+
 .chat-message.user {
   display: flex;
   justify-content: flex-end;
@@ -1474,6 +1489,7 @@ a.chip:hover {
 }
 
 /* The input card: a large field and a round green send button. */
+
 .chat-form {
   display: flex;
   gap: 0.6rem;
@@ -1557,6 +1573,7 @@ a.chip:hover {
 }
 
 /* "Your investor profile": a round tinted icon, the field, its value on the right. */
+
 .memory-panel {
   min-width: 0;
   padding: 1.15rem 1.25rem;
@@ -1716,6 +1733,7 @@ a.chip:hover {
 }
 
 /* RBI press releases: the RBI marker on citation chips, and the feed list. */
+
 .chip-rbi {
   background: var(--accent-soft);
   border-color: var(--accent);
@@ -1751,6 +1769,7 @@ a.chip:hover {
 
 /* The Match page (P14): a card per stock, a status badge, and the reasons. Words carry the
    meaning; the dot and the marks only back them up. */
+
 .match-lede {
   margin-bottom: 1rem;
 }
@@ -1775,6 +1794,7 @@ a.chip:hover {
 }
 
 /* Preferences no stock can be judged on, shown once above the cards. */
+
 .match-note {
   margin-bottom: 1rem;
   padding: 0.85rem 1.1rem;
@@ -1921,6 +1941,7 @@ a.chip:hover {
 }
 
 /* Cautions sit apart, in a soft amber box; they never change the status. */
+
 .match-cautions {
   padding: 0.25rem 0.9rem;
   border: 1px solid var(--warm-border);
@@ -2196,7 +2217,7 @@ a.chip:hover {
 
 .home-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--home-gap);
 }
 
@@ -2244,12 +2265,6 @@ a.chip:hover {
   letter-spacing: -0.01em;
 }
 
-.home-big-text {
-  font-size: 1.02rem;
-  font-weight: 600;
-  color: var(--accent-strong);
-}
-
 .home-unit {
   color: var(--muted);
   font-size: 0.85rem;
@@ -2269,18 +2284,6 @@ a.chip:hover {
 }
 
 /* the three columns */
-
-.home-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: var(--home-gap);
-  align-items: start;
-}
-
-.home-side {
-  display: grid;
-  gap: var(--home-gap);
-}
 
 .home-list {
   margin: 0;
@@ -2371,223 +2374,11 @@ a.chip:hover {
 
 /* the chat card */
 
-.home-chat-intro {
-  display: flex;
-  gap: 0.7rem;
-  align-items: flex-start;
-}
-
-.home-avatar {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
-}
-
-.home-bubble {
-  padding: 0.8rem 1rem;
-  border-radius: 4px var(--radius-card) var(--radius-card) var(--radius-card);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  font-size: 0.9rem;
-}
-
-.home-bubble p {
-  margin: 0 0 0.3rem;
-}
-
-.home-bubble ul {
-  margin: 0.2rem 0 0;
-  padding-left: 1.1rem;
-}
-
-.home-bubble li + li {
-  margin-top: 0.2rem;
-}
-
-.home-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 1rem 0;
-  padding: 0;
-  list-style: none;
-}
-
-.home-chip {
-  display: inline-block;
-  padding: 0.3rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text);
-  font-size: 0.85rem;
-  text-decoration: none;
-}
-
-.home-chip:hover {
-  border-color: var(--accent);
-  color: var(--accent-strong);
-}
-
-.home-ask {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  padding: 0.35rem 0.35rem 0.35rem 1rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-}
-
-.home-ask:focus-within {
-  border-color: var(--accent);
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.home-ask input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-}
-
-.home-ask input:focus-visible {
-  outline: none;
-}
-
-.home-send {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 2.3rem;
-  height: 2.3rem;
-  border: 0;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
-  cursor: pointer;
-}
-
-.home-send:hover {
-  background: var(--accent-strong);
-}
-
 /* news and profile */
-
-.home-news {
-  display: flex;
-  gap: 0.75rem;
-  align-items: flex-start;
-  padding: 0.7rem 0;
-}
-
-.home-news .monogram {
-  flex: none;
-}
-
-.home-news-text {
-  display: grid;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
-.home-news-meta {
-  font-size: 0.76rem;
-}
-
-.home-news-title {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--text);
-  font-size: 0.9rem;
-  line-height: 1.35;
-  text-decoration: none;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-a.home-news-title:hover {
-  color: var(--accent-strong);
-  text-decoration: underline;
-}
-
-.home-note {
-  margin: 0.5rem 0 0;
-  font-size: 0.8rem;
-}
-
-.home-card-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.home-edit {
-  display: inline-flex;
-  gap: 0.3rem;
-  align-items: center;
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.home-edit:hover {
-  text-decoration: underline;
-}
-
-.home-profile-row {
-  display: flex;
-  gap: 0.7rem;
-  align-items: center;
-  padding: 0.6rem 0;
-  font-size: 0.9rem;
-}
-
-.home-icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-}
-
-.home-profile-name {
-  flex: 1;
-}
-
-.home-profile-value {
-  text-align: right;
-  font-weight: 550;
-}
 
 .home-foot {
   margin: 0;
   font-size: 0.82rem;
-}
-
-@media (max-width: 1180px) {
-  .home-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .home-columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .home-side {
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 820px) {
@@ -2596,13 +2387,6 @@ a.home-news-title:hover {
     padding: 1.4rem;
   }
 
-  .home-columns,
-  .home-side {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 520px) {
   .home-stats {
     grid-template-columns: minmax(0, 1fr);
   }

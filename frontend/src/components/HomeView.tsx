@@ -1,38 +1,18 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-  type ReactNode,
-} from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { AppShell } from '@/components/AppShell';
-import {
-  ClockIcon,
-  LeafIcon,
-  PencilIcon,
-  PlusIcon,
-  SendIcon,
-  ShieldIcon,
-  TargetIcon,
-  TrendIcon,
-} from '@/components/Icons';
+import { PlusIcon } from '@/components/Icons';
 import { Monogram } from '@/components/Monogram';
 import { ProfitChart } from '@/components/ProfitChart';
 import { PriceChart } from '@/components/PriceChart';
 import { Sparkline } from '@/components/Sparkline';
 import { ApiError } from '@/lib/api';
-import { getFeed, type FeedItem } from '@/lib/feed';
-import { latestNews } from '@/lib/homeNews';
-import { citationLink, getInsights, stockPageHref, type StockInsights } from '@/lib/insights';
-import { getMatches, STATUS_LABELS, type MatchResult, type MatchStatus } from '@/lib/match';
+import { citationLink, stockPageHref } from '@/lib/insights';
+import { getMatches, STATUS_LABELS, type MatchResult } from '@/lib/match';
 import { getPrices, hasPrices, priceLabel, signedPercent, type Prices } from '@/lib/prices';
-import { getProfile, type Profile, type ProfileFieldName } from '@/lib/profile';
 import { change, direction, getSeries, percentLabel, rupees, type Series } from '@/lib/series';
 import { signOut, useMe } from '@/lib/session';
 import { listStocks, type Stock } from '@/lib/stocks';
@@ -94,29 +74,6 @@ const SIGN_OUT_FAILED = "We couldn't sign you out. Please try again.";
 /** The tab and card names people use; anything else shows the ticker as it is. */
 const SHORT_NAMES: Record<string, string> = { HDFCBANK: 'HDFC Bank' };
 const shortName = (symbol: string): string => SHORT_NAMES[symbol] ?? symbol;
-
-const SUGGESTIONS = [
-  'Analyse RELIANCE',
-  'Compare TCS and HDFC Bank',
-  'Latest news on TCS',
-  'Which stocks have low debt?',
-  'Match me',
-];
-const chatHref = (question: string): string => `/chat/?q=${encodeURIComponent(question)}`;
-
-const CAN_DO = [
-  'Answer questions about RELIANCE, TCS and HDFC Bank from their filings',
-  'Show key figures and how they changed',
-  'Summarise recent news and its sentiment',
-  'Say how each stock fits your preferences',
-];
-
-const PROFILE_ICONS: Record<ProfileFieldName, ReactNode> = {
-  risk_preference: <ShieldIcon />,
-  debt_preference: <TargetIcon />,
-  investment_style: <TrendIcon />,
-  other_preferences: <ClockIcon />,
-};
 
 type SeriesByStock = (Series | null)[];
 type PricesByStock = (Prices | null)[];
@@ -382,45 +339,6 @@ function StatCard({
   );
 }
 
-function MatchCard({ match }: { match: Loadable<MatchResult> }) {
-  if (match.status !== 'ready') {
-    return (
-      <a className="home-card home-stat" href="/match/">
-        <span className="home-stat-label">Your match</span>
-        <span className="muted">
-          {match.status === 'error' ? "We couldn't load your match." : 'Loading…'}
-        </span>
-      </a>
-    );
-  }
-  const { profile_empty: empty, stocks } = match.data;
-  if (empty) {
-    return (
-      <a className="home-card home-stat" href="/chat/">
-        <span className="home-stat-label">Your match</span>
-        <span className="home-stat-body">
-          <span className="home-big-text">Tell the chat your preferences</span>
-        </span>
-      </a>
-    );
-  }
-  const count = (status: MatchStatus): number => stocks.filter((s) => s.status === status).length;
-  return (
-    <a className="home-card home-stat" href="/match/">
-      <span className="home-stat-label">Your match</span>
-      <span className="home-stat-body">
-        <span className="home-stat-figure">
-          <span className="home-big num">{count('match')} match</span>
-          <span className="muted">
-            {count('partial')} partial · {count('no_match')} no match · {count('not_enough_data')}{' '}
-            not enough data
-          </span>
-        </span>
-      </span>
-    </a>
-  );
-}
-
 function YourStocks({
   stocks,
   series,
@@ -505,182 +423,6 @@ function YourStocks({
   );
 }
 
-function ChatCard() {
-  const router = useRouter();
-  const titleId = useId();
-  const inputId = useId();
-  const [question, setQuestion] = useState('');
-
-  const submit = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-    const text = question.trim();
-    if (text) router.push(chatHref(text));
-  };
-
-  return (
-    <section className="home-card home-chat" aria-labelledby={titleId}>
-      <h2 id={titleId}>Chat with your analyst</h2>
-      <div className="home-chat-intro">
-        <span className="home-avatar" aria-hidden="true">
-          <LeafIcon size={20} />
-        </span>
-        <div className="home-bubble">
-          <p>
-            <strong>Hello</strong>
-          </p>
-          <p>I can help you to:</p>
-          <ul>
-            {CAN_DO.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-          <p className="home-pill small">Answers only from stored filings</p>
-        </div>
-      </div>
-      <ul className="home-chips">
-        {SUGGESTIONS.map((text) => (
-          <li key={text}>
-            <a className="home-chip" href={chatHref(text)}>
-              {text}
-            </a>
-          </li>
-        ))}
-      </ul>
-      <form className="home-ask" onSubmit={submit}>
-        <label className="visually-hidden" htmlFor={inputId}>
-          Ask about a stock
-        </label>
-        <input
-          id={inputId}
-          type="text"
-          value={question}
-          maxLength={1000}
-          placeholder="Ask about a stock…"
-          onChange={(event) => setQuestion(event.target.value)}
-        />
-        <button type="submit" className="home-send" aria-label="Send">
-          <SendIcon />
-        </button>
-      </form>
-    </section>
-  );
-}
-
-type NewsSources = { insights: (StockInsights | null)[] };
-
-function News({
-  insights,
-  feed,
-}: {
-  insights: Loadable<NewsSources>;
-  feed: Loadable<{ items: FeedItem[] }>;
-}) {
-  const titleId = useId();
-  const waiting = insights.status === 'loading' || feed.status === 'loading';
-  const insightList = insights.status === 'ready' ? insights.data.insights : [];
-  const insightsFailed =
-    insights.status === 'error' || (insightList.length > 0 && insightList.every((i) => i === null));
-  const allFailed = insightsFailed && feed.status === 'error';
-  const someFailed =
-    insightsFailed || feed.status === 'error' || insightList.some((i) => i === null);
-  const items = waiting
-    ? []
-    : latestNews(
-        insightList.filter((i): i is StockInsights => i !== null),
-        feed.status === 'ready' ? feed.data.items : [],
-      );
-
-  let body: ReactNode;
-  if (waiting) body = <p className="muted">Loading…</p>;
-  else if (allFailed) body = <p className="muted">{`We couldn't load the latest news.`}</p>;
-  else {
-    body = (
-      <>
-        {items.length === 0 ? (
-          <p className="muted">Nothing new yet. New filings and RBI releases appear here.</p>
-        ) : (
-          <ul className="home-list">
-            {items.map((item) => (
-              <li key={item.key} className="home-news">
-                {item.kind === 'rbi' ? (
-                  <span className="monogram md tint-c" aria-hidden="true">
-                    RBI
-                  </span>
-                ) : (
-                  <Monogram symbol={item.mark} />
-                )}
-                <span className="home-news-text">
-                  <span className="home-news-meta muted">
-                    {item.source}
-                    {item.dateLabel ? ` · ${item.dateLabel}` : ''}
-                  </span>
-                  {item.href ? (
-                    <a className="home-news-title" href={item.href}>
-                      {item.headline}
-                    </a>
-                  ) : (
-                    <span className="home-news-title">{item.headline}</span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {someFailed && <p className="muted home-note">Some news could not be loaded.</p>}
-      </>
-    );
-  }
-  return (
-    <section className="home-card" aria-labelledby={titleId}>
-      <h2 id={titleId}>Latest from filings and RBI</h2>
-      {body}
-    </section>
-  );
-}
-
-function InvestorProfile({ profile }: { profile: Loadable<Profile> }) {
-  const titleId = useId();
-  let body: ReactNode = <p className="muted">Loading…</p>;
-  if (profile.status === 'error') {
-    body = <p className="muted">{`We couldn't load your profile.`}</p>;
-  } else if (profile.status === 'ready') {
-    const { fields, choices } = profile.data;
-    body =
-      fields.length === 0 ? (
-        <p className="muted">Nothing remembered yet. Tell the chat what you look for in a stock.</p>
-      ) : (
-        <ul className="home-list">
-          {choices.map((choice) => {
-            const entry = fields.find((f) => f.field === choice.field);
-            return (
-              <li key={choice.field} className="home-profile-row">
-                <span className="home-icon" aria-hidden="true">
-                  {PROFILE_ICONS[choice.field]}
-                </span>
-                <span className="home-profile-name">{choice.label}</span>
-                <span className={entry ? 'home-profile-value' : 'home-profile-value muted'}>
-                  {entry ? entry.labels.join(', ') : 'Not set'}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      );
-  }
-  return (
-    <section className="home-card" aria-labelledby={titleId}>
-      <div className="home-card-head">
-        <h2 id={titleId}>Your investor profile</h2>
-        <a className="home-edit" href="/chat/">
-          <PencilIcon />
-          Edit
-        </a>
-      </div>
-      {body}
-    </section>
-  );
-}
-
 /** The signed-in landing page: what the app knows, in one screen, every figure with its source. */
 export function HomeView() {
   const me = useMe();
@@ -694,21 +436,13 @@ export function HomeView() {
 
   const stocks = useLoad(listStocks, signedIn);
   const match = useLoad(getMatches, signedIn);
-  const profile = useLoad(getProfile, signedIn);
-  const feed = useLoad(getFeed, signedIn);
   const stockList = stocks.status === 'ready' ? stocks.data : [];
   const stocksReady = stocks.status === 'ready';
   const seriesLoaded = useLoad(() => eachStock(stockList, (s) => getSeries(s)), stocksReady);
   const pricesLoaded = useLoad(() => eachStock(stockList, (s) => getPrices(s)), stocksReady);
-  const insightsLoaded = useLoad(
-    async () => ({ insights: await eachStock(stockList, (s) => getInsights(s)) }),
-    stocksReady,
-  );
   // Without the stock list neither can start; say so instead of waiting for ever.
   const series: Loadable<SeriesByStock> = stocks.status === 'error' ? stocks : seriesLoaded;
   const prices: Loadable<PricesByStock> = stocks.status === 'error' ? stocks : pricesLoaded;
-  const insights: Loadable<NewsSources> =
-    stocks.status === 'error' ? { status: 'error' } : insightsLoaded;
 
   const leave = async (): Promise<void> => {
     setProblem(null);
@@ -759,16 +493,8 @@ export function HomeView() {
               pricesSettled={prices.status !== 'loading'}
             />
           ))}
-          <MatchCard match={match} />
         </section>
-        <div className="home-columns">
-          <YourStocks stocks={stocks} series={series} prices={prices} match={match} />
-          <ChatCard />
-          <div className="home-side">
-            <News insights={insights} feed={feed} />
-            <InvestorProfile profile={profile} />
-          </div>
-        </div>
+        <YourStocks stocks={stocks} series={series} prices={prices} match={match} />
         <p className="muted home-foot">
           Not investment advice. Every figure comes from official filings, BSE&apos;s end-of-day
           price files or screener.in and is shown with its source.
