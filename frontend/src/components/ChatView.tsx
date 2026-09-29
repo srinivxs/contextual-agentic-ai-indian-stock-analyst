@@ -30,8 +30,6 @@ import { signOut, useMe } from '@/lib/session';
 const MIN_CHARS = 3; // the server refuses shorter questions
 const MAX_CHARS = 1000; // and longer ones
 
-const DISCLAIMER =
-  'Not investment advice. Answers come only from stored filings and screener.in figures.';
 const DESCRIPTION =
   'Grounded in official filings, screener.in and BSE end-of-day prices · TCS, HDFC Bank, Reliance';
 const PILL = 'Answers only from stored data';
@@ -459,7 +457,7 @@ export function ChatView() {
               <SendIcon />
             </button>
           </form>
-          <p className="chat-disclaimer muted">{DISCLAIMER}</p>
+          {/* No disclaimer here: the menu's "Not investment advice" note is on every page. */}
           <p className="chat-disclaimer muted">Enter sends, Shift+Enter adds a line.</p>
         </section>
         <ChatPanel symbol={stock} onPick={setStock} />

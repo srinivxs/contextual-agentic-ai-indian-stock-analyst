@@ -142,15 +142,14 @@ describe('the chat page', () => {
     expect(within(menu).getByText('No conversations yet.')).toBeInTheDocument();
   });
 
-  it('shows the short disclaimer under the input and no profile panel', async () => {
+  it('says "not investment advice" once, in the menu, and shows no profile panel', async () => {
     install({ profileFields: [demoProfileField()] });
     render(<ChatView />);
 
-    expect(
-      await screen.findByText(
-        'Not investment advice. Answers come only from stored filings and screener.in figures.',
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Enter sends, Shift+Enter adds a line.')).toBeInTheDocument();
+    // the owner: one disclaimer is enough, the menu's note on every page
+    expect(screen.getAllByText(/Not investment advice/)).toHaveLength(1);
+    expect(screen.queryByText(/Answers come only from stored filings/)).toBeNull();
     expect(screen.queryByRole('region', { name: 'Your investor profile' })).toBeNull();
   });
 });
