@@ -370,3 +370,30 @@ describe('answerPoints, mid-sentence markers', () => {
     expect(points).toHaveLength(1);
   });
 });
+
+describe('the choices of a question asked back', () => {
+  it('are kept when well formed and dropped one by one when not', async () => {
+    const good = { label: 'TCS', question: 'What is the latest revenue for TCS?' };
+    serve(
+      reply({
+        answer: demoAnswer({
+          sources: [],
+          choices: [
+            good,
+            { label: 'x', question: 7 },
+            { label: '', question: 'Empty label?' },
+            { label: 'Too long'.repeat(20), question: 'A question?' },
+          ] as never,
+        }),
+      }),
+    );
+    expect((await sendQuestion('What is the latest revenue?', null)).answer.choices).toEqual([good]);
+  });
+
+  it('are none when the reply has none or sends something else', async () => {
+    serve(reply());
+    expect((await sendQuestion('How did revenue grow?', null)).answer.choices).toEqual([]);
+    serve(reply({ answer: demoAnswer({ choices: 'TCS' as never }) }));
+    expect((await sendQuestion('How did revenue grow?', null)).answer.choices).toEqual([]);
+  });
+});

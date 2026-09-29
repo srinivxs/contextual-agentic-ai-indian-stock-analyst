@@ -518,3 +518,47 @@ describe('the words on the page', () => {
     expect(words).not.toMatch(/deep research/i);
   });
 });
+
+describe('a question asked back', () => {
+  const askedBack = (question: string) =>
+    question === 'What is the latest revenue?'
+      ? demoAnswer({
+          text: 'Which company do you mean: TCS, HDFC Bank, or Reliance?',
+          sources: [],
+          choices: [
+            { label: 'TCS', question: 'What is the latest revenue for TCS?' },
+            { label: 'Reliance', question: 'What is the latest revenue for Reliance?' },
+          ],
+        })
+      : demoAnswer();
+
+  it('offers its choices in place of the follow-up suggestions', async () => {
+    install({ chatAnswer: askedBack });
+    render(<ChatView />);
+    await ask('What is the latest revenue?');
+    const group = await screen.findByRole('group', { name: 'Choices' });
+    expect(
+      within(group)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['TCS', 'Reliance']);
+    expect(screen.queryByRole('group', { name: 'Follow-up suggestions' })).toBeNull();
+  });
+
+  it('sends the chosen question at once, with nothing to type or submit', async () => {
+    const api = install({ chatAnswer: askedBack });
+    render(<ChatView />);
+    await ask('What is the latest revenue?');
+    const group = await screen.findByRole('group', { name: 'Choices' });
+    await userEvent.click(within(group).getByRole('button', { name: 'Reliance' }));
+    await screen.findByText(/reported revenue of/);
+    expect(api.bodies.map((b) => (b.body as { question: string }).question)).toEqual([
+      'What is the latest revenue?',
+      'What is the latest revenue for Reliance?',
+    ]);
+    expect(within(thread()).getByText('What is the latest revenue for Reliance?')).toBeVisible();
+    expect(box()).toHaveValue('');
+    // an answered question offers the usual follow-ups again
+    expect(screen.queryByRole('group', { name: 'Choices' })).toBeNull();
+  });
+});

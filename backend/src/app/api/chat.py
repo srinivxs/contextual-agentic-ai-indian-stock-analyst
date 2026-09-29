@@ -76,6 +76,11 @@ class TableOut(BaseModel):
     source: TableSourceOut
 
 
+class ChoiceOut(BaseModel):
+    label: str
+    question: str  # what a click sends
+
+
 class MessageOut(BaseModel):
     id: UUID
     role: Literal["user", "assistant"]
@@ -83,6 +88,7 @@ class MessageOut(BaseModel):
     status: ReplyStatus | None
     sources: list[SourceOut]
     table: TableOut | None = None
+    choices: list[ChoiceOut] = []  # a question asked back: sent with the live reply only
     created_at: str
 
 
@@ -183,10 +189,11 @@ async def ask(
         )
         asked, answer = await add_exchange(db, conversation_id, question, reply)
         await db.commit()
+    choices = [ChoiceOut(label=c.label, question=c.question) for c in reply.choices]
     return ExchangeOut(
         conversation_id=conversation_id,
         question=_message_out(asked),
-        answer=_message_out(answer),
+        answer=_message_out(answer).model_copy(update={"choices": choices}),
     )
 
 

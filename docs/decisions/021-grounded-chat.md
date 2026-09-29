@@ -129,6 +129,18 @@ Also: "I want to know whether ..." is never stored as a preference (ADR 022); co
 show their calculation and difference; a question about disagreeing sources gets every
 disagreement disclosed by code, or "The stored sources agree (within 1%)".
 
+## Third amendment: substitution, asking back, follow-ups (2026-09-29, night)
+
+| Seen | Cause | Fix |
+|---|---|---|
+| HDFC Bank's "revenue" answered with its net interest income | "revenue" was read as both top lines, a bank's being net interest income | "revenue" means revenue from operations only; a figure a stock lacks is never replaced: code adds "HDFC Bank's revenue from operations: not available in the current data." (`code_answers.missing_lines`), and a lookup of it alone is answered that way, with no LLM call. Net interest income is given when asked for by name |
+| "What is the latest revenue?" answered for two companies | no company named meant all three | a figure of no named company, not about all three ("which", "compare", "all", "rank" ...), is asked back: "Which company do you mean: TCS, HDFC Bank, or Reliance?", with a **choice** per company; a click sends the full question ("What is the latest revenue for Reliance?") at once. A comparison with no measure is asked back the same way: revenue, net profit or both |
+| "Now compare it with HDFC Bank." lost Reliance | a question naming a stock never looked back | a comparison pointing back ("compare it with", "how does it compare to") keeps the earlier stock beside the named one; any follow-up with no measure, period or window of its own keeps the earlier turn's |
+
+Choices travel with the live reply only (`Reply.choices`, the API's `choices`): they are not
+stored, so a reopened conversation shows the question asked back without buttons. No new
+status or table was needed: a question asked back is an answer with choices and no sources.
+
 ## What it does not prove (the known limits)
 
 - **Entailment.** The checker proves the numbers are in the cited evidence, not that the sentence

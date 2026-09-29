@@ -170,12 +170,14 @@ async def test_a_grounded_answer_comes_back_with_its_numbered_source(
 async def test_with_no_evidence_it_abstains_without_calling_the_model(
     session_factory: Factory,
 ) -> None:
-    """HDFC Bank has nothing stored here: the honest answer costs nothing."""
+    """HDFC Bank has nothing stored here: the honest answer costs nothing, and names what is
+    missing (the owner's third review)."""
     llm = FakeLlm(grounded)
 
     reply = await ask(session_factory, llm, "What is HDFC Bank's net interest margin?")
 
-    assert (reply.status, reply.text, reply.sources) == ("abstained", ABSTAIN_TEXT, ())
+    missing = "HDFC Bank's net interest margin: not available in the current data."
+    assert (reply.status, reply.text, reply.sources) == ("abstained", missing, ())
     assert (reply.model, reply.input_tokens) == (None, 0)
     assert llm.calls == []
 

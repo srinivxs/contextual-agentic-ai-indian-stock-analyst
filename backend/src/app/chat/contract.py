@@ -42,6 +42,9 @@ VALUATION_NO_DATA_TEXT = (
     "comparison basis (other companies' or long-run valuation multiples) or earnings forecasts."
 )
 NO_SOURCES_TEXT = "The previous reply cited no stored source."
+# Asked back when a question is unclear (the owner's third review), with choices to click.
+WHICH_COMPANY_TEXT = "Which company do you mean: TCS, HDFC Bank, or Reliance?"
+WHICH_MEASURE_TEXT = "What would you like me to compare: revenue, net profit, or both?"
 # Added by code to a question about disagreeing sources when none of its figures disagree.
 AGREE_TEXT = "The stored sources agree (within 1%) on every figure given here."
 
@@ -69,6 +72,15 @@ class Source:
 
 
 @dataclass(frozen=True)
+class Choice:
+    """An answer to a question asked back: the button's label, and the full question a click
+    sends at once ("TCS" -> "What is the latest revenue for TCS?")."""
+
+    label: str
+    question: str
+
+
+@dataclass(frozen=True)
 class Reply:
     text: str  # the answer with [n] markers, or ABSTAIN_TEXT, or OUT_OF_SCOPE_TEXT
     status: ReplyStatus
@@ -79,6 +91,8 @@ class Reply:
     # A year-by-year table shown under an answer about one stock's net profit or revenue: built
     # by code from stored screener.in figures (never by the model), so it needs no checking.
     table: "DataTable | None" = None
+    # When the reply asks back: the choices, sent with this reply only (never stored).
+    choices: tuple[Choice, ...] = ()
 
 
 @dataclass(frozen=True)

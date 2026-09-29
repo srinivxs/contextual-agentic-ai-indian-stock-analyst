@@ -74,10 +74,10 @@ def test_a_stock_in_the_question_wins_over_the_history() -> None:
 @pytest.mark.parametrize(
     ("text", "metrics"),
     [
-        ("revenue", ("revenue_from_operations", "net_interest_income")),
-        ("sales", ("revenue_from_operations", "net_interest_income")),
-        ("top line", ("revenue_from_operations", "net_interest_income")),
-        ("turnover", ("revenue_from_operations", "net_interest_income")),
+        ("revenue", ("revenue_from_operations",)),
+        ("sales", ("revenue_from_operations",)),
+        ("top line", ("revenue_from_operations",)),
+        ("turnover", ("revenue_from_operations",)),
         ("profit", ("net_profit",)),
         ("PAT", ("net_profit",)),
         ("earnings", ("net_profit",)),
@@ -589,3 +589,72 @@ def test_more_ways_of_asking_what_is_remembered(text: str) -> None:
 def test_the_source_of_a_figure_is_a_lookup_but_the_sources_of_revenue_are_not() -> None:
     assert ask("What is the source of Reliance's revenue figure for FY25?").intent == "fact_lookup"
     assert ask("What are the main sources of Reliance's revenue?").lookup is False
+
+
+# --- the owner's third review (2026-09-29) --------------------------------------------------------
+
+
+def test_revenue_means_revenue_never_a_bank_s_net_interest_income() -> None:
+    question = ask("Compare TCS, HDFC Bank, and Reliance on their latest revenue and net profit.")
+    assert question.metrics == ("revenue_from_operations", "net_profit")
+
+
+RELIANCE_REVENUE = [
+    Turn(role="user", text="What is the latest revenue for Reliance?"),
+    Turn(role="assistant", text="Reliance's revenue ... [1]"),
+]
+
+
+def test_it_keeps_the_earlier_stock_and_measure_beside_the_one_named() -> None:
+    question = ask("Now compare it with HDFC Bank.", RELIANCE_REVENUE)
+    assert question.symbols == ("RELIANCE", "HDFCBANK")
+    assert question.metrics == ("revenue_from_operations",)
+    assert question.years == 1  # "latest" carried over too
+    assert question.intent == "comparison"
+
+
+def test_what_about_another_stock_asks_the_same_about_it_alone() -> None:
+    question = ask("What about HDFC Bank?", RELIANCE_REVENUE)
+    assert question.symbols == ("HDFCBANK",)
+    assert question.metrics == ("revenue_from_operations",)
+
+
+def test_a_follow_up_naming_its_own_measure_keeps_it() -> None:
+    question = ask("And its net profit?", RELIANCE_REVENUE)
+    assert (question.symbols, question.metrics) == (("RELIANCE",), ("net_profit",))
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What is the latest revenue?",
+        "What was the net profit in FY2025?",
+        "Why did revenue fall?",
+        "Is it undervalued?",
+        "What is the share price?",
+    ],
+)
+def test_a_figure_of_no_named_company_asks_which_company(text: str) -> None:
+    assert ask(text).intent == "which_company"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Which has the lowest debt?",  # about all three
+        "Compare the revenue of all three.",
+        "Rank the stocks by net profit.",
+        "What is the recent news?",  # news is not a figure of one company
+        "Which of them fits my preferences?",
+        "What is Infosys's revenue?",  # another company: refused, not asked back
+    ],
+)
+def test_a_question_about_all_three_or_not_about_a_figure_is_not_asked_back(text: str) -> None:
+    assert ask(text).intent != "which_company"
+
+
+def test_a_comparison_with_no_measure_asks_which_one() -> None:
+    history = [Turn(role="user", text="Tell me about Reliance.")]
+    question = ask("Now compare it with HDFC Bank.", history)
+    assert question.symbols == ("RELIANCE", "HDFCBANK")
+    assert question.intent == "which_measure"

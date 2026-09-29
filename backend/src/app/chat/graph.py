@@ -10,6 +10,7 @@
                               ├─> forecast
                               ├─> sources (where the last answer came from)
                               ├─> no_profile (a personal question with no preferences saved)
+                              ├─> clarify (which company? which measure? asked back, with choices)
                               └─> remembered
 
 - analyze (code): which stocks, metrics, periods (app/chat/understand.py). No LLM: rule 8.
@@ -22,7 +23,9 @@
   out_of_scope, before anything is retrieved, so no other stock's figures can stand in for it;
   "what do you remember?" -> recall (app/memory/extract.py); a future share price -> forecast;
   "where did you get that?" -> sources (the previous answer's own sources); a personal question
-  with no preferences saved -> no_profile.
+  with no preferences saved -> no_profile; a figure of no named company, or a comparison with no
+  measure -> clarify: the question is asked back, with a choice per company or measure that
+  sends the full question at once (the owner's third review).
 - retrieve (code): each asked measure's figures from one source and the changes between them
   (app/chat/evidence.py's measures_for), debt to equity and the latest dividend (app/insights.py),
   the passages closest in meaning (app/retrieval.py) and, for news questions, the events and the
@@ -51,6 +54,7 @@ plain code, so the grounding path cannot be skipped, and each node is tested on 
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date
 from typing import Any, Literal, TypedDict
 from uuid import UUID
@@ -61,6 +65,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.chat.answer_check import Claim, Problem, check_answer
 from app.chat.code_answers import (
     explained,
+    missing_lines,
     previous_sources,
     source_claims,
     source_items,
@@ -74,6 +79,9 @@ from app.chat.contract import (
     NO_SOURCES_TEXT,
     VALUATION_GAP_TEXT,
     VALUATION_NO_DATA_TEXT,
+    WHICH_COMPANY_TEXT,
+    WHICH_MEASURE_TEXT,
+    Choice,
     DataTable,
     Reply,
     Turn,
@@ -81,7 +89,7 @@ from app.chat.contract import (
 )
 from app.chat.entities import symbols_in
 from app.chat.evidence import EvidenceItem, build_evidence, evidence_block, measures_for
-from app.chat.lookup import lookup_claims
+from app.chat.lookup import SHORT_NAMES, lookup_claims
 from app.chat.prompts import SYSTEM_PROMPT, Outcome, answer_tool, parse_answer, user_message
 from app.chat.render import disclosures, every_disclosure, render
 from app.chat.tables import SERIES_METRICS, build_table, fits_answer
@@ -126,8 +134,21 @@ _NOT_A_NAME = {"a", "an", "the", "what", "which", "who", "how", "why", "is", "wa
 
 Verdict = Literal["respond", "retry", "abstain", "out_of_scope"]
 Route = Literal[
-    "remembered", "out_of_scope", "recall", "forecast", "sources", "no_profile", "retrieve"
+    "remembered",
+    "out_of_scope",
+    "recall",
+    "forecast",
+    "sources",
+    "no_profile",
+    "clarify",
+    "retrieve",
 ]
+ASK_ORDER = ("TCS", "HDFCBANK", "RELIANCE")  # as the question asked back lists them
+MEASURES = (
+    ("Revenue", "revenue"),
+    ("Net profit", "net profit"),
+    ("Both", "revenue and net profit"),
+)
 
 
 def _named_in(question: str, company: str | None) -> str | None:
@@ -194,9 +215,18 @@ class GraphChatEngine:
         graph.add_node("sources", self.sources)
         graph.add_node("no_profile", self.no_profile)
         graph.add_node("valuation", self.valuation)
+        graph.add_node("clarify", self.clarify)
         graph.add_edge(START, "analyze")
         graph.add_edge("analyze", "update_memory")
-        routes = ("remembered", "out_of_scope", "recall", "forecast", "sources", "no_profile")
+        routes = (
+            "remembered",
+            "out_of_scope",
+            "recall",
+            "forecast",
+            "sources",
+            "no_profile",
+            "clarify",
+        )
         graph.add_conditional_edges(
             "update_memory",
             self.after_memory,
@@ -225,7 +255,7 @@ class GraphChatEngine:
             },
         )
         ends = ("respond", "abstain", "out_of_scope", "remembered", "forecast", "recall")
-        for last in (*ends, "sources", "no_profile", "valuation"):
+        for last in (*ends, "sources", "no_profile", "valuation", "clarify"):
             graph.add_edge(last, END)
         return graph.compile()
 
@@ -273,6 +303,8 @@ class GraphChatEngine:
             "memory_read": "recall",
             "future_unsupported": "forecast",
             "source_request": "sources",
+            "which_company": "clarify",
+            "which_measure": "clarify",
         }
         return by_intent.get(intent, "retrieve")
 
@@ -413,6 +445,8 @@ class GraphChatEngine:
         disclose = every_disclosure if question.wants_conflicts else disclosures
         added = disclose(own_claims, evidence)
         text, sources = render([*own_claims, *added], evidence)
+        # each asked figure a stock lacks is named, never left out or replaced by another
+        text = " ".join(part for part in (text, *missing_lines(question, evidence)) if part)
         by_id = {item.id: item for item in evidence}
         # what the answer itself cites; code's disclosures name other sources on purpose
         own = dict.fromkeys(cid for claim in own_claims for cid in claim.citations)
@@ -425,7 +459,8 @@ class GraphChatEngine:
             text = f"{text} {NO_EXPLANATION_TEXT}"
         fits = fits_answer(question, state["series"], cited)
         table = build_table(question, state["series"]) if fits else None
-        return {"reply": self._reply(state, text, "answered", sources, table)}
+        status = "answered" if own_claims else "abstained"  # only "not available" lines
+        return {"reply": self._reply(state, text, status, sources, table)}
 
     async def forecast(self, state: ChatState) -> ChatState:
         return {"reply": self._reply(state, FORECAST_TEXT, "abstained", ())}
@@ -444,6 +479,24 @@ class GraphChatEngine:
             return {"reply": self._reply(state, NO_SOURCES_TEXT, "abstained", ())}
         text, sources = render(source_claims(items), items)
         return {"reply": self._reply(state, f"That answer rests on: {text}", "answered", sources)}
+
+    async def clarify(self, state: ChatState) -> ChatState:
+        """The question asked back, with a choice per company or measure; a click sends the full
+        question ("What is the latest revenue for TCS?"), so nothing has to be typed."""
+        question, understood = state["question"].strip(), state["understood"]
+        if understood.intent == "which_company":
+            stem = question.rstrip(" ?.!")
+            choices = tuple(
+                Choice(SHORT_NAMES[s], f"{stem} for {SHORT_NAMES[s]}?") for s in ASK_ORDER
+            )
+            text = WHICH_COMPANY_TEXT
+        else:
+            names = [SHORT_NAMES[symbol] for symbol in understood.symbols]
+            pair = f"{names[0]} with {' and '.join(names[1:])}"
+            choices = tuple(Choice(label, f"Compare {pair} on {what}.") for label, what in MEASURES)
+            text = WHICH_MEASURE_TEXT
+        reply = replace(self._reply(state, text, "answered", ()), choices=choices)
+        return {"reply": reply}
 
     async def valuation(self, state: ChatState) -> ChatState:
         """The stored price-to-earnings figures, then what a verdict would need."""

@@ -175,13 +175,14 @@ export function ChatView() {
     setProblem(null);
   };
 
-  const send = async () => {
-    if (!ready) return;
-    const question = draft.trim();
+  /** Sends the box's question, or a choice's question when one is clicked (nothing to type). */
+  const send = async (chosen?: string) => {
+    if (chosen === undefined ? !ready : busy || thread.phase === 'loading') return;
+    const question = (chosen ?? draft).trim();
     setPending(question);
     const named = stocksIn(question)[0];
     if (named) setStock(named);
-    setDraft('');
+    if (chosen === undefined) setDraft('');
     setProblem(null);
     try {
       const reply = await sendQuestion(question, thread.id);
@@ -243,6 +244,8 @@ export function ChatView() {
   const leave = () => void signOut().finally(() => router.replace('/'));
   const empty = thread.phase === 'ready' && thread.messages.length === 0 && !busy;
   const followable = thread.phase === 'ready' && thread.messages.length > 0 && !busy;
+  // A reply that asks back ("Which company do you mean?") offers its choices instead.
+  const choices = followable ? (thread.messages.at(-1)?.choices ?? []) : [];
 
   return (
     <AppShell email={me.user.email} onSignOut={leave} active="chat">
@@ -367,7 +370,21 @@ export function ChatView() {
               Thinking…
             </p>
           )}
-          {followable && (
+          {choices.length > 0 && (
+            <div className="chat-suggestions" role="group" aria-label="Choices">
+              {choices.map((choice) => (
+                <button
+                  key={choice.label}
+                  type="button"
+                  className="chat-chip"
+                  onClick={() => void send(choice.question)}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {followable && choices.length === 0 && (
             <div className="chat-suggestions" role="group" aria-label="Follow-up suggestions">
               {followUps(stock).map((text) => (
                 <button

@@ -89,7 +89,6 @@ from app.vocabulary import METRICS
 PASSAGE_CHARS = 600  # the model reads this much of a passage; the source shows EXCERPT_CHARS
 
 GROWTH = ("revenue_growth", "profit_growth", "change")
-TOP_LINES = ("revenue_from_operations", "net_interest_income")
 ALL_DERIVED = ("debt_to_equity", *GROWTH, "latest_dividend")
 
 T = TypeVar("T")
@@ -551,9 +550,10 @@ def measures_for(
     """One stock's figures for the question and the changes between them. Each measure asked
     (every metric when none is) comes from one source (app/insights.py's measure_facts): the
     periods the question names, else its window of years (the latest three by default, at
-    least two when a change is wanted). "Revenue" names both top lines; the stock's own one is
-    kept (net interest income for a bank). With no measure asked, only the latest change of the
-    top line and of net profit is kept."""
+    least two when a change is wanted). A measure a stock lacks is simply absent (never another
+    in its place: code then says it is not available). With no measure asked, only the latest
+    change of the top line (revenue, or net interest income for a bank) and of net profit is
+    kept."""
     asked = question.metrics
     years = question.years or YEARS_SHOWN
     if question.wants_growth or not asked:
@@ -561,10 +561,7 @@ def measures_for(
     top_line = "net_interest_income" if is_financial else "revenue_from_operations"
     shown: list[KeyFact] = []
     changes: list[DerivedView] = []
-    both_top_lines = {"revenue_from_operations", "net_interest_income"} <= set(asked)
     for metric in asked or METRICS:
-        if both_top_lines and metric in TOP_LINES and metric != top_line:
-            continue  # "revenue" asked: the stock's own top line only
         picked = measure_facts(
             facts, metric, periods=question.periods, years=years, basis=question.basis
         )

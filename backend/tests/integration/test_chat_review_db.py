@@ -33,6 +33,8 @@ from app.chat.contract import (
     OUT_OF_SCOPE_TEXT,
     VALUATION_GAP_TEXT,
     VALUATION_NO_DATA_TEXT,
+    WHICH_COMPANY_TEXT,
+    WHICH_MEASURE_TEXT,
     Reply,
     Source,
     Turn,
@@ -719,15 +721,26 @@ async def test_a_valuation_question_without_a_stored_price_says_what_is_missing(
     assert (reply.status, reply.text, llm.calls) == ("abstained", VALUATION_NO_DATA_TEXT, [])
 
 
+async def test_an_unknown_company_s_figure_is_asked_back_never_answered_with_ours(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    llm = FakeLlm()
+
+    # lower case and on no list: code cannot tell it is a company, and after a question about
+    # TCS it does not borrow TCS (it does not refer back): it asks which of ours is meant
+    reply = await ask(session_factory, llm, "what is quuxcorp revenue", ABOUT_TCS)
+
+    assert (reply.text, reply.sources, llm.calls) == (WHICH_COMPANY_TEXT, (), [])
+
+
 async def test_an_unknown_company_code_misses_is_left_to_the_model_and_named_from_the_question(
     session_factory: Factory, admin_engine: AsyncEngine
 ) -> None:
     await seed(admin_engine)
     llm = FakeLlm([{"outcome": "out_of_scope", "claims": [], "other_company": "Quuxcorp"}])
 
-    # lower case and on no list: code cannot tell it is a company, and after a question about
-    # TCS it does not borrow TCS (it does not refer back); the model says out of scope
-    reply = await ask(session_factory, llm, "what is quuxcorp revenue", ABOUT_TCS)
+    reply = await ask(session_factory, llm, "what does quuxcorp do", ABOUT_TCS)
 
     assert "TCS" not in llm.calls[0][1].split("Evidence:")[0].split("Question:")[1]
     assert (reply.status, reply.text) == (
@@ -796,3 +809,105 @@ async def test_a_valuation_question_gets_the_stored_price_to_earnings_and_what_i
     )
     assert reply.text.endswith(VALUATION_GAP_TEXT)
     assert [s.source for s in reply.sources] == ["derived"]
+
+
+# --- the owner's third review (2026-09-29) --------------------------------------------------------
+
+
+async def test_a_bank_s_revenue_is_never_its_net_interest_income_and_a_gap_is_named(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+
+    def compares(system: str, user: str, tool: ToolSpec) -> dict[str, Any]:
+        hdfc = evidence_id(user, "HDFCBANK · Net profit · FY2026")
+        return {
+            "outcome": "answer",
+            "claims": [claim("HDFC Bank's net profit was ₹310 crore.", hdfc)],
+        }
+
+    llm = FakeLlm(compares)
+    question = (
+        "Compare TCS, HDFC Bank, and Reliance on their latest revenue and net profit. Clearly "
+        "state the period for each figure."
+    )
+    reply = await ask(session_factory, llm, question)
+
+    assert "Net interest income" not in llm.calls[0][1]  # never offered as revenue
+    assert reply.status == "answered"
+    assert "HDFC Bank's revenue from operations: not available in the current data." in reply.text
+
+
+async def test_a_bank_s_revenue_asked_on_its_own_is_not_available_by_code(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    llm = FakeLlm()
+    reply = await ask(session_factory, llm, "What is HDFC Bank's revenue?")
+    assert (reply.status, reply.text, llm.calls) == (
+        "abstained",
+        "HDFC Bank's revenue from operations: not available in the current data.",
+        [],
+    )
+
+
+async def test_a_figure_of_no_named_company_is_asked_back_with_choices_that_answer(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    llm = FakeLlm()
+
+    asked_back = await ask(session_factory, llm, "What is the latest revenue?")
+
+    assert (asked_back.text, asked_back.sources, llm.calls) == (WHICH_COMPANY_TEXT, (), [])
+    assert [(c.label, c.question) for c in asked_back.choices] == [
+        ("TCS", "What is the latest revenue for TCS?"),
+        ("HDFC Bank", "What is the latest revenue for HDFC Bank?"),
+        ("Reliance", "What is the latest revenue for Reliance?"),
+    ]
+    chosen = await ask(session_factory, llm, asked_back.choices[2].question)
+    assert chosen.text.startswith("Reliance's revenue from operations for FY2026 was ₹1,210 crore")
+    assert llm.calls == []  # a stored figure: stated by code
+
+
+RELIANCE_REVENUE = [
+    Turn(role="user", text="What is the latest revenue for Reliance?"),
+    Turn(role="assistant", text="Reliance's revenue from operations for FY2026 ... [1]"),
+]
+
+
+async def test_compare_it_keeps_the_earlier_stock_and_measure(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+
+    def compares(system: str, user: str, tool: ToolSpec) -> dict[str, Any]:
+        reliance = evidence_id(user, "RELIANCE · Revenue from operations · FY2026")
+        text = "Reliance's revenue was ₹1,210 crore in FY2026."
+        return {"outcome": "answer", "claims": [claim(text, reliance)]}
+
+    llm = FakeLlm(compares)
+    reply = await ask(session_factory, llm, "Now compare it with HDFC Bank.", RELIANCE_REVENUE)
+
+    assert reply.status == "answered"
+    assert reply.text.startswith("Reliance's revenue was ₹1,210 crore in FY2026. [1]")
+    assert reply.text.endswith(
+        "HDFC Bank's revenue from operations: not available in the current data."
+    )
+
+
+async def test_a_comparison_with_no_measure_asks_which_one_with_choices(
+    session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    await seed(admin_engine)
+    history = [Turn(role="user", text="Tell me about Reliance.")]
+    llm = FakeLlm()
+
+    reply = await ask(session_factory, llm, "Now compare it with HDFC Bank.", history)
+
+    assert (reply.text, llm.calls) == (WHICH_MEASURE_TEXT, [])
+    assert [(c.label, c.question) for c in reply.choices] == [
+        ("Revenue", "Compare Reliance with HDFC Bank on revenue."),
+        ("Net profit", "Compare Reliance with HDFC Bank on net profit."),
+        ("Both", "Compare Reliance with HDFC Bank on revenue and net profit."),
+    ]

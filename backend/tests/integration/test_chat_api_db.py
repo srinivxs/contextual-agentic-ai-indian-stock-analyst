@@ -13,6 +13,7 @@ follow-up carries the history, nobody reaches another user's conversation, and n
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -22,7 +23,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.chat.contract import ABSTAIN_TEXT, DataTable, Reply, Turn
+from app.chat.contract import ABSTAIN_TEXT, Choice, DataTable, Reply, Turn
 from app.chat.store import (
     add_exchange,
     chat_spent_usd,
@@ -144,7 +145,9 @@ async def test_an_answer_is_stored_with_its_sources_and_tokens_and_returned(
             "quote": DEMO_SOURCE.quote,
         }
     ]
-    assert set(question) == {"id", "role", "text", "status", "sources", "table", "created_at"}
+    assert set(question) == {
+        *("id", "role", "text", "status", "sources", "table", "choices", "created_at"),
+    }
     assert question["table"] is None
     assert answer["table"] is None
     assert UUID(question["id"]) != UUID(answer["id"])
@@ -661,3 +664,26 @@ async def test_the_spend_counts_every_answer_of_every_user(
         spent = await chat_spent_usd(db, *prices)
 
     assert spent == Decimal("0.35") * 3 + Decimal("2.95") / 10  # $1.345
+
+
+async def test_the_choices_of_a_question_asked_back_come_with_the_live_reply_only(
+    db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
+) -> None:
+    _, headers = await sign_in(make_user, session_factory)
+    asked_back = replace(
+        answered("Which company do you mean?"),
+        sources=(),
+        choices=(Choice("TCS", "What is the latest revenue for TCS?"),),
+    )
+
+    async with chat_app(db_config, FakeChatEngine([asked_back])) as client:
+        posted = (await ask(client, headers)).json()
+        listed = (
+            await client.get(f"{CONVERSATIONS}/{posted['conversation_id']}", headers=headers)
+        ).json()
+
+    assert posted["answer"]["choices"] == [
+        {"label": "TCS", "question": "What is the latest revenue for TCS?"}
+    ]
+    assert posted["question"]["choices"] == []
+    assert [m["choices"] for m in listed["messages"]] == [[], []]  # never stored

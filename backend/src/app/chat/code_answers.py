@@ -10,6 +10,9 @@ Each is a plain function over what the workflow already holds, so it is tested o
   its marker, from the stored answer itself (the model is not asked to remember).
 - explained: whether a "why" answer gives a cause (because, due to, driven by ...) that a cited
   filing passage or event states. Otherwise the reply says the data cannot establish why.
+- missing_lines (the owner's third review): each asked measure a stock has no stored figure of
+  ("HDFC Bank's revenue from operations: not available in the current data."), so an answer
+  never leaves a figure out silently nor puts another in its place.
 """
 
 from app.chat.answer_check import CAUSE, Claim
@@ -17,6 +20,7 @@ from app.chat.contract import Source, Turn
 from app.chat.evidence import EvidenceItem
 from app.chat.lookup import SHORT_NAMES
 from app.chat.understand import Question
+from app.insights import METRIC_LABELS
 
 PE_LABEL = "Price to earnings"  # app/chat/evidence.py's label for the stored P/E
 SOURCE_KINDS = {
@@ -73,6 +77,29 @@ def source_claims(items: list[EvidenceItem]) -> list[Claim]:
         Claim(text=f"{item.label} ({SOURCE_KINDS[item.source]}).", citations=(item.id,))
         for item in items
     ]
+
+
+def missing_lines(question: Question, evidence: list[EvidenceItem]) -> list[str]:
+    """One sentence per stock and asked measure with no figure in the evidence (for the asked
+    periods, when the question names some)."""
+    had = {
+        (item.symbol, item.metric, item.period)
+        for item in evidence
+        if item.kind == "fact" and item.figures and item.rival_of is None
+    }
+    lines: list[str] = []
+    for symbol in question.symbols:
+        for metric in question.metrics:
+            periods = [p for p in question.periods if (symbol, metric, p) not in had]
+            if question.periods and not periods:
+                continue
+            if not question.periods and any((s, m) == (symbol, metric) for s, m, _ in had):
+                continue
+            what = METRIC_LABELS[metric].lower()
+            when = f" for {', '.join(periods)}" if question.periods else ""
+            name = SHORT_NAMES.get(symbol, symbol)
+            lines.append(f"{name}'s {what}{when}: not available in the current data.")
+    return lines
 
 
 def explained(claims: list[Claim], evidence: list[EvidenceItem]) -> bool:

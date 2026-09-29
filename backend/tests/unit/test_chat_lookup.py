@@ -5,6 +5,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.chat.answer_check import check_answer
+from app.chat.code_answers import missing_lines
 from app.chat.evidence import EvidenceItem, Figure
 from app.chat.lookup import lookup_claims
 from app.chat.understand import understand
@@ -73,13 +74,30 @@ def test_with_no_year_named_the_latest_is_given_and_the_source_is_named() -> Non
     ]
 
 
-def test_a_bank_s_revenue_is_its_net_interest_income() -> None:
-    assert claims_for("What is HDFC Bank's revenue?") == [
+def test_a_bank_s_revenue_is_never_its_net_interest_income() -> None:
+    # no revenue figure for the bank: code states nothing, and says it is not available
+    assert claims_for("What is HDFC Bank's revenue?") == []
+    question = understand("What is HDFC Bank's revenue?", history=[])
+    assert missing_lines(question, EVIDENCE) == [
+        "HDFC Bank's revenue from operations: not available in the current data."
+    ]
+    # asked for by name, it is given
+    assert claims_for("What is HDFC Bank's net interest income?") == [
         (
             "HDFC Bank's net interest income for FY2025 was ₹300 crore "
             "(consolidated; annual report).",
             ("F4",),
         )
+    ]
+
+
+def test_what_is_there_is_stated_and_what_is_not_is_named() -> None:
+    question = understand("What was the net profit of TCS and HDFC Bank in FY2025?", history=[])
+    claims = lookup_claims(question, EVIDENCE)
+    assert claims is not None
+    assert [c.citations for c in claims] == [("F3",)]
+    assert missing_lines(question, EVIDENCE) == [
+        "HDFC Bank's net profit for FY2025: not available in the current data."
     ]
 
 

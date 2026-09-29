@@ -33,6 +33,9 @@ export type ChatTable = {
   source: { label: string; url: string | null } | null;
 };
 
+/** An answer to a question the chat asked back: the button, and the question a click sends. */
+export type ChatChoice = { label: string; question: string };
+
 export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -42,6 +45,8 @@ export type ChatMessage = {
   sources: ChatSource[];
   /** Checked here: a table with a bad shape is dropped (null), the answer stays. */
   table?: ChatTable | null;
+  /** Checked here: sent with a live reply that asks back; a bad one is dropped. */
+  choices?: ChatChoice[];
   created_at: string;
 };
 
@@ -107,9 +112,30 @@ function checkedTable(value: unknown): ChatTable | null {
   return good ? (value as ChatTable) : null;
 }
 
-const withCheckedTable = (message: ChatMessage): ChatMessage => ({
+const MAX_CHOICES = 5;
+const MAX_CHOICE_LABEL = 40;
+
+/** The well-formed choices, at most five; anything else is dropped (the answer stays). */
+function checkedChoices(value: unknown): ChatChoice[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((c): c is ChatChoice => {
+      const choice = (c ?? {}) as Partial<ChatChoice>;
+      return (
+        text(choice.label) &&
+        choice.label.length >= 1 &&
+        choice.label.length <= MAX_CHOICE_LABEL &&
+        text(choice.question) &&
+        choice.question.trim().length >= 3
+      );
+    })
+    .slice(0, MAX_CHOICES);
+}
+
+const withCheckedParts = (message: ChatMessage): ChatMessage => ({
   ...message,
   table: checkedTable(message.table),
+  choices: checkedChoices(message.choices),
 });
 
 function isMessage(value: unknown): value is ChatMessage {
@@ -170,8 +196,8 @@ export async function sendQuestion(
   if (!isReply(body)) throw new ApiError(200, 'unexpected_response');
   return {
     ...body,
-    question: withCheckedTable(body.question),
-    answer: withCheckedTable(body.answer),
+    question: withCheckedParts(body.question),
+    answer: withCheckedParts(body.answer),
   };
 }
 
@@ -190,7 +216,7 @@ export async function getConversation(id: string): Promise<Conversation> {
   // encodeURIComponent as well, although a UUID has nothing in it to escape.
   const body = await apiFetch(`/api/v1/chat/conversations/${encodeURIComponent(checkedId(id))}`);
   if (!isConversation(body)) throw new ApiError(200, 'unexpected_response');
-  return { ...body, messages: body.messages.map(withCheckedTable) };
+  return { ...body, messages: body.messages.map(withCheckedParts) };
 }
 
 /**

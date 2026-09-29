@@ -829,19 +829,12 @@ def test_with_no_measure_asked_every_metric_and_the_latest_top_line_and_profit_c
     ]
 
 
-def test_a_bank_s_revenue_is_its_net_interest_income_and_a_company_s_is_not() -> None:
-    both = [
-        stored(1, "revenue_from_operations", "FY2026", "900"),
-        stored(2, "net_interest_income", "FY2026", "300"),
-    ]
-    asked = question(metrics=("revenue_from_operations", "net_interest_income"))
-    bank, _ = measures_for(asked, both, is_financial=True)
-    company, _ = measures_for(asked, both, is_financial=False)
-    assert [f.metric for f in bank] == ["net_interest_income"]
-    assert [f.metric for f in company] == ["revenue_from_operations"]
-    # a question naming net interest income itself still gets it
+def test_each_asked_measure_is_given_as_itself_never_another_in_its_place() -> None:
+    bank = [stored(2, "net_interest_income", "FY2026", "300")]
+    revenue = question(metrics=("revenue_from_operations",))
+    assert measures_for(revenue, bank, is_financial=True)[0] == []  # no revenue: nothing
     nii = question(metrics=("net_interest_income",))
-    assert [f.metric for f in measures_for(nii, both, is_financial=False)[0]] == [
+    assert [f.metric for f in measures_for(nii, bank, is_financial=True)[0]] == [
         "net_interest_income"
     ]
 

@@ -9,11 +9,13 @@ its item, so the answer, its marker and its source are the stored ones by constr
     annual report)."
 
 - the periods the question names, else the newest figure of each asked measure;
-- a stock's "revenue" is its revenue from operations, or its net interest income for a bank;
+- each measure as itself: a bank's net interest income is never given as its "revenue";
 - only the figure an item rests on is given, never another source's differing one (app/chat/
   render.py's disclosures then names that one, with its own source);
-- if any asked figure is missing, or no stock was named, it returns None and the model answers
-  instead (a passage may hold the figure, or the model says it is not in the data).
+- a measure a stock has no figure of at all is left out (code then says it is not available,
+  app/chat/code_answers.py's missing_lines); if a named period is missing although the measure
+  has other periods, or no stock was named, it returns None and the model answers instead (a
+  passage may hold the figure, or the model says it is not in the data).
 """
 
 from app.chat.answer_check import Claim
@@ -22,13 +24,6 @@ from app.chat.understand import Question
 from app.insights import METRIC_LABELS
 
 SHORT_NAMES = {"RELIANCE": "Reliance", "TCS": "TCS", "HDFCBANK": "HDFC Bank"}
-TOP_LINE = ("revenue_from_operations", "net_interest_income")  # "revenue" names both
-
-
-def _measures(metrics: tuple[str, ...]) -> list[tuple[str, ...]]:
-    """The asked measures: the two top lines count as one, every other metric on its own."""
-    top_line = tuple(metric for metric in metrics if metric in TOP_LINE)
-    return ([top_line] if top_line else []) + [(m,) for m in metrics if m not in TOP_LINE]
 
 
 def _sentence(item: EvidenceItem) -> str:
@@ -45,7 +40,8 @@ def _sentence(item: EvidenceItem) -> str:
 
 
 def lookup_claims(question: Question, evidence: list[EvidenceItem]) -> list[Claim] | None:
-    """One claim per asked figure, or None when code cannot answer the whole question."""
+    """One claim per asked figure a stock has (possibly none), or None when code cannot
+    answer the question."""
     if not (question.lookup and question.named):
         return None
     # the facts the answer rests on; another source's differing figure is never the one given
@@ -56,16 +52,16 @@ def lookup_claims(question: Question, evidence: list[EvidenceItem]) -> list[Clai
     ]
     claims: list[Claim] = []
     for symbol in question.symbols:
-        for measure in _measures(question.metrics):
-            items = [i for i in facts if i.symbol == symbol and i.metric in measure]
+        for metric in question.metrics:
+            items = [i for i in facts if i.symbol == symbol and i.metric == metric]
+            if not items:
+                continue  # none at all: not available, said by code
             if question.periods:
                 found = {item.period: item for item in reversed(items)}  # the first per period
                 if any(period not in found for period in question.periods):
                     return None
                 chosen = [found[period] for period in question.periods]
-            elif items:
-                chosen = items[:1]  # newest first, as the evidence lists them
             else:
-                return None
+                chosen = items[:1]  # newest first, as the evidence lists them
             claims += [Claim(text=_sentence(item), citations=(item.id,)) for item in chosen]
-    return claims or None
+    return claims

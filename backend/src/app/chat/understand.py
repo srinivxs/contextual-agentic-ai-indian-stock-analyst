@@ -17,6 +17,12 @@ Anything else naming no stock is about all three ("which has the lowest debt?"),
 zomato revenue?" after a question about TCS can never be answered with TCS's figures (the
 owner's second review).
 
+A follow-up also keeps what that earlier turn asked (the third review): its measures, periods and
+window of years when the follow-up names none ("What about HDFC Bank?" after a question about
+Reliance's latest revenue asks for HDFC Bank's latest revenue). And a comparison that points back
+("Now compare it with HDFC Bank", "How does it compare to TCS?") keeps the earlier stock beside
+the one it names.
+
 Metrics (whole words, any case). The longer phrases are read first and then blanked out, so
 "return on equity" is not also "equity" and "earnings per share" is not also "earnings":
 
@@ -29,8 +35,10 @@ Metrics (whole words, any case). The longer phrases are read first and then blan
     dividend(s), payout(s), dps                    dividend_per_share
     debt, borrowing(s), leverage                   total_borrowings
     equity, net worth                              total_equity
-    revenue(s), sales, top line, turnover          revenue_from_operations and net_interest_income
-                                                   (a bank's top line is its net interest income)
+    revenue(s), sales, top line, turnover          revenue_from_operations (only: a bank's net
+                                                   interest income is never passed off as its
+                                                   revenue; ask for it by name, the owner's
+                                                   third review)
     profit(s), pat, earnings, net income           net_profit
 
 Growth: grow, growth, change, increase, decrease, rise, fall (and their other forms), vs, versus,
@@ -82,6 +90,12 @@ It decides the route (app/chat/graph.py); the flags above still decide what evid
                           source" (no stock or metric named)             sources, by code
     personalized          "which suits/fits my preferences", "which      matching (P14)
                           should I research/consider/buy"
+    which_company         a figure (a metric, a price, a valuation) of   asked back, with the
+                          no company named or referred to, and nothing   three stocks as
+                          about all three (which, compare, all, each,    choices
+                          rank, highest ...)
+    which_measure         a comparison of our stocks naming no measure   asked back: revenue,
+                          (itself or in the turn it follows)             net profit or both
     valuation             undervalued, overvalued, fair value, worth     P/E and what is
                           buying, valuation, "is/looks cheap",           missing, by code
                           "is/looks expensive" (before explanation:
@@ -124,7 +138,7 @@ _METRIC_WORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"dividends?|payouts?|dps", ("dividend_per_share",)),
     (r"debt|borrowings?|leverage", ("total_borrowings",)),
     (r"equity|net worth", ("total_equity",)),
-    (r"revenues?|sales|top line|turnover", ("revenue_from_operations", "net_interest_income")),
+    (r"revenues?|sales|top line|turnover", ("revenue_from_operations",)),
     (
         r"profits?|pat|earnings(?!\s+(?:calls?|conferences?|presentations?|releases?|updates?|"
         r"transcripts?|reports?))|net income",
@@ -169,6 +183,18 @@ _MY_PROFILE = re.compile(
     r"\b(?:what\s+(?:are|is)|what's|show(?:\s+me)?|list|tell\s+me)\s+my\s+(?:\w+\s+){0,2}"
     r"(?:preferences|profile)\b|\bwhat\s+my\s+(?:\w+\s+){0,2}(?:preferences|profile)\s+(?:are|is)\b"
     r"|^\s*what\s+(?:do|did)\s+you\s+(?:remember|recall)\b",
+    re.IGNORECASE,
+)
+# A comparison pointing back at the earlier stock ("compare it with", "how does it compare to").
+_COMPARE_BACK = re.compile(
+    r"\bcompar\w*\s+(?:it|them|this|that)\b|\b(?:it|this|that|them)\s+(?:compare\w*\s+)?"
+    r"(?:with|to|vs\.?|versus|against)\b|\bthan\s+(?:it|them)\b",
+    re.IGNORECASE,
+)
+# A question about all three, never asked back for a company.
+_ACROSS = re.compile(
+    r"\b(?:which|compar\w*|vs\.?|versus|all|each|every|both|across|rank\w*|highest|lowest|best|"
+    r"worst|most|least|any)\b|\bthe\s+three\b|\b(?:these|the)\s+(?:companies|stocks)\b",
     re.IGNORECASE,
 )
 # A question that refers back to the stock of an earlier turn.
@@ -298,6 +324,8 @@ Intent = Literal[
     "future_unsupported",
     "source_request",
     "personalized",
+    "which_company",
+    "which_measure",
     "valuation",
     "explanation",
     "source_conflict",
@@ -361,18 +389,26 @@ def _years_in(text: str) -> int | None:
     return 1 if _LATEST.search(text) else None
 
 
-def _symbols_from(
-    question: str, history: list[Turn], others: tuple[str, ...]
-) -> tuple[tuple[str, ...], bool, bool]:
-    """(the stocks meant, whether they came from the history, whether any were named). A
-    question naming another company never takes our stocks from the conversation."""
+def _earlier_turn(question: str, history: list[Turn], others: tuple[str, ...]) -> str | None:
+    """The earlier user turn a follow-up refers to: the most recent one naming our stocks. None
+    when the question does not refer back, or names another company."""
+    if others or _FOLLOW_UP.search(question) is None:
+        return None
+    for turn in reversed(history):
+        if turn.role == "user" and symbols_in(turn.text):
+            return turn.text
+    return None
+
+
+def _symbols_from(question: str, earlier: str | None) -> tuple[tuple[str, ...], bool, bool]:
+    """(the stocks meant, whether some came from the history, whether any were named)."""
     named = symbols_in(question)
+    if named and earlier is not None and _COMPARE_BACK.search(question):
+        return tuple(dict.fromkeys((*symbols_in(earlier), *named))), True, True
     if named:
         return named, False, True
-    refers_back = not others and _FOLLOW_UP.search(question) is not None
-    for turn in reversed(history if refers_back else []):
-        if turn.role == "user" and (earlier := symbols_in(turn.text)):
-            return earlier, True, True
+    if earlier is not None:
+        return symbols_in(earlier), True, True
     return ALL_SYMBOLS, False, False
 
 
@@ -388,6 +424,12 @@ def _intent(question: Question, text: str) -> Intent:
         return "source_request"
     if question.wants_match:
         return "personalized"
+    a_figure = question.metrics or question.wants_price or question.wants_valuation
+    if not question.named and a_figure and not _ACROSS.search(text):
+        return "which_company"
+    measured = question.metrics or question.wants_price or question.wants_events
+    if _COMPARISON.search(text) and len(question.symbols) > 1 and not measured:
+        return "which_measure"
     if question.wants_valuation:
         return "valuation"
     if question.wants_reason:
@@ -409,8 +451,10 @@ def _intent(question: Question, text: str) -> Intent:
 
 def understand(question: str, *, history: list[Turn]) -> Question:
     others = other_companies(question)
-    symbols, from_history, named = _symbols_from(question, history, others)
-    metrics = _metrics_in(question)
+    earlier = _earlier_turn(question, history, others)
+    symbols, from_history, named = _symbols_from(question, earlier)
+    # a follow-up naming no measure, period or window keeps the earlier turn's
+    metrics = _metrics_in(question) or (_metrics_in(earlier) if earlier else ())
     wants_growth = _GROWTH.search(question) is not None
     wants_events = _EVENTS.search(question) is not None
     wants_match = _MATCH.search(question) is not None
@@ -421,7 +465,8 @@ def understand(question: str, *, history: list[Turn]) -> Question:
         (_MEMORY_ASK.search(question) and _ABOUT_ME.search(question))
         or _MY_PROFILE.search(question)
     )
-    years = _years_in(question)
+    years = _years_in(question) or (_years_in(earlier) if earlier else None)
+    periods = _periods_in(question) or (_periods_in(earlier) if earlier else ())
     unread = _YEAR_IN_WORDS.sub(" ", PERIOD_TEXT.sub(" ", question))  # the periods we read, gone
     lookup = (
         named
@@ -440,7 +485,7 @@ def understand(question: str, *, history: list[Turn]) -> Question:
         metrics=metrics,
         wants_growth=wants_growth,
         wants_events=wants_events,
-        periods=_periods_in(question),
+        periods=periods,
         from_history=from_history,
         wants_match=wants_match,
         wants_price=wants_price,
