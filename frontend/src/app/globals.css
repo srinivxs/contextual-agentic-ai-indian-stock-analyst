@@ -1746,14 +1746,24 @@ a.chip:hover {
   min-width: 0;
 }
 
+/* The three stock tabs share the panel's width equally. */
 .chat-stock-tabs {
-  display: inline-flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.25rem;
-  padding: 0.2rem;
+  width: 100%;
+  padding: 0.25rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 999px;
+}
+
+.chat-stock-tabs .chat-range {
+  padding: 0.4rem 0.5rem;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-range {
