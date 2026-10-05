@@ -1,7 +1,7 @@
 # Contextual Agentic AI Indian Stock Analyst
 
 A personal equity-research assistant for three Indian stocks: **Reliance Industries, TCS and
-HDFC Bank**. It ingests official exchange filings by itself, extracts provable figures and
+HDFC Bank**, deployed on AWS. It ingests official exchange filings by itself, extracts provable figures and
 events from them, and answers questions in a chat that is **grounded, cited and checked by
 code**. Every figure in an answer traces back to a stored filing page, an exchange price file or
 a cited table cell, and when the data does not support an answer it says so.
@@ -29,7 +29,6 @@ a cited table cell, and when the data does not support an answer it says so.
 - [Data sources](#data-sources)
 - [Technology](#technology)
 - [Repository layout](#repository-layout)
-- [Running locally](#running-locally)
 - [Testing and quality gates](#testing-and-quality-gates)
 - [Deployment on AWS](#deployment-on-aws)
 - [Security](#security)
@@ -74,8 +73,10 @@ a cited table cell, and when the data does not support an answer it says so.
 
 ## Architecture
 
-A modular monolith: one Python package, one Docker image with two entrypoints (`api` and
-`worker`), and PostgreSQL for everything, including the job queue and the vectors.
+A modular monolith on AWS: one Python package, one Docker image run as two containers (`api`
+and `worker`) in a single ECS Fargate task, and PostgreSQL on RDS for everything, including the
+job queue and the vectors. The frontend is a static export served by CloudFront from S3, so the
+browser sees one origin and there is no CORS.
 
 ```mermaid
 flowchart LR
@@ -204,8 +205,8 @@ No other scraping, no live prices and no invented data. Test fixtures use a fict
 | Database | PostgreSQL 16 + pgvector: relational data, vectors and the job queue in one store |
 | PDF text | pypdfium2 (permissively licensed) |
 | Frontend | Next.js 16 static export, React 19, TypeScript; plain CSS with light and dark themes |
-| Containers | Docker, Docker Compose (local), nginx as a local stand-in for CloudFront |
-| Infrastructure | Terraform: CloudFront, S3, ALB, ECS Fargate, RDS, ECR, IAM, SSM Parameter Store, CloudWatch |
+| Hosting | AWS ap-south-1 (Mumbai): CloudFront, S3, Application Load Balancer, ECS Fargate, RDS, ECR, IAM, SSM Parameter Store, CloudWatch Logs |
+| Infrastructure | Terraform, split into four roots by lifetime; one Docker image for every backend task |
 | CI/CD | GitHub Actions with OIDC (no stored AWS keys) |
 | Quality | ruff, mypy (strict), pytest; ESLint, tsc, Vitest; Terraform `fmt`, `validate`, `test` |
 
@@ -232,7 +233,7 @@ infra/
   bootstrap/        Terraform state bucket (applied once)
   edge/             CloudFront + private S3 site (permanent)
   cicd/             ECR, GitHub OIDC provider, CI and deploy roles (permanent)
-  stack/            VPC, ALB, ECS, RDS, IAM (destroyed after each session)
+  stack/            VPC, ALB, ECS (api + worker), RDS, documents bucket, IAM (per session)
   tests/            repository-level checks (hygiene, workflow, deploy script)
 scripts/            demo-up / demo-down for the AWS stack
 docs/
@@ -244,50 +245,13 @@ docs/
 
 ---
 
-## Running locally
-
-**Prerequisites:** Docker Desktop, Python 3.11, Node.js 22.12+, and a Google OAuth client
-(Web application, scopes `openid email`).
-
-```bash
-# 1. Configuration: copy the example and fill in the database passwords,
-#    the Google client ID and secret, and a 32+ character SESSION_SECRET.
-cp .env.example .env
-
-# 2. Start the whole app: db -> migrate -> api + worker -> web
-docker compose --profile app up --build --wait
-
-# 3. Open http://localhost:3000 and sign in with Google.
-```
-
-Register `http://localhost:3000/api/v1/auth/google/callback` as a redirect URI on the OAuth
-client. Stop with `docker compose --profile app down` (data is kept).
-
-**Feature switches.** Everything that reaches the internet or spends money is **off by
-default** and switched on per run:
-
-| Switch | Turns on | Needs |
-|---|---|---|
-| `FILINGS_DISCOVERY=true` | Fetching filings from BSE | — |
-| `PRICES_ENABLED=true` | Daily BSE price files | — |
-| `FEED_MODE=live` | The real RBI feed (default: offline sample items) | — |
-| `EMBEDDINGS_ENABLED=true` | Fingerprints and semantic search | AWS credentials for Bedrock |
-| `EXTRACTION_ENABLED=true` | Facts and events from filings (capped by `EXTRACTION_BUDGET_USD`) | AWS credentials for Bedrock |
-| `CHAT_ENABLED=true` | The chat (capped by `CHAT_BUDGET_USD`) | AWS credentials for Bedrock |
-
-Bedrock access uses short-lived credentials from a least-privilege AWS CLI profile; no keys are
-stored. [the project notes](the project notes) has the full command reference, including running the backend and
-frontend outside containers.
-
----
-
 ## Testing and quality gates
 
 | Suite | Scope | Size |
 |---|---|---|
 | Backend | Unit, API (in-process ASGI) and integration tests against a real PostgreSQL | ~2,800 tests, **100% coverage**, ruff + mypy strict clean |
 | Frontend | Components and libraries with Vitest; ESLint, tsc and a real production build | ~700 tests |
-| Containers | Images and the Compose stack, with deliberate breakages to prove each check bites | ~100 tests |
+| Containers | The backend and frontend images, with deliberate breakages to prove each check bites | ~100 tests |
 | Infrastructure | `terraform test` with mock providers for every root, plus repository-level checks | ~250 tests |
 
 Notable tests: concurrent ingestion of the same document, concurrent "Update data" presses,
@@ -302,15 +266,34 @@ Development is test-first: each change starts with a failing test.
 
 The deployment is split **by lifetime, not by layer**, into four Terraform roots:
 
-| Root | Contents | Lifetime | Idle cost |
+| Root | Contents | Lifetime | Cost |
 |---|---|---|---|
 | `infra/bootstrap` | Terraform state bucket | Permanent | ~$0 |
 | `infra/edge` | CloudFront, private S3 site, origin secret | Permanent | ~$0 (no hourly rate) |
 | `infra/cicd` | ECR, GitHub OIDC provider, CI and deploy roles | Permanent | Cents per month |
-| `infra/stack` | VPC, ALB, ECS Fargate, RDS, IAM | **Destroyed after every session** | ~$1.84/day while running |
+| `infra/stack` | VPC, ALB, ECS Fargate (api + worker), RDS, documents bucket, IAM | **Created per session, destroyed after** | ~$2.30/day while running |
 
 Keeping the edge permanent keeps the CloudFront domain stable, so the Google OAuth redirect URI
 is registered once. No NAT gateway, no autoscaling and no paid monitoring.
+
+**A session.** `scripts/demo-up.ps1` applies `infra/stack`, runs two one-off tasks (create the
+no-DDL runtime database role, then migrate the schema), points CloudFront at the new load
+balancer, starts the service and waits for `/api/readyz` through CloudFront. Every Terraform apply
+waits for a typed `yes`. The database starts empty, and the worker fills it by itself: it fetches
+about 85 filings from BSE into the documents bucket, a month of daily prices and the RBI feed,
+then fingerprints and reads them through Bedrock (about 20 to 30 minutes, about $0.56).
+`scripts/demo-down.ps1` destroys the stack and checks that nothing billable is left.
+
+**What the application may do** is set by Terraform variables, passed to both containers:
+
+| Variable | Default | Controls |
+|---|---|---|
+| `data_sources_enabled` | `true` | Filings from BSE, daily prices, the live RBI feed |
+| `ai_enabled` | `true` | Bedrock: search fingerprints, reading filings, the chat |
+| `extraction_budget_usd` | `2` | Spending cap for reading filings |
+| `chat_budget_usd` | `1` | Spending cap for the chat |
+
+Both caps are enforced by the application against the spend it records in the database.
 
 **Pipeline** (`.github/workflows/pipeline.yml`, every push to `main`):
 
@@ -319,21 +302,28 @@ is registered once. No NAT gateway, no autoscaling and no paid monitoring.
 2. **Image:** a push-only role builds the backend image and pushes it to ECR, tagged with the
    commit SHA (immutable tags).
 3. **Deploy:** a separate deploy role runs the database migration as a one-off task first, then
-   updates the service, detects rollbacks, checks `/api/readyz` through CloudFront, and finally
-   publishes the frontend. If the stack is down, the backend step does nothing.
+   registers new revisions (the new image in every container), updates the service, detects
+   rollbacks, checks `/api/readyz` through CloudFront, and finally publishes the frontend. If the
+   stack is down, the backend step does nothing.
 
 Both roles trust only this repository's `main` branch through GitHub's immutable OIDC subject,
-and every action is pinned by commit SHA.
+and every action is pinned by commit SHA. The operating guide, with real timings and a failure
+table, is [docs/runbook.md](docs/runbook.md).
 
 ---
 
 ## Security
 
-- **No secrets in git.** Configuration comes from the environment locally and from SSM
-  Parameter Store in AWS, and nothing secret is baked into an image.
+- **No secrets in git or in images.** Secrets live in SSM Parameter Store and are injected into
+  the containers at start; AWS access everywhere uses IAM roles and OIDC, never access keys.
 - **Least privilege.** Two database roles: a migration role with DDL rights, and a runtime role
-  with none. Separate IAM roles for CI push, deploy and the running task. The API container is
-  never published to the host, and the api and web containers run read-only with no Linux capabilities.
+  with none; the api and worker can read only the runtime URL. Separate IAM roles for CI push,
+  deploy, task start-up and the application itself, which may only call the two Bedrock models
+  and get or put filings in its own bucket.
+- **Network.** The load balancer accepts traffic only from CloudFront and forwards only requests
+  carrying a shared secret header; the tasks accept traffic only from the load balancer; RDS sits
+  in isolated subnets with no route out. The documents bucket is private, TLS-only and never
+  served to users.
 - **Sessions.** Opaque 256-bit tokens, stored only as SHA-256 hashes; `__Host-` cookies that are
   HttpOnly, Secure and SameSite=Lax, plus an Origin check on state-changing requests.
 - **Untrusted input.** Retrieved text is treated as data, never as instructions. SQL is always
@@ -368,10 +358,10 @@ Every significant choice is documented with its reasoning and trade-offs in
 
 ## Status and known limitations
 
-**Status.** The complete feature set runs locally. The AWS deployment (CloudFront, ALB, ECS
-Fargate, RDS, CI/CD) has been applied, verified live with real Google sign-in and destroyed
-again. Moving the newer features (the worker, the documents bucket and Bedrock access) to AWS is
-the next phase, followed by a final hardening phase: browser end-to-end tests, rate limiting on
+**Status.** The application, its infrastructure and the pipeline are complete. To keep the cost
+near zero, the application stack exists only during a session: it is created with
+`demo-up.ps1` and destroyed with `demo-down.ps1`, while the edge, the registry and the pipeline
+stay in place. A final hardening phase remains: browser end-to-end tests, rate limiting on
 sign-in and a content security policy.
 
 **Known limitations:**
