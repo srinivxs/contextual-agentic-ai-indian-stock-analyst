@@ -44,11 +44,13 @@ EXPECTED_FILES = {
         "loadbalancer.tf",
         "compute.tf",
         "edge.tf",
+        "documents.tf",
         "outputs.tf",
         "tests/network.tftest.hcl",
         "tests/data_and_identity.tftest.hcl",
         "tests/compute.tftest.hcl",
         "tests/app_env.tftest.hcl",
+        "tests/golive.tftest.hcl",
     ],
     # The persistent half (ADR 015): applied once, never destroyed with the application.
     "edge": [

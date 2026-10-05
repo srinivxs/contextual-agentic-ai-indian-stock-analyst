@@ -1,7 +1,8 @@
-"""Where fetched filings are kept: a folder on a laptop, a private S3 bucket in AWS (P9c).
+"""Where fetched filings are kept: a folder on a laptop, a private S3 bucket in AWS (go-live).
 
 The rest of the code sees only ``BlobStore``: put bytes under a key, get them back. Tests use a
-temporary folder, and the S3 version arrives without anything else changing.
+temporary folder or a stand-in S3 client. ``make_blob_store`` picks one from the settings: with
+``BLOB_BUCKET`` set, the bucket; without it, the folder.
 
 A key is derived from the file's SHA-256 (``documents/<sha256>.pdf``). The same bytes always land
 at the same key, which is what makes duplicate and concurrent fetches harmless: every writer writes
@@ -14,7 +15,12 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
+
+import boto3
+from botocore.config import Config
+
+from app.core.config import CommonSettings
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _KEY = re.compile(r"^documents/[0-9a-f]{64}\.pdf$")
@@ -43,8 +49,7 @@ class FilesystemBlobStore:
         self.root = root
 
     def _path(self, key: str) -> Path:
-        if not _KEY.match(key):
-            raise InvalidBlobKey("not a key this application issued")
+        _check(key)
         return self.root / key
 
     async def put(self, key: str, data: bytes) -> None:
@@ -78,3 +83,49 @@ class FilesystemBlobStore:
         finally:
             if os.path.exists(temporary):
                 os.remove(temporary)
+
+
+class S3BlobStore:
+    """Objects in one private bucket (go-live). boto3 is synchronous, so each call runs in a thread.
+
+    No "is it there already?" check: the same key always holds the same bytes, so writing it again
+    changes nothing, and one request is cheaper than two. The bucket encrypts every object itself.
+    """
+
+    def __init__(self, *, bucket: str, client: Any) -> None:
+        self.bucket = bucket
+        self._client = client
+
+    async def put(self, key: str, data: bytes) -> None:
+        _check(key)
+        await asyncio.to_thread(
+            self._client.put_object,
+            Bucket=self.bucket,
+            Key=key,
+            Body=data,
+            ContentType="application/pdf",
+        )
+
+    async def get(self, key: str) -> bytes:
+        _check(key)
+        response = await asyncio.to_thread(self._client.get_object, Bucket=self.bucket, Key=key)
+        body: bytes = await asyncio.to_thread(response["Body"].read)
+        return body
+
+
+def _check(key: str) -> None:
+    if not _KEY.match(key):
+        raise InvalidBlobKey("not a key this application issued")
+
+
+def s3_client(region: str) -> Any:
+    """An S3 client for the task's own role. Creating it needs no credentials or request."""
+    config = Config(connect_timeout=5, read_timeout=60, retries={"mode": "standard"})
+    return boto3.client("s3", region_name=region, config=config)
+
+
+def make_blob_store(settings: CommonSettings) -> BlobStore:
+    """The bucket when BLOB_BUCKET is set (AWS), otherwise the folder (a laptop, the tests)."""
+    if settings.blob_bucket:
+        return S3BlobStore(bucket=settings.blob_bucket, client=s3_client(settings.aws_region))
+    return FilesystemBlobStore(settings.blob_root)

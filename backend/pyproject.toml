@@ -78,8 +78,8 @@ plugins = ["pydantic.mypy"]
 module = ["pypdfium2", "pypdfium2.*"]
 ignore_missing_imports = true
 
-# boto3 ships no type information either. Only app/embeddings.py imports it; its Embedder interface
-# is fully typed, so the untyped client stays behind one small typed boundary.
+# boto3 ships no type information either. Only app/embeddings.py, app/llm.py and app/blobs.py
+# import it, each behind a small typed interface (Embedder, the LLM, BlobStore).
 [[tool.mypy.overrides]]
 module = ["boto3", "boto3.*", "botocore", "botocore.*"]
 ignore_missing_imports = true

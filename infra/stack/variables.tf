@@ -1,6 +1,6 @@
 # infra/stack/variables.tf
 #
-# The three inputs this root module takes. Each has a `validation` block, which Terraform checks
+# The inputs this root module takes. Most have a `validation` block, which Terraform checks
 # before it contacts AWS at all: the cheapest possible place to catch a mistake.
 
 variable "region" {
@@ -116,5 +116,46 @@ variable "db_password_version" {
   validation {
     condition     = var.db_password_version >= 1
     error_message = "db_password_version must be 1 or greater."
+  }
+}
+
+# --- go-live: what the application is allowed to do (GL) ----------------------------------------------
+#
+# Two switches rather than six, so the cost brief can say in one line what is on. Each sets the same
+# environment variables in both containers (compute.tf), exactly as the Compose stack does.
+
+variable "data_sources_enabled" {
+  type        = bool
+  description = "Fetch filings (BSE via screener.in links), daily BSE prices and the live RBI feed."
+  default     = true
+}
+
+variable "ai_enabled" {
+  type        = bool
+  description = "Call Bedrock: search fingerprints, reading filings for facts and events, and the chat."
+  default     = true
+}
+
+# The spending caps, in US$. Each is checked by the application against the spend recorded in the
+# database, so on a fresh database (every session) it is a cap per session.
+variable "extraction_budget_usd" {
+  type        = number
+  description = "The most reading filings may spend (a full read is about $0.50)."
+  default     = 2
+
+  validation {
+    condition     = var.extraction_budget_usd >= 0 && var.extraction_budget_usd <= 10
+    error_message = "extraction_budget_usd must be between 0 and 10."
+  }
+}
+
+variable "chat_budget_usd" {
+  type        = number
+  description = "The most the chat may spend (a question costs a fraction of a cent)."
+  default     = 1
+
+  validation {
+    condition     = var.chat_budget_usd >= 0 && var.chat_budget_usd <= 10
+    error_message = "chat_budget_usd must be between 0 and 10."
   }
 }

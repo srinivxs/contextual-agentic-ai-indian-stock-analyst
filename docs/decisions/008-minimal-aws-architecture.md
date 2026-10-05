@@ -119,3 +119,31 @@ The two roots exchange values in one direction each: persistent to ephemeral thr
 that always exist, ephemeral to persistent through a command-line variable, because a data source must
 never point at something destroyed nightly. See ADR 015 for the wiring, the verification and the
 limitations.
+
+## Amendment (2026-10-06): go-live built, offline
+
+Everything this ADR describes for the worker is now written and tested offline (Terraform mock
+providers, the deploy script's tests); nothing has been applied. The owner applies it at go-live.
+
+- **The worker** runs as a second container in the api task, from the same image
+  (`python -m app.worker`). It is **not essential** and has ECS's per-container **restart
+  policy**, so a worker crash restarts the worker in place and leaves the api serving: the
+  "worker crash restarts the API" trade-off above no longer applies. It has a hard memory limit
+  (1.5 GB) so it cannot starve the api, and it receives only the runtime database URL.
+- **The task** is 0.5 vCPU / 2 GB (from 0.25 / 0.5): the worker reads PDFs of up to 60 MB.
+  Running cost rises from $1.84 to about $2.30 a day.
+- **The documents bucket** (`infra/stack/documents.tf`) belongs to the ephemeral stack:
+  private, ACLs off, encrypted with S3's own key, TLS only, emptied on destroy. The task role
+  may only get and put objects under `documents/`. The worker selects it with `BLOB_BUCKET`
+  (`S3BlobStore` behind the existing `BlobStore` interface).
+- **Bedrock** for the task role: `bedrock:InvokeModel` on Titan V2 and on Nova 2 Lite through
+  the global inference profile, in the shape ADR 010 recorded.
+- **Feature switches** are two Terraform variables, `data_sources_enabled` and `ai_enabled`
+  (both default true), plus `extraction_budget_usd` ($2) and `chat_budget_usd` ($1); both
+  containers get the same environment, as in Compose.
+- **Data between sessions:** none is kept. Every session starts with an empty database and the
+  worker refills it (about 20 to 30 minutes and $0.56 of Bedrock). Keeping a snapshot instead
+  was considered and left for later: it adds snapshot and restore steps for little gain at a
+  handful of sessions. Price history is therefore the last month BSE serves.
+- **The deploy script** now puts the new image in every container of a task definition, so a
+  push updates the worker as well as the api.

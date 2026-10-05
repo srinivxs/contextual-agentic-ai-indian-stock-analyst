@@ -137,13 +137,15 @@ def _parameter(aws: Aws, name: str) -> str:
 
 
 def _register_with_image(aws: Aws, family: str, image: str) -> str:
-    """Register a copy of the family's latest revision with only the image changed."""
+    """Register a copy of the family's latest revision with only the image changed: in EVERY
+    container, because the api task runs two from the same image (api and worker)."""
     definition = aws("ecs", "describe-task-definition", "--task-definition", family)[
         "taskDefinition"
     ]
     for field in READ_ONLY_FIELDS:
         definition.pop(field, None)
-    definition["containerDefinitions"][0]["image"] = image
+    for container in definition["containerDefinitions"]:
+        container["image"] = image
     reply = aws("ecs", "register-task-definition", "--cli-input-json", json.dumps(definition))
     return str(reply["taskDefinition"]["taskDefinitionArn"])
 

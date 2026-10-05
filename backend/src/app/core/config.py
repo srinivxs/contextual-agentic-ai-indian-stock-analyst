@@ -56,6 +56,9 @@ class CommonSettings(BaseSettings):
     # Where fetched filings are kept locally: inside the git-ignored data/local/ folder (the project notes:
     # real documents never enter git). In AWS a private S3 bucket takes its place (P9c).
     blob_root: Path = _REPO_ROOT / "data" / "local" / "blobs"
+    # In AWS: the private documents bucket (infra/stack/documents.tf). When set, the worker keeps
+    # filings there instead of in blob_root. A name S3 itself would refuse is refused here.
+    blob_bucket: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 
     # --- the worker (P9) ----------------------------------------------------------------------
     # How long an idle worker waits before looking for work again.

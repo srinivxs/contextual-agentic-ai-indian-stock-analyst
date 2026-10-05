@@ -16,7 +16,8 @@
     4. start the api (desired count 1) and wait until ECS calls it stable
     5. wait until https://<edge>/api/readyz answers {"status":"ready"}
 
-  Costs about $0.06 an hour from step 1 until scripts\demo-down.ps1 has finished.
+  Costs about $0.10 an hour from step 1 until scripts\demo-down.ps1 has finished, plus about
+  $0.56 of Bedrock as the worker reads the filings into the new, empty database.
 
 .PARAMETER ImageTag
   A full commit SHA to run instead of the newest image CI pushed.
@@ -33,7 +34,7 @@ $ErrorActionPreference = 'Stop'
 Initialize-DemoSession
 $started = Get-Date
 
-Write-Step '1/5  Apply the application stack (type yes when the plan looks right: about 49 to add)'
+Write-Step '1/5  Apply the application stack (type yes when the plan looks right: about 57 to add)'
 $stackArgs = @('apply')
 if ($ImageTag) { $stackArgs += "-var=image_tag=$ImageTag" }
 Invoke-Terraform -Root 'stack' -Arguments $stackArgs
@@ -61,5 +62,7 @@ Wait-DemoReady
 $minutes = [math]::Round(((Get-Date) - $started).TotalMinutes, 1)
 Write-Host ''
 Write-Host "The demo is up after $minutes minutes: $DemoUrl" -ForegroundColor Green
-Write-Host 'It costs about $0.06 an hour. When you are done:' -ForegroundColor Yellow
+Write-Host 'The database starts empty: the worker now fetches the filings, prices and RBI releases'
+Write-Host 'and reads them (about 20 to 30 minutes before search, facts and chat have everything).'
+Write-Host 'It costs about $0.10 an hour. When you are done:' -ForegroundColor Yellow
 Write-Host '    & "C:\Contextual Agentic AI Indian Stock Analyst\scripts\demo-down.ps1"' -ForegroundColor Yellow

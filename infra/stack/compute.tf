@@ -9,8 +9,9 @@
 #                    balancer. A one-off job needs no service: you run the task definition directly.
 #
 # COST: the cluster, the task definitions and the service itself are free. Compute is billed only
-# while a task runs: 0.25 vCPU and 0.5 GB is about $0.013/hour, plus $0.005/hour for the public
-# address the task needs in the absence of a NAT gateway. desired_count defaults to 0 so applying
+# while a task runs: since go-live the api task (api + worker) is 0.5 vCPU and 2 GB, about
+# $0.03/hour, plus $0.005/hour for the public address the task needs in the absence of a NAT
+# gateway. The one-off tasks stay at 0.25 vCPU and 0.5 GB. desired_count defaults to 0 so applying
 # this stack starts none of it.
 
 # --- logs ---------------------------------------------------------------------------------------
@@ -24,6 +25,15 @@ resource "aws_cloudwatch_log_group" "api" {
 
   tags = {
     Name = "${local.name_prefix}-api"
+  }
+}
+
+resource "aws_cloudwatch_log_group" "worker" {
+  name              = "/stock-analyst/demo/worker"
+  retention_in_days = var.log_retention_days
+
+  tags = {
+    Name = "${local.name_prefix}-worker"
   }
 }
 
@@ -56,7 +66,26 @@ resource "aws_ecs_cluster" "main" {
 # local.container_image is defined in registry.tf (the newest image CI pushed, by digest), and
 # local.public_base_url in edge.tf (the URL infra/edge published).
 
-# --- the API task ------------------------------------------------------------------------------------
+# What the application may do (go-live), the same in both containers, as in the Compose stack: the
+# api needs the switches to answer chat and search and to queue "Update data"; the worker to run
+# the jobs. Two variables decide them all (variables.tf).
+locals {
+  feature_environment = [
+    { name = "FILINGS_DISCOVERY", value = tostring(var.data_sources_enabled) },
+    { name = "PRICES_ENABLED", value = tostring(var.data_sources_enabled) },
+    { name = "FEED_MODE", value = var.data_sources_enabled ? "live" : "fixture" },
+    { name = "EMBEDDINGS_ENABLED", value = tostring(var.ai_enabled) },
+    { name = "EXTRACTION_ENABLED", value = tostring(var.ai_enabled) },
+    { name = "CHAT_ENABLED", value = tostring(var.ai_enabled) },
+    { name = "EXTRACTION_BUDGET_USD", value = tostring(var.extraction_budget_usd) },
+    { name = "CHAT_BUDGET_USD", value = tostring(var.chat_budget_usd) },
+  ]
+}
+
+# --- the application task: api and worker -------------------------------------------------------------
+#
+# One task, two containers from one image (ADR 008): the api serves requests, the worker runs the
+# job queue and its timers. They share the task's CPU and memory, its network address and its role.
 
 resource "aws_ecs_task_definition" "api" {
   family                   = "${local.name_prefix}-api"
@@ -66,9 +95,10 @@ resource "aws_ecs_task_definition" "api" {
   # task security group from P7b to apply to the task itself rather than to a host.
   network_mode = "awsvpc"
 
-  # The smallest Fargate combination that exists.
-  cpu    = "256"
-  memory = "512"
+  # 0.5 vCPU and 2 GB: the api alone ran in 0.25 and 0.5, but the worker reads PDFs of up to 60 MB
+  # into memory (FILINGS_MAX_BYTES) and turns their pages into text.
+  cpu    = "512"
+  memory = "2048"
 
   # Execution role: used by the ECS agent before the container starts, to pull the image and fetch
   # the secrets below. Task role: the identity the application code itself runs as.
@@ -97,7 +127,7 @@ resource "aws_ecs_task_definition" "api" {
 
       # Plain text, visible to anyone who can describe this task definition. Nothing secret here:
       # the Google client ID travels in the browser's address bar during sign-in anyway.
-      environment = [
+      environment = concat([
         { name = "APP_ENV", value = var.app_env },
         { name = "GOOGLE_CLIENT_ID", value = var.google_client_id },
         { name = "PUBLIC_BASE_URL", value = local.public_base_url },
@@ -108,7 +138,7 @@ resource "aws_ecs_task_definition" "api" {
         # contradict; a separate variable would just be another thing to forget, which is exactly
         # how the first production apply failed.
         { name = "COOKIE_SECURE", value = tostring(var.app_env == "production") },
-      ]
+      ], local.feature_environment)
 
       # Fetched from SSM by the EXECUTION role at start and injected as environment variables. The
       # admin database URL is absent, and the execution role could not read it anyway (P7c).
@@ -124,6 +154,44 @@ resource "aws_ecs_task_definition" "api" {
           "awslogs-group"         = aws_cloudwatch_log_group.api.name
           "awslogs-region"        = var.region
           "awslogs-stream-prefix" = "api"
+        }
+      }
+    },
+    {
+      name  = "worker"
+      image = local.container_image
+
+      # Not essential, and restarted in place: a worker crash (a bad PDF, say) restarts the worker
+      # and leaves the api serving. ADR 008 accepted "a worker crash restarts the API"; ECS's
+      # per-container restart policy removed the need to. Compose does the same with `restart`.
+      essential     = false
+      restartPolicy = { enabled = true, restartAttemptPeriod = 60 }
+
+      # A hard limit, so a runaway PDF cannot take the api's share of the task's memory.
+      memory = 1536
+
+      # The real argv: the image has no ENTRYPOINT, so this replaces the uvicorn CMD outright.
+      command = ["python", "-m", "app.worker"]
+
+      environment = concat([
+        { name = "APP_ENV", value = var.app_env },
+        # `python -m` has no --app-dir, so the code's folder goes on the import path here.
+        { name = "PYTHONPATH", value = "/app/src" },
+        # Filings go to the documents bucket (documents.tf), not the container's disk.
+        { name = "BLOB_BUCKET", value = aws_s3_bucket.documents.bucket },
+      ], local.feature_environment)
+
+      # The runtime URL only: the worker has no login to handle, so no Google or session secret.
+      secrets = [
+        { name = "DATABASE_URL", valueFrom = local.runtime_parameter_arn },
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.worker.name
+          "awslogs-region"        = var.region
+          "awslogs-stream-prefix" = "worker"
         }
       }
     },

@@ -8,7 +8,7 @@ The AWS deployment is split by lifetime ([ADR 015](decisions/015-persistent-edge
 | `infra/bootstrap` — Terraform state bucket | forever | under a cent a month |
 | `infra/edge` — CloudFront, the static site, the origin secret | **forever** | **nothing per hour** |
 | `infra/cicd` — the image registry (ECR), GitHub's OIDC identity | forever | a few cents a month |
-| `infra/stack` — VPC, ALB, ECS, RDS, IAM | **destroyed after every session** | **$1.41/day idle, $1.84/day running** |
+| `infra/stack` — VPC, ALB, ECS (api + worker), RDS, the documents bucket, IAM | **destroyed after every session** | **$1.41/day idle, about $2.30/day running** |
 
 So "switching the demo on" means applying `infra/stack` and pointing the existing distribution at the
 new load balancer. **The public URL never changes**, and the Google OAuth client is configured once,
@@ -167,6 +167,28 @@ curl.exe -s https://<distribution>.cloudfront.net/api/readyz
 `/api/readyz` returning `{"status":"ready"}` is the real green light: it proves the api can reach RDS
 as the runtime role. If it fails, step 4 did not run.
 
+### 6b. The data fills itself — about 20 to 30 minutes (since go-live)
+
+The same task runs the **worker** beside the api, and every session starts with an empty database.
+With the defaults (`data_sources_enabled` and `ai_enabled` both true) the worker, by itself:
+
+1. reads each stock's screener.in page and fetches about 85 filings from BSE into the documents
+   bucket (2 s apart), with the fundamentals table and top ratios;
+2. fetches the last month of BSE daily price files (5 per run, 30 s apart) and the RBI feed;
+3. turns each filing into page text and passages, then fingerprints them with Titan (about $0.07)
+   and reads them for facts and events with Nova 2 Lite (about $0.49, capped by
+   `extraction_budget_usd`, default $2).
+
+Watch it with:
+
+```powershell
+aws logs tail /stock-analyst/demo/worker --follow --since 10m
+```
+
+The app works from the first minute; search, facts, news and the chat get richer as the worker
+goes. To run without spending on Bedrock, apply with `-var ai_enabled=false`; to run fully offline
+from the outside world, `-var data_sources_enabled=false`.
+
 ### 7. The frontend — nothing to do
 
 Since P8c the pipeline publishes the static export on every push to `main`, whether or not the stack
@@ -233,6 +255,9 @@ Tagging API, which lags. Trust the six commands above instead.
 |---|---|
 | Off — edge and registry only | **~$0.00** (a few cents a month for stored images) |
 | Stack applied, `desired_count = 0` | $1.41 |
-| Running | $1.84 |
+| Running (api + worker, 0.5 vCPU / 2 GB) | about $2.30 |
 
-A typical drill of an hour or so is about **$0.10**. Nothing in the persistent tiers has an hourly rate.
+Each session also pays once for Bedrock as the worker reads the filings into the fresh database:
+about **$0.56** (fingerprints $0.07, reading $0.49), plus a fraction of a cent per chat question
+(capped by `chat_budget_usd`, default $1). A 12-hour session is therefore about **$1.70**. Nothing in
+the persistent tiers has an hourly rate.

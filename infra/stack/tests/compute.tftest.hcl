@@ -296,8 +296,8 @@ run "the_api_task_runs_on_the_architecture_the_image_was_built_for" {
   }
 
   assert {
-    condition     = aws_ecs_task_definition.api.cpu == "256" && aws_ecs_task_definition.api.memory == "512"
-    error_message = "The smallest Fargate size: 0.25 vCPU and 0.5 GB."
+    condition     = aws_ecs_task_definition.api.cpu == "512" && aws_ecs_task_definition.api.memory == "2048"
+    error_message = "0.5 vCPU and 2 GB since go-live: the worker shares the task (golive.tftest.hcl)."
   }
 }
 

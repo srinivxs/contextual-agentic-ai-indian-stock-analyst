@@ -139,11 +139,10 @@ resource "aws_iam_role_policy" "migrate_execution_secrets" {
 
 # --- the application's own role ------------------------------------------------------------------------
 #
-# Deliberately has no permissions yet. It exists because the P7d task definition must name a task
-# role, and creating it here keeps all three identities in one file. Bedrock access is added when
-# there is code that actually calls Bedrock; it never gets database or secret permissions, because
-# the application receives its connection URL as an injected environment variable and has no reason
-# to talk to SSM itself.
+# The identity boto3 picks up inside the api and worker containers. Since go-live it may do exactly
+# two things: keep filings in the documents bucket, and call the two Bedrock models (both below).
+# It never gets database or secret permissions: the application receives its connection URL as an
+# injected environment variable and has no reason to talk to SSM itself.
 resource "aws_iam_role" "task" {
   name               = "${local.name_prefix}-task"
   description        = "The identity the application code runs as inside the container"
@@ -153,3 +152,82 @@ resource "aws_iam_role" "task" {
     Name = "${local.name_prefix}-task"
   }
 }
+
+# Filings: put and get, only under documents/ in this stack's bucket. No list, no delete: every key
+# is built from the file's SHA-256, so the code never needs to look around or remove anything.
+resource "aws_iam_role_policy" "task_documents" {
+  name = "keep-filings-in-the-documents-bucket"
+  role = aws_iam_role.task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadAndWriteFilings"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
+        Resource = "${aws_s3_bucket.documents.arn}/documents/*"
+      },
+    ]
+  })
+}
+
+locals {
+  # ADR 010. Titan V2 runs in Mumbai. Nova 2 Lite is available here only through the GLOBAL
+  # inference profile, which may serve a request from any supported region.
+  titan_model_arn     = "arn:aws:bedrock:${var.region}::foundation-model/amazon.titan-embed-text-v2:0"
+  nova_profile_arn    = "arn:aws:bedrock:${var.region}:${var.allowed_account_id}:inference-profile/global.amazon.nova-2-lite-v1:0"
+  nova_regional_model = "arn:aws:bedrock:${var.region}::foundation-model/amazon.nova-2-lite-v1:0"
+  nova_global_model   = "arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0"
+}
+
+# Bedrock: InvokeModel only (the Converse API the chat and extraction use is authorised by it).
+# The shape ADR 010 recorded for a global profile: the profile itself, plus the source-region and
+# the regionless global model, each allowed only when the request comes through that profile.
+resource "aws_iam_role_policy" "task_bedrock" {
+  name = "call-titan-and-nova"
+  role = aws_iam_role.task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "EmbedWithTitan"
+        Effect   = "Allow"
+        Action   = "bedrock:InvokeModel"
+        Resource = local.titan_model_arn
+      },
+      {
+        Sid      = "NovaThroughTheGlobalProfile"
+        Effect   = "Allow"
+        Action   = "bedrock:InvokeModel"
+        Resource = local.nova_profile_arn
+      },
+      {
+        Sid      = "NovaInTheSourceRegion"
+        Effect   = "Allow"
+        Action   = "bedrock:InvokeModel"
+        Resource = local.nova_regional_model
+        Condition = {
+          StringEquals = {
+            "bedrock:InferenceProfileArn" = local.nova_profile_arn
+            "aws:RequestedRegion"         = var.region
+          }
+        }
+      },
+      {
+        Sid      = "NovaAnywhereTheProfileRoutes"
+        Effect   = "Allow"
+        Action   = "bedrock:InvokeModel"
+        Resource = local.nova_global_model
+        Condition = {
+          StringEquals = {
+            "bedrock:InferenceProfileArn" = local.nova_profile_arn
+            "aws:RequestedRegion"         = "unspecified"
+          }
+        }
+      },
+    ]
+  })
+}
+

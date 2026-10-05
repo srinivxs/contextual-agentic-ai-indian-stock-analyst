@@ -39,7 +39,7 @@ Re-cut around the MVP (see [mvp.md](mvp.md)). Decisions behind it: ADRs 007, 008
 | P13 | Investor memory | ✅ done locally (ADR 022): code-read fixed vocabulary, profile API and panel, injection test; GL comes next (owner, 2026-09-28) |
 | P14 | Deterministic matching → **Gate C: full MVP working** | ✅ done locally (ADR 023): rules in code, golden tests, Match page, "Match me" in chat; Gate C checked at the owner's walkthrough, live at GL |
 | P15 | Scheduled RBI feed | ✅ done locally (ADR 024): fixture by default, conditional GET, dedupe by URL and title hash, one poll per time slot, RBI tab |
-| GL | Go-live on AWS: everything AWS deferred from P9 onward, one cost approval, one live test | next (moved after P15 by the owner, 2026-09-29) |
+| GL | Go-live on AWS: everything AWS deferred from P9 onward, one cost approval, one live test | built and tested offline 2026-10-06 (ADR 008 amendment); waits for the owner's apply and one live test |
 | P16 | Hardening, docs, demo rehearsal | |
 
 The gates matter: at each one there is something complete and demonstrable, so stopping early still

@@ -325,6 +325,28 @@ def test_new_revisions_carry_the_new_image_by_digest_and_keep_everything_else(
             assert read_only not in payload
 
 
+def test_every_container_in_the_task_gets_the_new_image(deploy_backend: ModuleType) -> None:
+    """Go-live: the api task carries two containers, api and worker, from the same image. A deploy
+    that changed only the first would leave the worker running yesterday's code."""
+
+    def two_containers(args: tuple[str, ...]) -> dict[str, Any]:
+        definition = _task_definition(args[args.index("--task-definition") + 1])
+        worker = dict(definition["containerDefinitions"][0], name="worker")
+        definition["containerDefinitions"].append(worker)
+        return {"taskDefinition": definition}
+
+    aws = _healthy_stack(**{"ecs describe-task-definition": [two_containers]})
+    deploy_backend.deploy(aws, DIGEST, Recorder())
+
+    for call in aws.calls:
+        if call[:2] == ("ecs", "register-task-definition"):
+            payload = json.loads(call[call.index("--cli-input-json") + 1])
+            assert [c["name"] for c in payload["containerDefinitions"]] == ["api", "worker"]
+            assert {c["image"] for c in payload["containerDefinitions"]} == {
+                f"{REPOSITORY_URL}@{DIGEST}"
+            }
+
+
 # --- what stops a deploy --------------------------------------------------------------------------
 
 

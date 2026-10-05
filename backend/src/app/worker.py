@@ -27,7 +27,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import filings
-from app.blobs import BlobStore, FilesystemBlobStore
+from app.blobs import BlobStore, make_blob_store
 from app.clock import india_today
 from app.core.config import get_worker_settings
 from app.core.logging import configure_logging
@@ -366,7 +366,7 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
     prices_http = httpx.AsyncClient(timeout=60.0) if settings.prices_enabled else None
     context = WorkerContext(
         session_factory=create_session_factory(engine),
-        blob_store=FilesystemBlobStore(settings.blob_root),
+        blob_store=make_blob_store(settings),
         lease_seconds=settings.job_lease_seconds,
         http=http,
         filings_max_bytes=settings.filings_max_bytes,
