@@ -36,11 +36,14 @@ def test_the_worker_counts_days_in_india() -> None:
 
 
 def test_nothing_else_reads_todays_date_from_the_server_clock() -> None:
+    """The tests too: CI runs on UTC, so a test comparing against the server's date failed one
+    night (2026-10-05, between 18:30 and 00:00 UTC) while passing on an IST laptop."""
     server_today = re.compile(r"date\.today\b|\.now\([^)]*\)\.date\(\)")
+    backend = SRC.parents[1]
     offenders = [
-        f"{path.relative_to(SRC)}:{number}"
-        for path in sorted(SRC.rglob("*.py"))
-        if path.name != "clock.py"
+        f"{path.relative_to(backend)}:{number}"
+        for path in sorted([*SRC.rglob("*.py"), *(backend / "tests").rglob("*.py")])
+        if path.name not in ("clock.py", "test_clock.py")
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
         if server_today.search(line)
     ]

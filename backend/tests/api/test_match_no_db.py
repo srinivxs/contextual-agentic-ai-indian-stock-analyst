@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from app.api import match as match_api
 from app.auth.deps import current_user
 from app.auth.sessions import CurrentUser
+from app.clock import india_today
 from app.insights import Citation
 from app.matching.model import Reason, StockMatch
 
@@ -88,7 +89,7 @@ async def test_the_json_shape(
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    assert seen == {"profile": 1, "stocks": 1, "today": date.today()}
+    assert seen == {"profile": 1, "stocks": 1, "today": india_today()}
     assert response.json() == {
         "profile_empty": False,
         "stocks": [

@@ -5,7 +5,6 @@ screener.in's section, row and column), the four derived values, rolling sentime
 events. Amounts travel as strings, so no figure is rounded by a float on the way.
 """
 
-from datetime import date
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -14,6 +13,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.clock import india_today
 from tests.helpers import running_app
 from tests.integration.auth_helpers import open_session
 from tests.integration.conftest import DbConfig, MakeUser
@@ -78,7 +78,7 @@ async def seed(engine: AsyncEngine, *, document_status: str = "completed") -> No
                 "'dividend', 'positive', 'low', :day, 'document', 'DemoCo declared a dividend.', "
                 "'The Board declared a dividend.' FROM documents WHERE id = :document"
             ),
-            {"document": document, "day": date.today()},
+            {"document": document, "day": india_today()},
         )
 
 
@@ -155,7 +155,7 @@ async def test_the_insights_carry_every_figure_with_its_citation(
             "event_type": "dividend",
             "sentiment": "positive",
             "impact": "low",
-            "event_date": date.today().isoformat(),
+            "event_date": india_today().isoformat(),
             "summary": "DemoCo declared a dividend.",
             "citation": {
                 "source": "filing",

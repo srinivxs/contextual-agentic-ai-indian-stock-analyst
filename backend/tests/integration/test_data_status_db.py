@@ -7,7 +7,6 @@ dates every page shows as a disclaimer.
 """
 
 import asyncio
-from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -16,6 +15,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.clock import india_today
 from app.core.config import Settings
 from tests.helpers import running_app
 from tests.integration.auth_helpers import open_session
@@ -201,4 +201,4 @@ async def test_nothing_stored_yet_has_no_dates(
 
 def test_the_day_the_prices_window_ends_is_yesterday() -> None:
     # A reminder of why "current" is reachable: today is never asked for (app/prices/store.py).
-    assert date.today().toordinal() > 0
+    assert india_today().toordinal() > 0
