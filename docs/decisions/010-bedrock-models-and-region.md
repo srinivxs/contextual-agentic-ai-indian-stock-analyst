@@ -94,3 +94,14 @@ methods can take up to seven days to apply. None of this applies to Amazon's own
 - ADR 004 and 008: Bedrock stays IAM-authenticated with no API keys; the task role needs Bedrock
   invoke permissions for the two models above.
 - P3 can start; nothing in P3 to P10 needs a chat model (P11 is the first phase that does).
+
+## Amendment (2026-10-06): a newer Marketplace model checked, still not available
+
+The owner checked whether a newer Marketplace model could replace Nova 2 Lite. In ap-south-1 it is
+offered only through global cross-region inference (a `global.` profile,
+ACTIVE; $2 input / $10 output per million tokens). A console Playground call as the admin user
+returned `AccessDeniedException: <model> is not available for this
+account`: the same account-level gate seen on 2026-09-20, not an IAM or region
+problem. The owner decided to stay on Nova 2 Lite. If it is wanted later: check the Bedrock
+Service Quotas for the model (a 0 applied value can be raised on request), and test an older
+Marketplace model to tell a per-model gate from the Marketplace payment block recorded above.
