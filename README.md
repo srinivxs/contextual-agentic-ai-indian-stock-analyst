@@ -281,10 +281,12 @@ is registered once. No NAT gateway, no autoscaling and no paid monitoring.
 **A session.** `scripts/demo-up.ps1` applies `infra/stack`, runs two one-off tasks (create the
 no-DDL runtime database role, then migrate the schema), points CloudFront at the new load
 balancer, starts the service and waits for `/api/readyz` through CloudFront. Every Terraform apply
-waits for a typed `yes`. The database starts empty, and the worker fills it by itself: it fetches
-about 85 filings from BSE into the documents bucket, a month of daily prices and the RBI feed,
-then fingerprints and reads them through Bedrock (about 20 to 30 minutes, about $0.56).
-`scripts/demo-down.ps1` destroys the stack and checks that nothing billable is left.
+waits for a typed `yes`. The database is restored from the snapshot the last session saved, so
+the app has its data at once and the worker only fetches what is new; the very first session
+starts empty, and the worker fetches about 85 filings from BSE, a month of daily prices and the
+RBI feed, then fingerprints and reads them through Bedrock (about 30 to 45 minutes, about $0.56).
+`scripts/demo-down.ps1` saves the database, destroys the stack, keeps the newest two saves and
+checks that nothing billable is left.
 
 **What the application may do** is set by Terraform variables, passed to both containers:
 

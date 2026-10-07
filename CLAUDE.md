@@ -433,9 +433,11 @@ Bedrock-only with no API-key fallback unless Bedrock is unavailable; pure-ASGI m
   task (not essential, restart policy, 1.5 GB cap), task 0.5 vCPU / 2 GB, task-role Bedrock
   (Titan V2 + Nova 2 Lite global profile, ADR 010 shape) and S3 policies, variables
   `data_sources_enabled` / `ai_enabled` / `extraction_budget_usd` / `chat_budget_usd` (both
-  containers get the same switches), the deploy script updates every container's image. Each
-  session starts with an empty database (no snapshot): the worker refills it in about 20 to 30
-  minutes for about $0.56 of Bedrock. Unproven until the first real session: Bedrock accepting
+  containers get the same switches), the deploy script updates every container's image. Since
+  2026-10-08 the database is **kept between sessions** (ADR 008 amendment): demo-down saves it as
+  a snapshot `stock-analyst-demo-db-<UTC yyyyMMdd-HHmm>`, demo-up restores the newest, the newest
+  two are kept; `ignore_changes = [snapshot_identifier]` protects a live database; a filing whose
+  file was lost with the old bucket is forgotten and fetched again (`BlobMissing`). Unproven until the first real session: Bedrock accepting
   the global-profile policy, 2 GB being enough, the worker reaching BSE and screener.in from
   AWS addresses (runbook step 6b).
 - **P16:** browser E2E (Playwright), button labelling (`aria-pressed` plus a changing label), ESLint 10

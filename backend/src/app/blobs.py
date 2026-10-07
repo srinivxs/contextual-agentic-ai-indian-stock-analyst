@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from app.core.config import CommonSettings
 
@@ -28,6 +29,12 @@ _KEY = re.compile(r"^documents/[0-9a-f]{64}\.pdf$")
 
 class InvalidBlobKey(ValueError):
     """A key we did not build. Refused before any path is formed from it."""
+
+
+class BlobMissing(LookupError):
+    """No file under this key. In AWS the documents bucket is destroyed with the stack while the
+    database is kept as a snapshot (the owner, 2026-10-08), so a filing fetched in an earlier
+    session but never read has lost its file. The caller decides what that means."""
 
 
 def blob_key_for(sha256: str) -> str:
@@ -57,7 +64,10 @@ class FilesystemBlobStore:
         await asyncio.to_thread(self.put_sync, key, data)
 
     async def get(self, key: str) -> bytes:
-        return await asyncio.to_thread(self._path(key).read_bytes)
+        try:
+            return await asyncio.to_thread(self._path(key).read_bytes)
+        except FileNotFoundError as error:
+            raise BlobMissing(key) from error
 
     def put_sync(self, key: str, data: bytes) -> None:
         """Write atomically: a temporary file in the same folder, then one rename.
@@ -108,7 +118,14 @@ class S3BlobStore:
 
     async def get(self, key: str) -> bytes:
         _check(key)
-        response = await asyncio.to_thread(self._client.get_object, Bucket=self.bucket, Key=key)
+        try:
+            response = await asyncio.to_thread(self._client.get_object, Bucket=self.bucket, Key=key)
+        except ClientError as error:
+            # Only "no such key" is a missing file; anything else (access denied, a throttle)
+            # is a real failure and is raised as it is, so the job is retried.
+            if error.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+                raise BlobMissing(key) from error
+            raise
         body: bytes = await asyncio.to_thread(response["Body"].read)
         return body
 

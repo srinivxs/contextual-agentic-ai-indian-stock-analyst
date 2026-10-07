@@ -147,3 +147,32 @@ providers, the deploy script's tests); nothing has been applied. The owner appli
   handful of sessions. Price history is therefore the last month BSE serves.
 - **The deploy script** now puts the new image in every container of a task definition, so a
   push updates the worker as well as the api.
+
+## Amendment (2026-10-08): the database is kept between sessions
+
+Replaces "Data between sessions: none is kept" above. Refilling an empty database took 30 to 45
+minutes after every `demo-up` (and about $0.56 of Bedrock), with the price backfill at the mercy
+of BSE's "slow down" answers, so the owner asked for it to be faster.
+
+- **Saved on destroy:** `scripts/demo-up.ps1` passes `db_final_snapshot_identifier`, a new name
+  `stock-analyst-demo-db-<UTC yyyyMMdd-HHmm>`, so the destroy saves the database as a final
+  snapshot before deleting it (a few minutes longer).
+- **Restored on create:** the next `demo-up` finds the newest finished save and passes it as
+  `db_snapshot_identifier`; the instance is restored from it instead of created empty. The
+  provider still sets the new master password right after the restore (`password_wo`), and the
+  provision task re-sets the runtime role's, so both passwords stay fresh every session.
+- **Never replaces a live database:** `lifecycle { ignore_changes = [snapshot_identifier] }`, so
+  `demo-up` run again in a session cannot swap the running database for a saved one (tested by
+  breaking it: `infra/stack/tests/snapshots.tftest.hcl`).
+- **Only our names:** both variables accept only `stock-analyst-demo-db-YYYYMMDD-HHMM`; without
+  them (a plain `terraform apply`) the database starts empty and nothing is saved, as before.
+- **Kept: the newest two.** `demo-down.ps1` deletes older saves, and its billing check counts only
+  snapshots that are not ours. Cost: the database is well under 1 GB, so a few cents a month
+  (likely free within the Free Tier's 20 GB of backup storage). Approved by the owner.
+- **The documents bucket is still destroyed.** Read filings need no file again (their pages are in
+  the database), but one fetched and not yet read has lost its file: the ingest job now forgets
+  that document (`BlobMissing`), and the next filings check fetches it again from BSE.
+
+Tradeoffs: `demo-down` takes a few minutes longer; the data is only as fresh as the last session
+until the worker catches up (new filings, the missing days of prices); and price history now
+grows across sessions instead of being the last month BSE serves.

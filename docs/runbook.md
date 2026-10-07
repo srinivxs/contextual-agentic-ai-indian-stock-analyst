@@ -170,10 +170,14 @@ curl.exe -s "$site/api/readyz"
 `/api/readyz` returning `{"status":"ready"}` is the real green light: it proves the api can reach RDS
 as the runtime role. If it fails, step 4 did not run.
 
-### 6b. The data fills itself — about 20 to 30 minutes (since go-live)
+### 6b. The data: restored, then topped up (since 2026-10-08)
 
-The same task runs the **worker** beside the api, and every session starts with an empty database.
-With the defaults (`data_sources_enabled` and `ai_enabled` both true) the worker, by itself:
+The database is **restored from the newest save** `demo-down.ps1` made (ADR 008 amendment), so the
+app has its filings, facts, search, conversations and price history from the first minute; the
+worker only fetches what is new since then, usually a few minutes. With no save yet (the very first
+session, or after the saves were deleted) it starts empty and the worker refills it in about 30 to
+45 minutes. The same task runs the **worker** beside the api. With the defaults
+(`data_sources_enabled` and `ai_enabled` both true) the worker, by itself:
 
 1. reads each stock's screener.in page and fetches about 85 filings from BSE into the documents
    bucket (2 s apart), with the fundamentals table and top ratios;
@@ -202,8 +206,9 @@ backend ([ADR 017](decisions/017-deploy-pipeline.md)). Watch it in the Actions t
 
 ## Switching it off — do this every time
 
-**The quick way:** destroys only `infra/stack`, then runs the six checks below and says whether
-anything is still billing.
+**The quick way:** saves the database (a snapshot named by demo-up), destroys only `infra/stack`,
+keeps the newest two saves, then runs the six checks below and says whether anything is still
+billing.
 
 ```powershell
 & "C:\Contextual Agentic AI Indian Stock Analyst\scripts\demo-down.ps1"
@@ -220,7 +225,8 @@ terraform destroy
 registration with it. The plan should say **49 to destroy**; if it says 11 (the edge) or 6 (the build
 machinery), you are in the wrong directory — stop.
 
-About 5 minutes. Then confirm nothing expensive survived:
+About 8 to 10 minutes: saving the database adds a few. By hand, without demo-up's name, nothing
+is saved and the next session starts empty. Then confirm nothing expensive survived:
 
 ```powershell
 aws ecs list-clusters --query clusterArns
@@ -228,10 +234,11 @@ aws rds describe-db-instances --query "DBInstances[].DBInstanceIdentifier"
 aws elbv2 describe-load-balancers --query "LoadBalancers[].LoadBalancerName"
 aws ec2 describe-vpcs --filters Name=isDefault,Values=false --query "Vpcs[].VpcId"
 aws ec2 describe-addresses --query "Addresses[].PublicIp"
-aws rds describe-db-snapshots --query "DBSnapshots[].DBSnapshotIdentifier"
+aws rds describe-db-snapshots --snapshot-type manual --query "DBSnapshots[].DBSnapshotIdentifier"
 ```
 
-All six must be empty. Then confirm the edge is untouched: the site address
+The first five must be empty. The last lists the kept saves (`stock-analyst-demo-db-...`, at most
+two, a few cents a month); anything else there is a leftover. Then confirm the edge is untouched: the site address
 still returns 200, and `/api/healthz` returns 502. That pair is the correct resting state.
 
 Two things you will see afterwards that are **not** costs: deregistered ECS task-definition revisions,

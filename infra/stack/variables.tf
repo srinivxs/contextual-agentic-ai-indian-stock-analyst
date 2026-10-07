@@ -123,6 +123,32 @@ variable "log_retention_days" {
   }
 }
 
+# KEEPING THE DATABASE BETWEEN SESSIONS (the owner, 2026-10-08). scripts/demo-up.ps1 passes both:
+# the newest saved snapshot to restore from, and a new name for the destroy to save under. Without
+# them (a plain `terraform apply`) the database starts empty and the destroy saves nothing, as
+# before. Only our own names are accepted, so no typo can restore someone else's database.
+variable "db_snapshot_identifier" {
+  type        = string
+  description = "The snapshot to restore the database from; empty for a new, empty database."
+  default     = ""
+
+  validation {
+    condition     = var.db_snapshot_identifier == "" || can(regex("^stock-analyst-demo-db-[0-9]{8}-[0-9]{4}$", var.db_snapshot_identifier))
+    error_message = "db_snapshot_identifier must be empty or one of ours: stock-analyst-demo-db-YYYYMMDD-HHMM."
+  }
+}
+
+variable "db_final_snapshot_identifier" {
+  type        = string
+  description = "The name the database is saved under when the stack is destroyed; empty saves nothing."
+  default     = ""
+
+  validation {
+    condition     = var.db_final_snapshot_identifier == "" || can(regex("^stock-analyst-demo-db-[0-9]{8}-[0-9]{4}$", var.db_final_snapshot_identifier))
+    error_message = "db_final_snapshot_identifier must be empty or one of ours: stock-analyst-demo-db-YYYYMMDD-HHMM."
+  }
+}
+
 variable "db_password_version" {
   type        = number
   description = "Bump this to rotate the database passwords."

@@ -192,9 +192,11 @@ run "the_database_is_private_single_az_and_genuinely_disposable" {
     error_message = "Deletion protection must be off, or the end-of-session destroy fails."
   }
 
+  # Without demo-up's name nothing is saved on destroy; with it, the database is kept between
+  # sessions on purpose (snapshots.tftest.hcl, ADR 008 amendment).
   assert {
     condition     = aws_db_instance.main.skip_final_snapshot == true
-    error_message = "A final snapshot would keep billing after the stack is destroyed."
+    error_message = "A plain apply (no name to save under) must save nothing on destroy."
   }
 
   assert {

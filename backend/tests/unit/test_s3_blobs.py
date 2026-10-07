@@ -9,9 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError
 from pydantic import ValidationError
 
 from app.blobs import (
+    BlobMissing,
     FilesystemBlobStore,
     InvalidBlobKey,
     S3BlobStore,
@@ -39,7 +41,27 @@ class FakeS3:
 
     def get_object(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(("get_object", kwargs))
-        return {"Body": io.BytesIO(self.objects[(kwargs["Bucket"], kwargs["Key"])])}
+        if self.refuse is not None:
+            raise ClientError({"Error": {"Code": self.refuse, "Message": "no"}}, "GetObject")
+        found = self.objects.get((kwargs["Bucket"], kwargs["Key"]))
+        if found is None:  # what S3 answers for a key it does not have
+            raise ClientError({"Error": {"Code": "NoSuchKey", "Message": "missing"}}, "GetObject")
+        return {"Body": io.BytesIO(found)}
+
+    refuse: str | None = None
+
+
+async def test_a_file_that_is_not_in_the_bucket_is_said_to_be_missing() -> None:
+    # The bucket is destroyed with the stack while the database is kept (the owner, 2026-10-08).
+    with pytest.raises(BlobMissing):
+        await S3BlobStore(bucket="demo-documents", client=FakeS3()).get(blob_key_for(SHA))
+
+
+async def test_any_other_s3_error_is_not_mistaken_for_a_missing_file() -> None:
+    s3 = FakeS3()
+    s3.refuse = "AccessDenied"
+    with pytest.raises(ClientError):
+        await S3BlobStore(bucket="demo-documents", client=s3).get(blob_key_for(SHA))
 
 
 async def test_what_is_put_can_be_read_back() -> None:

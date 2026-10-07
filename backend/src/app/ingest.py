@@ -17,6 +17,12 @@ Two kinds of failure are told apart:
   change nothing, so the job fails at once and the user gets a plain reason.
 * ``JobCannotSucceed``: the job itself is malformed (no such document, an unknown kind).
 * Anything else (the store did not answer, the database hiccuped) may pass, so the worker retries.
+
+One more case is neither: the file is gone (``BlobMissing``). In AWS the documents bucket is
+destroyed with the stack while the database is kept as a snapshot (the owner, 2026-10-08), so a
+filing fetched in an earlier session and never read has lost its file. Its document is forgotten
+and the job completes: the next filings check, which skips only links it already has, fetches the
+file again from BSE.
 """
 
 import asyncio
@@ -24,7 +30,7 @@ import asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.blobs import BlobStore
+from app.blobs import BlobMissing, BlobStore
 from app.chunking import chunk_pages
 from app.jobs import ClaimedJob, complete, still_mine
 from app.pdf_text import UnreadablePdf, extract_pages
@@ -69,6 +75,9 @@ _INSERT_CHUNK = text(
     "VALUES (:id, :ordinal, :page_number, :text, :content_hash)"
 )
 
+# Only a document never read: one that was has its pages, and needs no file again.
+_FORGET = text("DELETE FROM documents WHERE id = :id AND status IN ('pending', 'processing')")
+
 _DONE = text(
     "UPDATE documents SET status = 'completed', page_count = :pages, failure_reason = NULL, "
     "updated_at = now() WHERE id = :id"
@@ -104,7 +113,11 @@ async def ingest_document(
         await db.commit()
 
     # 2. No transaction: the slow part.
-    data = await store.get(blob_key)
+    try:
+        data = await store.get(blob_key)
+    except BlobMissing:
+        await _forget(session_factory, job, document_id)
+        return
     try:
         pages = await asyncio.to_thread(extract_pages, data)
     except UnreadablePdf as error:
@@ -141,5 +154,17 @@ async def ingest_document(
             ],
         )
         await db.execute(_DONE, {"id": document_id, "pages": len(pages)})
+        await complete(db, job)
+        await db.commit()
+
+
+async def _forget(
+    session_factory: async_sessionmaker[AsyncSession], job: ClaimedJob, document_id: int
+) -> None:
+    """The file is gone: forget the unread document so it is fetched again, and finish the job."""
+    async with session_factory() as db:
+        if not await still_mine(db, job):
+            return
+        await db.execute(_FORGET, {"id": document_id})
         await complete(db, job)
         await db.commit()

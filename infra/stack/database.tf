@@ -47,6 +47,13 @@ resource "aws_db_parameter_group" "main" {
 }
 
 # --- the instance ------------------------------------------------------------------------------------
+# The two snapshot names demo-up passes; "" (a plain apply) means none: a new, empty database, and
+# nothing saved on destroy.
+locals {
+  db_restore_from = var.db_snapshot_identifier == "" ? null : var.db_snapshot_identifier
+  db_save_as      = var.db_final_snapshot_identifier == "" ? null : var.db_final_snapshot_identifier
+}
+
 resource "aws_db_instance" "main" {
   identifier = "${local.name_prefix}-db"
   engine     = "postgres"
@@ -84,12 +91,22 @@ resource "aws_db_instance" "main" {
   multi_az            = false
   publicly_accessible = false
 
-  # The three settings that make `terraform destroy` actually work. All three would be wrong in
-  # production, which is the interesting part: deletion protection blocks the destroy outright, and
-  # a final snapshot outlives the stack and keeps billing.
+  # The settings that make `terraform destroy` actually work. Deletion protection would block the
+  # destroy outright, and automated backups are not wanted for a database we save ourselves.
   backup_retention_period = 0
-  skip_final_snapshot     = true
   deletion_protection     = false
+
+  # KEPT BETWEEN SESSIONS (the owner, 2026-10-08): the destroy saves the database as a snapshot under
+  # the name demo-up chose, and the next demo-up restores the newest one, so the worker only fetches
+  # what is new instead of refilling an empty database. The snapshot outlives the stack and costs a
+  # few cents a month (the database is well under 1 GB); demo-down keeps the newest two. Without the
+  # names (a plain apply) the database starts empty and nothing is saved, as before.
+  #
+  # On a restore the provider still sends the new master password (password_wo, above) right after
+  # the restore, and the provision task re-sets the runtime role's: both passwords stay fresh.
+  snapshot_identifier       = local.db_restore_from
+  skip_final_snapshot       = local.db_save_as == null
+  final_snapshot_identifier = local.db_save_as
 
   # Both cost money beyond their free allowance, and neither is useful here.
   performance_insights_enabled = false
@@ -101,5 +118,11 @@ resource "aws_db_instance" "main" {
 
   tags = {
     Name = "${local.name_prefix}-db"
+  }
+
+  # A snapshot only matters when the database is created. A different one passed to a running stack
+  # (a re-run of demo-up after a newer save) would otherwise REPLACE the live database; ignored.
+  lifecycle {
+    ignore_changes = [snapshot_identifier]
   }
 }

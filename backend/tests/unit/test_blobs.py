@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from app.blobs import FilesystemBlobStore, InvalidBlobKey, blob_key_for
+from app.blobs import BlobMissing, FilesystemBlobStore, InvalidBlobKey, blob_key_for
 
 SHA = "ab" * 32
 PDF = b"%PDF-1.7\n" + b"x" * 1000
@@ -24,6 +24,11 @@ def test_the_key_is_derived_from_the_content_hash() -> None:
 def test_a_key_is_only_made_from_a_real_sha256(digest: str) -> None:
     with pytest.raises(InvalidBlobKey):
         blob_key_for(digest)
+
+
+async def test_a_file_that_is_not_there_is_said_to_be_missing(tmp_path: Path) -> None:
+    with pytest.raises(BlobMissing):
+        await FilesystemBlobStore(tmp_path).get(blob_key_for(SHA))
 
 
 async def test_what_is_put_can_be_read_back(tmp_path: Path) -> None:

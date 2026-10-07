@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.blobs import FilesystemBlobStore, blob_key_for
+from app.blobs import BlobMissing, FilesystemBlobStore, blob_key_for
 from app.documents import PdfFile, record_document
 from app.jobs import claim_next
 from app.worker import GAVE_UP_REASON, WorkerContext, handle, run_forever, run_once
@@ -101,6 +101,56 @@ async def test_a_text_pdf_becomes_pages_and_page_numbered_chunks(
     assert [(c[0], c[1]) for c in chunks] == [(0, 1), (1, 2)]
     assert "widgets segment" in chunks[1][2]
     assert await rows(admin_engine, "SELECT status FROM jobs") == [("completed",)]
+
+
+async def test_a_file_lost_with_an_old_bucket_is_forgotten_so_it_is_fetched_again(
+    context: WorkerContext,
+    session_factory: Factory,
+    store: FilesystemBlobStore,
+    admin_engine: AsyncEngine,
+) -> None:
+    # The database comes back from a snapshot, but the documents bucket was destroyed with the old
+    # stack (the owner, 2026-10-08). A filing fetched and not yet read has lost its file: forget it,
+    # and the next filings check (which skips only URLs it already has) fetches it again.
+    await seed(DEMOCO_RESULTS, session_factory, store)
+    sha = hashlib.sha256(DEMOCO_RESULTS).hexdigest()
+    (store.root / blob_key_for(sha)).unlink()
+
+    assert await run_once(context) is True
+
+    assert await rows(admin_engine, "SELECT count(*) FROM documents") == [(0,)]
+    assert await rows(admin_engine, "SELECT status FROM jobs") == [("completed",)]
+
+
+class TakenOverWhileReading(FilesystemBlobStore):
+    """While this worker looks for the file, another takes the job over; then the file is gone."""
+
+    def __init__(self, root: Path, engine: AsyncEngine) -> None:
+        super().__init__(root)
+        self.engine = engine
+
+    async def get(self, key: str) -> bytes:
+        async with self.engine.begin() as connection:
+            await connection.execute(text("UPDATE jobs SET attempts = attempts + 1"))
+        raise BlobMissing(key)
+
+
+async def test_a_worker_that_lost_its_lease_forgets_nothing_when_the_file_is_gone(
+    session_factory: Factory,
+    store: FilesystemBlobStore,
+    admin_engine: AsyncEngine,
+    tmp_path: Path,
+) -> None:
+    await seed(DEMOCO_RESULTS, session_factory, store)
+    stale = WorkerContext(
+        session_factory, TakenOverWhileReading(tmp_path / "blobs", admin_engine), lease_seconds=300
+    )
+
+    await run_once(stale)
+
+    # The job belongs to the newer claim now: this worker leaves the document and the job alone.
+    assert await rows(admin_engine, "SELECT count(*) FROM documents") == [(1,)]
+    assert await rows(admin_engine, "SELECT status FROM jobs") == [("processing",)]
 
 
 async def test_nothing_queued_means_nothing_done(context: WorkerContext) -> None:

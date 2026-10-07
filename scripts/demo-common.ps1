@@ -11,6 +11,12 @@ $DemoCluster = 'stock-analyst-demo'
 $DemoService = 'stock-analyst-demo-api'
 $DemoUrl = $null
 
+# SAVED DATABASES (the owner, 2026-10-08). demo-down's destroy saves the database as a snapshot named
+# stock-analyst-demo-db-<UTC yyyyMMdd-HHmm>, demo-up restores the newest one, and the newest two are
+# kept (each costs a few cents a month). The names match infra/stack/variables.tf's validation.
+$DemoSnapshotPrefix = 'stock-analyst-demo-db-'
+$DemoKeepSnapshots = 2
+
 function Write-Step([string]$Text) {
     Write-Host ''
     Write-Host ("[{0:HH:mm:ss}] {1}" -f (Get-Date), $Text) -ForegroundColor Cyan
@@ -61,6 +67,53 @@ function Initialize-DemoSession {
     $script:DemoUrl = Invoke-Aws -Arguments @('ssm', 'get-parameter', '--name',
         '/stock-analyst/demo/public_base_url', '--query', 'Parameter.Value', '--output', 'text')
     Write-Host "Account ...$($account.Substring($account.Length - 4)), region $DemoRegion, $DemoUrl"
+}
+
+# The name the next destroy saves the database under: ours, and dated in UTC so names sort by time.
+function New-DemoSnapshotName {
+    return $DemoSnapshotPrefix + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmm')
+}
+
+# Our saved databases, newest first, each with its Name, Created time and Status.
+function Get-DemoSnapshots {
+    $query = "DBSnapshots[?starts_with(DBSnapshotIdentifier,'$DemoSnapshotPrefix')].[SnapshotCreateTime,DBSnapshotIdentifier,Status]"
+    $lines = Invoke-Aws -Arguments @('rds', 'describe-db-snapshots', '--snapshot-type', 'manual',
+        '--query', $query, '--output', 'text')
+    $found = @()
+    foreach ($line in @($lines)) {
+        $fields = @("$line" -split "`t")
+        if ($fields.Count -lt 3) { continue }
+        $found += [pscustomobject]@{ Created = $fields[0]; Name = $fields[1]; Status = $fields[2] }
+    }
+    # A save still being written has no time yet ("None"), which sorts first: it is the newest.
+    return @($found | Sort-Object -Property Created -Descending)
+}
+
+# The newest saved database that can be restored, or $null for a new, empty one.
+function Get-LatestDemoSnapshot {
+    $ready = @(Get-DemoSnapshots | Where-Object { $_.Status -eq 'available' })
+    if ($ready.Count -eq 0) { return $null }
+    return $ready[0].Name
+}
+
+# Is the database already running (demo-up run again in the same session)?
+function Test-DemoDatabaseRunning {
+    & aws rds describe-db-instances --db-instance-identifier 'stock-analyst-demo-db' --query 'DBInstances[0].DBInstanceStatus' --output text 2>$null | Out-Null
+    return ($LASTEXITCODE -eq 0)
+}
+
+# Keep the newest saves; delete the older ones. Only names from our own list are ever deleted.
+function Remove-OldDemoSnapshots {
+    $all = @(Get-DemoSnapshots)
+    if ($all.Count -gt $DemoKeepSnapshots) {
+        foreach ($old in $all[$DemoKeepSnapshots..($all.Count - 1)]) {
+            Write-Host "  deleting the older save $($old.Name)"
+            Invoke-Aws -Arguments @('rds', 'delete-db-snapshot', '--db-snapshot-identifier',
+                $old.Name, '--query', 'DBSnapshot.Status', '--output', 'text') | Out-Null
+        }
+    }
+    $kept = @(Get-DemoSnapshots | Select-Object -First $DemoKeepSnapshots)
+    foreach ($save in $kept) { Write-Host "  kept $($save.Name) ($($save.Status))" }
 }
 
 function Get-StackOutputs {
@@ -118,7 +171,8 @@ function Test-NothingBillable {
         'load balancers'         = @('elbv2', 'describe-load-balancers', '--query', 'LoadBalancers[].LoadBalancerName')
         'non-default VPCs'       = @('ec2', 'describe-vpcs', '--filters', 'Name=isDefault,Values=false', '--query', 'Vpcs[].VpcId')
         'elastic IPs'            = @('ec2', 'describe-addresses', '--query', 'Addresses[].PublicIp')
-        'manual RDS snapshots'   = @('rds', 'describe-db-snapshots', '--snapshot-type', 'manual', '--query', 'DBSnapshots[].DBSnapshotIdentifier')
+        # Our own saves are kept on purpose (Remove-OldDemoSnapshots); anything else is a leftover.
+        'other RDS snapshots'    = @('rds', 'describe-db-snapshots', '--snapshot-type', 'manual', '--query', "DBSnapshots[?!starts_with(DBSnapshotIdentifier,'$DemoSnapshotPrefix')].DBSnapshotIdentifier")
     }
     $clean = $true
     foreach ($name in $checks.Keys) {

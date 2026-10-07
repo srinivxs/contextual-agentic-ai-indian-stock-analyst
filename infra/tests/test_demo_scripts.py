@@ -126,3 +126,47 @@ def test_the_sign_in_allow_list_comes_from_env_and_is_required() -> None:
     assert "^ALLOWED_EMAILS=" in common
     assert "$env:TF_VAR_allowed_emails" in common
     assert "ALLOWED_EMAILS must be set in .env" in common
+
+
+# --- keeping the database between sessions (the owner, 2026-10-08) -------------------------------
+
+
+def test_demo_up_restores_the_newest_saved_database_and_names_the_next_save() -> None:
+    up = _code("demo-up.ps1")
+    assert up.index("Get-LatestDemoSnapshot") < up.index("Invoke-Terraform -Root 'stack'")
+    assert '"-var=db_snapshot_identifier=$restoreFrom"' in up
+    assert '"-var=db_final_snapshot_identifier=$saveAs"' in up
+    assert "New-DemoSnapshotName" in up
+
+
+def test_snapshot_names_are_ours_dated_in_utc_and_match_the_stack_rule() -> None:
+    common = _code("demo-common.ps1")
+    assert "$DemoSnapshotPrefix = 'stock-analyst-demo-db-'" in common
+    assert ".ToUniversalTime().ToString('yyyyMMdd-HHmm')" in common
+    variables = (REPO / "infra" / "stack" / "variables.tf").read_text(encoding="utf-8")
+    assert variables.count("^stock-analyst-demo-db-[0-9]{8}-[0-9]{4}$") == 2
+
+
+def test_only_a_finished_snapshot_of_ours_is_restored() -> None:
+    common = _code("demo-common.ps1")
+    assert "starts_with(DBSnapshotIdentifier,'$DemoSnapshotPrefix')" in common
+    assert "$_.Status -eq 'available'" in common
+
+
+def test_demo_down_saves_then_keeps_only_the_newest_two() -> None:
+    down = _code("demo-down.ps1")
+    destroy = down.index("Invoke-Terraform -Root 'stack' -Arguments @('destroy')")
+    assert destroy < down.index("Remove-OldDemoSnapshots") < down.index("Test-NothingBillable")
+    common = _code("demo-common.ps1")
+    assert "$DemoKeepSnapshots = 2" in common
+    # Only names from our own list are ever deleted.
+    deletes = [line.strip() for line in common.splitlines() if "delete-db-snapshot" in line]
+    assert deletes == [
+        "Invoke-Aws -Arguments @('rds', 'delete-db-snapshot', '--db-snapshot-identifier',"
+    ]
+    assert "$old.Name" in common
+
+
+def test_the_billable_check_counts_only_snapshots_that_are_not_ours() -> None:
+    common = _code("demo-common.ps1")
+    assert "!starts_with(DBSnapshotIdentifier,'$DemoSnapshotPrefix')" in common
