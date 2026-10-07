@@ -1,11 +1,16 @@
 # The pipeline: every push to main is checked; only a commit that passes every check is built and
 # pushed to ECR, tagged with its commit SHA (P8b), and then deployed (P8c, ADR 017).
 #
-#   backend ─┐
-#   frontend ├─> image ──> deploy
-#   infra ───┘
+#             ┌─> backend ─┐
+#   changes ──┼─> frontend ├─> image ──> deploy (backend, then the site)
+#             └─> infra ───┘
 #
-# The three check jobs run in parallel and never see an AWS credential. `image` and `deploy` reach
+# ONLY WHAT CHANGED (the owner, 2026-10-08): `changes` compares this commit with the newest green
+# run. A push that changes only frontend/ skips the backend tests, the image and the backend
+# rollout and goes straight to publishing the site (a few minutes instead of twelve); a push that
+# does not touch frontend/ does not republish the site. Any doubt runs everything.
+#
+# The check jobs run in parallel and never see an AWS credential. `image` and `deploy` reach
 # AWS through OIDC (no stored keys), each with its own role: pushing and deploying are different
 # powers. The rules this file must keep are tested in infra/tests/test_pipeline_workflow.py.
 #
@@ -30,8 +35,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changes:
+    name: What changed since the last green run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # Reads the repository and the list of runs (to find the last green one); nothing else.
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      backend: ${{ steps.parts.outputs.backend }}
+      frontend: ${{ steps.parts.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Compare with the newest successful run on main
+        id: parts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow pipeline.yml --branch main \
+            --status success --limit 1 --json headSha --jq '.[0].headSha // ""')
+          python3 .github/scripts/changed_parts.py "$base"
+
   backend:
     name: Backend (lint, types, tests)
+    needs: [changes]
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -74,6 +105,7 @@ jobs:
 
   frontend:
     name: Frontend (lint, types, tests, build)
+    needs: [changes]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
@@ -96,6 +128,7 @@ jobs:
 
   infra:
     name: Infrastructure (Terraform offline, hygiene)
+    needs: [changes]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -138,7 +171,9 @@ jobs:
 
   image:
     name: Build and push the backend image
-    needs: [backend, frontend, infra]
+    needs: [changes, backend, frontend, infra]
+    # A plain condition keeps GitHub's implicit success(): any failed or skipped check stops it.
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     # AWS trades this job's OIDC token for one-hour credentials for the push-only role
@@ -188,7 +223,18 @@ jobs:
 
   deploy:
     name: Deploy (backend while the stack is up, then the frontend)
-    needs: [image]
+    needs: [changes, frontend, infra, image]
+    # The image is skipped for a frontend-only push, which would skip this job too; so it says
+    # when it runs: never after a cancel or a failed check, and only with a pushed image unless
+    # the backend did not change at all. (A failed backend check skips the image, and then the
+    # backend DID change, so this does not run.)
+    if: >-
+      !cancelled() &&
+      needs.changes.result == 'success' &&
+      needs.frontend.result == 'success' &&
+      needs.infra.result == 'success' &&
+      (needs.image.result == 'success' ||
+      (needs.image.result == 'skipped' && needs.changes.outputs.backend == 'false'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # The deploy role (infra/cicd/deploy.tf): run the migration, update the one service, sync the
@@ -212,12 +258,15 @@ jobs:
       # Migrate, roll out, check /api/readyz; or, with the stack down, nothing. A failure here stops
       # the job, so the frontend below is never published ahead of a backend that did not deploy.
       - name: Deploy the backend
+        if: needs.changes.outputs.backend == 'true'
         env:
           IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
         run: python3 .github/scripts/deploy_backend.py
 
-      # The edge is permanent, so the site is published whether or not the stack is up.
+      # The edge is permanent, so the site is published whether or not the stack is up; and only
+      # when frontend/ changed, so a backend push does not re-upload every file to S3.
       - name: Publish the frontend
+        if: needs.changes.outputs.frontend == 'true'
         run: |
           (cd frontend && npm ci && npm run build)
           bucket=$(aws ssm get-parameter --name /stock-analyst/demo/site_bucket_name \

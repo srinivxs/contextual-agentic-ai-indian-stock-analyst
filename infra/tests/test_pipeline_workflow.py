@@ -21,6 +21,8 @@ import yaml
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO / ".github" / "workflows" / "pipeline.yml"
 CHECK_JOBS = {"backend", "frontend", "infra"}
+BACKEND_CHANGED = "needs.changes.outputs.backend == 'true'"
+FRONTEND_CHANGED = "needs.changes.outputs.frontend == 'true'"
 PINNED_ACTION = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
 
 
@@ -82,7 +84,11 @@ def test_nothing_is_pushed_unless_every_check_passed(workflow: dict[Any, Any]) -
     assert set(jobs) >= CHECK_JOBS, f"missing check jobs: {CHECK_JOBS - set(jobs)}"
     needs = jobs["image"].get("needs")
     assert isinstance(needs, list)
-    assert set(needs) == CHECK_JOBS
+    assert set(needs) == CHECK_JOBS | {"changes"}
+    # A plain condition keeps GitHub's implicit success(): a failed or skipped check stops it.
+    assert jobs["image"].get("if") == BACKEND_CHANGED
+    assert "always()" not in str(jobs["image"].get("if"))
+    assert "cancelled()" not in str(jobs["image"].get("if"))
 
 
 def test_every_action_is_pinned_to_a_commit(workflow: dict[Any, Any]) -> None:
@@ -183,7 +189,22 @@ def test_the_image_job_hands_its_digest_to_the_deploy_job(workflow: dict[Any, An
 
 
 def test_only_an_image_that_was_built_and_pushed_is_deployed(workflow: dict[Any, Any]) -> None:
-    assert _jobs(workflow)["deploy"].get("needs") == ["image"]
+    deploy = _jobs(workflow)["deploy"]
+    assert set(deploy.get("needs") or []) == {"changes", "frontend", "infra", "image"}
+    condition = " ".join(str(deploy.get("if", "")).split())
+    # It must run when the image was skipped for a frontend-only push, so it says when it runs
+    # itself: never after a cancel, never after a failed check, and only with a pushed image
+    # unless the backend did not change at all.
+    for part in (
+        "!cancelled()",
+        "needs.changes.result == 'success'",
+        "needs.frontend.result == 'success'",
+        "needs.infra.result == 'success'",
+        "needs.image.result == 'success' || (needs.image.result == 'skipped' && "
+        "needs.changes.outputs.backend == 'false')",
+    ):
+        assert part in condition, part
+    assert "always()" not in condition, "always() would also deploy a cancelled run"
 
 
 def test_the_backend_is_deployed_before_the_frontend_is_published(
@@ -198,6 +219,44 @@ def test_the_backend_is_deployed_before_the_frontend_is_published(
     assert backend < frontend
     assert steps[backend].get("env") == {"IMAGE_DIGEST": "${{ needs.image.outputs.digest }}"}
     assert "create-invalidation" in runs[frontend]
+    # Each step runs only for its own part; a skipped backend step does not stop the frontend,
+    # a failed one does (the next step's implicit success()).
+    assert steps[backend].get("if") == BACKEND_CHANGED
+    assert steps[frontend].get("if") == FRONTEND_CHANGED
+
+
+# --- only what changed (the owner, 2026-10-08) ---------------------------------------------------
+
+
+def test_the_changes_job_reads_the_repository_and_the_runs_and_nothing_else(
+    workflow: dict[Any, Any],
+) -> None:
+    changes = _jobs(workflow)["changes"]
+    assert changes.get("permissions") == {"contents": "read", "actions": "read"}
+    assert changes.get("outputs") == {
+        "backend": "${{ steps.parts.outputs.backend }}",
+        "frontend": "${{ steps.parts.outputs.frontend }}",
+    }
+    checkout = _steps(changes)[0]
+    assert str(checkout.get("uses", "")).startswith("actions/checkout@")
+    assert checkout.get("with") == {"fetch-depth": 0}, "the diff needs the history"
+    scripts = _scripts(changes)
+    # The base is the newest GREEN run on main, so a failed push is counted again next time.
+    assert "--status success" in scripts
+    assert "--branch main" in scripts
+    assert ".github/scripts/changed_parts.py" in scripts
+
+
+def test_only_the_backend_tests_are_skipped_for_a_frontend_only_push(
+    workflow: dict[Any, Any],
+) -> None:
+    jobs = _jobs(workflow)
+    assert jobs["backend"].get("needs") == ["changes"]
+    assert jobs["backend"].get("if") == BACKEND_CHANGED
+    # The frontend and repository checks are quick and run in parallel: they always run.
+    for name in ("frontend", "infra"):
+        assert jobs[name].get("needs") == ["changes"], name
+        assert "if" not in jobs[name], name
 
 
 def test_the_deploy_script_is_linted_and_typed_in_ci(workflow: dict[Any, Any]) -> None:

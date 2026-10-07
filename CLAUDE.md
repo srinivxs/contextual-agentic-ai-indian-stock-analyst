@@ -191,6 +191,9 @@ without explaining why and updating this file plus the relevant ADR. Keep this f
   **migration as a one-off task first**, `update-service`, rollback detection, `/api/readyz` through
   CloudFront; then the frontend is synced and invalidated. Both roles trust only GitHub's **immutable
   OIDC subject** `repo:<owner>@<id>/<name>@<id>:ref:refs/heads/main`. Actions are pinned by SHA.
+  A first `changes` job (2026-10-08, ADR 017 amendment) compares with the last green run: a
+  `frontend/`-only push skips the backend tests, image and rollout and publishes the site at once;
+  a push outside `frontend/` does not republish the site.
   `infra/stack` runs the newest image by digest (`data.aws_ecr_image`, `most_recent`).
 
 ## Technology stack

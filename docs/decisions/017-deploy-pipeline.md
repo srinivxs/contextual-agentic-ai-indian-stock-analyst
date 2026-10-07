@@ -55,3 +55,20 @@ distribution id reach `infra/cicd` and the job through two new String parameters
 - Verified offline (20 script tests, 9 cicd policy tests, workflow tests, 13 breakages), then live.
 - Do not push while `scripts/demo-up.ps1` is running: its migrate task and a deploy's could run at
   the same moment. Transactional DDL means one would fail cleanly, not corrupt anything, but it is noise.
+
+## Amendment (2026-10-08): only what changed
+
+A page change waited about 12 minutes for backend tests, an image and a rollout it did not need.
+A first job, `changes`, now compares the commit with the newest **green** run on main
+(`.github/scripts/changed_parts.py`, tested in `infra/tests/test_changed_parts.py`):
+
+- only `frontend/` changed: the backend tests, the image and the backend step are skipped; the
+  frontend and repository checks still run, then the site is published (a few minutes);
+- nothing in `frontend/` changed: the site is not republished (this also stops re-uploading every
+  file to S3 on every push);
+- anything else, or any doubt (no green run, an unknown base, a re-run): everything, as before.
+
+The base is the last green run, not the previous push, so a backend change whose run failed is
+counted again by the next push. A failed check still stops everything after it, and a failed
+backend step still stops the site from being published.
+
