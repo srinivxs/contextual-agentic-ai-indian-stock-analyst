@@ -94,8 +94,8 @@ headers are added anywhere**.
   configuration at all.
 - In development `skipTrailingSlashRedirect` is on. Otherwise `trailingSlash` would redirect
   `/api/v1/me` to `/api/v1/me/`, which the backend does not have.
-- In development `agentRules` is off. Next 16.3's dev server otherwise writes an `AGENTS.md` and a
-  `the project notes` into `frontend/`; instructions for AI tools are the owner's decision, not a dependency's.
+- In development `agentRules` is off. Next 16.3's dev server otherwise writes AI-assistant instruction files
+  (`AGENTS.md` and others) into `frontend/`; such files are the owner's decision, not a dependency's.
 - The proxy was probed against the running backend without Google: `/api/healthz` passes through, the
   login route's 302 arrives with its `Location` and `Set-Cookie` intact, and a 401 error envelope
   passes through unchanged.

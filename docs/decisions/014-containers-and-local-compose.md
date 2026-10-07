@@ -208,7 +208,7 @@ The roadmap and the approved design said one thing; this is what exists. Nothing
 | P6a tests: 34 items | 91 items in the container suite; 25 plus 55 breakages |
 | `docs/mvp.md` item 15: "`docker compose up` runs the whole stack locally" | Reworded in P6c to `--profile app`, with the worker joining at P9 |
 | ADR 004: cost estimate "to be re-verified in P6" | Already moved to P7 by ADR 008 (the itemised cost table is owed before any provisioning). ADR 004 is left untouched |
-| `the project notes` after P6a | It was not updated for P6a and still listed the Dockerfiles as unbuilt. Corrected in P6c |
+| The project notes after P6a | They were not updated for P6a and still listed the Dockerfiles as unbuilt. Corrected in P6c |
 
 ## Alternatives considered
 
@@ -253,7 +253,7 @@ The roadmap and the approved design said one thing; this is what exists. Nothing
 - ADR 012: the Origin check and the session cookie are exercised through a real reverse proxy.
 - ADR 013: the "production shape" limit is narrowed to CloudFront and HTTPS (P7 and P8).
 - P7 inherits: CloudFront forwarding for `/api/*`, the Fargate CPU architecture, and the itemised cost
-  table. P8 inherits: digest pinning, scanning, signing and the CI trigger question in `the project notes`.
+  table. P8 inherits: digest pinning, scanning, signing and the CI trigger question.
   P9 adds the `worker` service to Compose.
 
 ## Verified by hand

@@ -106,7 +106,7 @@ Also read by code: "last/past N years", "latest", "standalone"/"consolidated", a
 used ("Figures used: ₹9,62,820 crore (FY2025), ₹10,55,780 crore (FY2026).").
 
 Kept on purpose: "I don't have that in the data." stays the wording for a stock of ours whose
-data lacks the answer (the project notes quotes it). Trade-off: preferring one source per answer means a
+data lacks the answer. Trade-off: preferring one source per answer means a
 trend may use screener.in's figure for a year where the annual report ranks first; the annual
 report's figure is then disclosed beside it, never dropped silently.
 

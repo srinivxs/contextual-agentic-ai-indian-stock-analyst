@@ -12,7 +12,7 @@ ADR 018 and 020) and stored one row per stock (``screener_ratios``, replaced on 
     P/B Ratio        computed: screener.in's current price / its book value per share
     Div Yield        screener.in "Dividend Yield" (%)
     Industry P/E     not available: the company page this app reads does not show it, and no
-                     other page is read (the project notes rule 9)
+                     other page is read (ADR 018)
     Book Value       screener.in "Book Value" (₹ per share)
     Debt to Equity   ours: total borrowings / total equity from stored facts (app/derived.py);
                      "not applicable" for a bank

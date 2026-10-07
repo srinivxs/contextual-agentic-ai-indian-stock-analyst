@@ -1,7 +1,7 @@
 """Reading a stock's documents: the official filings the worker fetched from BSE (ADR 018).
 
 Read-only. Documents enter the system only through the worker; there is no upload endpoint (the
-project brief asks the app to ingest data itself; removed in P9d). Both routes need a session.
+brief asks the app to ingest data by itself; removed in P9d). Both routes need a session.
 
 The stored file is never served back through this API; users see the document's metadata and a
 link to the official public address it came from.

@@ -2,7 +2,7 @@
 
 Three steps, and only the first and last touch the database, each in its own short transaction.
 The slow middle part (reading the file, running PDFium) holds no transaction and no row lock
-(the project notes: no transaction spans I/O):
+(project rule: no transaction spans I/O):
 
     1. [transaction] still my job? find the document, mark it processing
     2. [no transaction] read the file from the blob store, extract the pages, cut the chunks

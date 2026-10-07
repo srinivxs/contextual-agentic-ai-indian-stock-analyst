@@ -1,4 +1,4 @@
-"""From checked claims to the answer the user reads (P12; the project notes "RAG and citations").
+"""From checked claims to the answer the user reads (P12, ADR 021).
 
 The model cites evidence IDs ("F1", "D2", "N3"); the reader sees numbered markers "[1][2]" and,
 under the answer, one source per marker. The sources come from the stored evidence items, never

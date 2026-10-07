@@ -1,9 +1,9 @@
 """A question that only asks for stored figures, answered by code (the owner's review, 2026-09-29).
 
 "What was Reliance's revenue in FY2024?" needs no model: the figure is a stored row with its
-source (the project notes rule 8). app/chat/understand.py decides the question is a lookup; this module
-writes one sentence per asked figure from the evidence items (app/chat/evidence.py), each citing
-its item, so the answer, its marker and its source are the stored ones by construction:
+source (no LLM where code will do). app/chat/understand.py decides the question is a lookup;
+this module writes one sentence per asked figure from the evidence items (app/chat/evidence.py),
+each citing its item, so the answer, its marker and its source are the stored ones by construction:
 
     "Reliance's revenue from operations for FY2024 was ₹9,14,472 crore (consolidated;
     annual report)."

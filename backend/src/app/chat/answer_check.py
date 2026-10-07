@@ -1,4 +1,4 @@
-"""The deterministic citation checker (P12; the project notes "RAG and citations"): the heart of the chat.
+"""The deterministic citation checker (P12, ADR 021): the heart of the chat.
 
 The model writes its answer as a list of claims, each citing evidence IDs (app/chat/evidence.py).
 Nothing it writes is trusted. This code decides, and an empty list of problems is the only pass:

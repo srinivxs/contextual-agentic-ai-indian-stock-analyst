@@ -1,4 +1,4 @@
-"""A chat model that never calls AWS (the project notes: fake LLM in tests).
+"""A chat model that never calls AWS (project rule: fake LLM in tests).
 
 It returns the answers it was given, so a test decides exactly what "the model" says, including
 wrong or hostile answers, and checks that the deterministic code around it copes.

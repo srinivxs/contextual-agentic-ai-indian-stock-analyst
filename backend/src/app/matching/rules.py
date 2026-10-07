@@ -1,4 +1,4 @@
-"""Matching a stock to an investor profile with plain rules (P14; the project notes "Matching", rule 8).
+"""Matching a stock to an investor profile with plain rules (P14, ADR 023).
 
 No LLM is involved: the profile is a fixed vocabulary (app/memory/vocabulary.py), the stock's
 figures are stored facts (app/insights.py), and each preference becomes one rule below. The rules

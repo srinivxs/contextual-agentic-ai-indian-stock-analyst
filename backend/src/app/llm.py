@@ -12,7 +12,7 @@ The tool is never "run": it has no side effects, it is only a form for the model
 
 boto3 is synchronous, so each call runs in a worker thread (``asyncio.to_thread``) and never
 blocks the event loop. Credentials are never passed in: boto3 finds them itself. Nothing here
-logs: prompts carry filing text, and the project notes forbids logging prompts or document text.
+logs: prompts carry filing text, and the project never logs prompts or document text.
 """
 
 import asyncio

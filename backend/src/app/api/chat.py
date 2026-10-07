@@ -13,7 +13,7 @@ Asking, the checks run in this order, each before anything costs money: Origin, 
 CHAT_BUDGET_USD), the conversation is yours (404, the same for someone else's and for one that
 does not exist).
 
-No transaction is open while the engine works (the project notes: no transaction spans a network call):
+No transaction is open while the engine works (project rule: no transaction spans a network call):
 
     (a) short read: the spend so far, and the conversation's recent history
     (b) the engine answers: retrieval and the LLM, seconds, no connection held

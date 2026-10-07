@@ -117,8 +117,8 @@ leaves a real product.
   Compose `app` profile: `db` → `migrate` → `api` → `web`. Plain `docker compose up -d --wait` stays
   database-only. The api is never published; only `migrate` holds admin credentials; `api` and `web` run
   read-only with no capabilities.
-- **Build (P6c):** ADR 014 and the amendments to ADRs 006, 008, 011 and 013; this file, `the project notes`
-  and `docs/mvp.md` brought in line; the manual check below.
+- **Build (P6c):** ADR 014 and the amendments to ADRs 006, 008, 011 and 013; this file and
+  `docs/mvp.md` brought in line; the manual check below.
 - **Explain first:** layers, multi-stage builds, non-root users, why config and secrets are never baked
   into an image, why one image serves several commands, what a reverse proxy must not touch.
 - **Done when:** `docker compose --profile app up --build --wait` gives working login and follow at

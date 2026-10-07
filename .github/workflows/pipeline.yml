@@ -155,8 +155,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.CI_ROLE_ARN }}
+          role-to-assume: ${{ secrets.CI_ROLE_ARN }}
           aws-region: ap-south-1
+          mask-aws-account-id: true
 
       # Tags are immutable (infra/cicd/registry.tf), so a re-run of a commit that was already pushed
       # skips the push rather than failing on it, and hands on the digest that is already there.
@@ -204,8 +205,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ secrets.DEPLOY_ROLE_ARN }}
           aws-region: ap-south-1
+          mask-aws-account-id: true
 
       # Migrate, roll out, check /api/readyz; or, with the stack down, nothing. A failure here stops
       # the job, so the frontend below is never published ahead of a backend that did not deploy.

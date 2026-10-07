@@ -101,6 +101,9 @@ def test_aws_is_reached_through_oidc_and_never_a_stored_key(workflow: dict[Any, 
         assert forbidden not in text
 
     # Each job assumes its own role: pushing and deploying are different powers (ADR 016, 017).
+    # The role ARNs are SECRETS, not variables: a step prints its inputs before it runs, and a
+    # variable's ARN would put the account number in the public log. The action then masks the
+    # account number in everything printed after it (the registry address, ARNs, bucket names).
     for job, role in (("image", "CI_ROLE_ARN"), ("deploy", "DEPLOY_ROLE_ARN")):
         login = [
             step
@@ -109,8 +112,9 @@ def test_aws_is_reached_through_oidc_and_never_a_stored_key(workflow: dict[Any, 
         ]
         assert len(login) == 1, job
         assert login[0]["with"] == {
-            "role-to-assume": f"${{{{ vars.{role} }}}}",
+            "role-to-assume": f"${{{{ secrets.{role} }}}}",
             "aws-region": "ap-south-1",
+            "mask-aws-account-id": True,
         }, job
 
 

@@ -150,7 +150,7 @@ resource "aws_cloudfront_distribution" "main" {
   }
 
   # The free default *.cloudfront.net certificate. A custom domain would need an ACM certificate in
-  # us-east-1 and a domain to put in it; neither is justified for a demo (the project notes forbids the
+  # us-east-1 and a domain to put in it; neither is justified for a demo (the project rules out a
   # custom domain until something proves it necessary).
   viewer_certificate {
     cloudfront_default_certificate = true

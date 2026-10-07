@@ -1,8 +1,8 @@
 """The worker's only way onto the internet (ADR 018): honest, bounded, allow-listed at every hop.
 
 * It says who we are: a plain User-Agent naming the project and how to reach its owner. No browser
-  disguise, no rotating identities, no cookies. If a site refuses that, we stop (the project notes: no
-  anti-bot workarounds).
+  disguise, no rotating identities, no cookies. If a site refuses that, we stop (no anti-bot
+  workarounds, ever).
 * Every address, including each redirect target, must pass the caller's ``allowed`` check BEFORE
   it is requested. A redirect elsewhere (a look-alike host, a cloud metadata address) is refused.
 * It reads at most ``limit`` bytes, streaming, and gives up after the client's timeout.

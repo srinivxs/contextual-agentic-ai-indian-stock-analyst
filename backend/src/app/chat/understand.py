@@ -1,4 +1,4 @@
-"""What a chat question is about, read by code, never by the model (P12; the project notes rule 8).
+"""What a chat question is about, read by code, never by the model (P12; no LLM where code will do).
 
 A handful of word lists decide which stocks, metrics and periods a question means. Being plain
 code, the reading is the same every time, costs nothing and is tested one rule at a time.

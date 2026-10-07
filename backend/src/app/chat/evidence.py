@@ -1,4 +1,4 @@
-"""The numbered evidence the chat model may cite (P12; the project notes "RAG and citations").
+"""The numbered evidence the chat model may cite (P12, ADR 021).
 
 Everything the model is shown is an item with an ID, and an answer may only cite those IDs:
 

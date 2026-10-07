@@ -1,6 +1,6 @@
 """Fakes for tests: an embedder that never calls AWS.
 
-CI and every test run use this instead of Bedrock (the project notes: fake LLM/embedder in tests), so no
+CI and every test run use this instead of Bedrock (project rule: fake LLM/embedder in tests), so no
 test can spend money or needs credentials.
 """
 

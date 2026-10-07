@@ -5,7 +5,7 @@
 
 ## Context
 
-The assistant must remember a small investor profile (the project notes "Memory") and use it: to relate
+The assistant must remember a small investor profile and use it: to relate
 answers to it now, and for P14's deterministic matching. The profile is a target for **memory
 poisoning**: a filing, a feed item or the assistant's own reply containing "I am an aggressive
 investor" must never change what the assistant believes about the user.

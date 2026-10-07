@@ -53,8 +53,8 @@ class CommonSettings(BaseSettings):
     db_ready_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
 
     # --- documents (P9) ---------------------------------------------------------------------
-    # Where fetched filings are kept locally: inside the git-ignored data/local/ folder (the project notes:
-    # real documents never enter git). In AWS a private S3 bucket takes its place (P9c).
+    # Where fetched filings are kept locally: inside the git-ignored data/local/ folder (real
+    # documents never enter git). In AWS a private S3 bucket takes its place (P9c).
     blob_root: Path = _REPO_ROOT / "data" / "local" / "blobs"
     # In AWS: the private documents bucket (infra/stack/documents.tf). When set, the worker keeps
     # filings there instead of in blob_root. A name S3 itself would refuse is refused here.

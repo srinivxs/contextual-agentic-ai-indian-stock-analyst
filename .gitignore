@@ -97,5 +97,3 @@ Thumbs.db
 scratch/
 tmp/
 
-# Local editor settings (never committed)
-.editor/settings.local.json

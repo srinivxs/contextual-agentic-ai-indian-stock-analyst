@@ -44,7 +44,7 @@ The narrow rules that keep this defensible, each enforced in code and tested:
 | Nothing of screener's own is stored or shown: not the page, not its numbers, not its pros and cons. Every fact is cited to the official BSE filing and its page | `filings.discover` keeps links only |
 | The UI links to the filing's official address; the stored copy is never served (ADR 007 display policy) | `DocumentOut.source_url` |
 
-the project notes's "no scrapers" rule is narrowed accordingly: *reading links from one allow-listed page*
+The project's "no scrapers" rule is narrowed accordingly: *reading links from one allow-listed page*
 under the rules above is permitted; scraping content, bypassing blocks, and any other site remain
 forbidden.
 

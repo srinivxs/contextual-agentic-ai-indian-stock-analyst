@@ -1,7 +1,7 @@
 """Company documents: recording a fetched filing with its ingestion job, and reading them back.
 
 Every document is an official filing the worker fetched from BSE (ADR 018). Users do not upload
-documents: the project brief asks the app to ingest data itself, and the owner removed the upload
+documents: the brief asks the app to ingest data by itself, and the owner removed the upload
 door once automatic filings worked (P9d).
 
 Plain SQL, like the rest of the data access (ADR 013). None of these functions commits; the caller

@@ -33,7 +33,7 @@ CANDIDATES = 50  # how many of the closest passages the rules choose from
 MAX_PER_DOCUMENT = 2
 RECENCY_WEIGHT = 0.02  # at most this much is added to a similarity between 0 and 1
 PROFILE_WEIGHT = 0.02  # at most this much, times the passage's similarity to the profile
-EXCERPT_CHARS = 300  # the project notes: the UI shows short excerpts and a link, never the whole text
+EXCERPT_CHARS = 300  # project rule: the UI shows short excerpts and a link, never the whole text
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 _MONTH_YEAR = re.compile(r"^([A-Z][a-z]{2}) (\d{4})$")

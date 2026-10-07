@@ -1,7 +1,7 @@
 # 020 — Facts from filings and screener.in, events, and values computed on read
 
 - **Status:** Accepted (P11, 2026-09-27), after the real run and the hand check below. **Amends [ADR 018](018-automatic-official-filings.md)** (screener's
-  numbers are now used, not only its links) and the INR constraint in the project notes.
+  numbers are now used, not only its links) and the project's INR-only constraint.
 - **Date:** 2026-09-27
 
 ## Context

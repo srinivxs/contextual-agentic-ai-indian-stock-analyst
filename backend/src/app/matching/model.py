@@ -1,4 +1,4 @@
-"""The shapes of a match (P14; the project notes "Matching"). Every part of P14 agrees on this module.
+"""The shapes of a match (P14, ADR 023). Every part of P14 agrees on this module.
 
     profile (app/memory) + a stock's stored facts and events (app/insights_store.StockRows)
         ──> app/matching/rules.py: match_stock()  (code only, no LLM)

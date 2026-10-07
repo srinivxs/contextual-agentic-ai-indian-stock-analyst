@@ -19,8 +19,8 @@ export default function nextConfig(phase) {
       // With trailingSlash on, Next would redirect /api/v1/me to /api/v1/me/, which the backend
       // does not have. The backend's routes have no trailing slash.
       skipTrailingSlashRedirect: true,
-      // `next dev` would otherwise write AGENTS.md and a the project notes into this folder. Project
-      // instructions for AI tools are the owner's decision, not a dependency's.
+      // `next dev` would otherwise write AI-assistant instruction files (AGENTS.md and others)
+      // into this folder. Such files are the owner's decision, not a dependency's.
       agentRules: false,
       async rewrites() {
         return [{ source: '/api/:path*', destination: `${backend}/api/:path*` }];

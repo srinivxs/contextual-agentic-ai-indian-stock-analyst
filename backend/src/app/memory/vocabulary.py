@@ -1,4 +1,4 @@
-"""The investor profile's fixed vocabulary and shapes (P13; the project notes "Memory").
+"""The investor profile's fixed vocabulary and shapes (P13, ADR 022).
 
 Every part of P13 agrees on this module: the extractor (app/memory/extract.py) only produces these
 values, the table only stores them (migration 0009), the api only accepts them, and the panel only

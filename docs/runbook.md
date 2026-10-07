@@ -14,7 +14,7 @@ So "switching the demo on" means applying `infra/stack` and pointing the existin
 new load balancer. **The public URL never changes**, and the Google OAuth client is configured once,
 already done:
 
-> **https://<distribution>.cloudfront.net**
+> **`https://<distribution>.cloudfront.net`**, printed by `terraform output public_base_url` in `infra/edge`
 
 ---
 
@@ -75,7 +75,8 @@ terraform apply tfplan
 
 8 resources: the repository, its lifecycle policy, the SSM parameter, the OIDC provider, the push
 role and its policy, the deploy role and its policy. The workflow reads `ci_role_arn` and
-`deploy_role_arn` from the repository variables `CI_ROLE_ARN` and `DEPLOY_ROLE_ARN`.
+`deploy_role_arn` from the repository secrets `CI_ROLE_ARN` and `DEPLOY_ROLE_ARN` (secrets, not
+variables, so the account number never appears in the public logs).
 
 ---
 
@@ -160,8 +161,9 @@ aws ecs update-service --cluster stock-analyst-demo --service stock-analyst-demo
 Wait for the target group to report `healthy`, then check the whole path from outside:
 
 ```powershell
-curl.exe -s -o NUL -w "%{http_code}`n" https://<distribution>.cloudfront.net/
-curl.exe -s https://<distribution>.cloudfront.net/api/readyz
+$site = terraform "-chdir=infra/edge" output -raw public_base_url
+curl.exe -s -o NUL -w "%{http_code}`n" "$site/"
+curl.exe -s "$site/api/readyz"
 ```
 
 `/api/readyz` returning `{"status":"ready"}` is the real green light: it proves the api can reach RDS
@@ -228,7 +230,7 @@ aws ec2 describe-addresses --query "Addresses[].PublicIp"
 aws rds describe-db-snapshots --query "DBSnapshots[].DBSnapshotIdentifier"
 ```
 
-All six must be empty. Then confirm the edge is untouched: `https://<distribution>.cloudfront.net/`
+All six must be empty. Then confirm the edge is untouched: the site address
 still returns 200, and `/api/healthz` returns 502. That pair is the correct resting state.
 
 Two things you will see afterwards that are **not** costs: deregistered ECS task-definition revisions,

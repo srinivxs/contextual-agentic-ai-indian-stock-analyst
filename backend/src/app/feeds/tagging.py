@@ -1,8 +1,9 @@
 """Which stock an RBI press release names, and how it is tagged (P15). Deterministic, no LLM.
 
-Both jobs are done by plain rules the owner can read (the project notes rule 8): a name table for "who",
-and a short pattern table for "what kind of event, good or bad, how big". Anything the rules do not
-recognise is tagged the most neutral way ('other', 'neutral', 'low'), never guessed at.
+Both jobs are done by plain rules the owner can read (no LLM where code will do): a name table
+for "who", and a short pattern table for "what kind of event, good or bad, how big". Anything
+the rules do not recognise is tagged the most neutral way ('other', 'neutral', 'low'), never
+guessed at.
 """
 
 import re

@@ -7,7 +7,7 @@ Create Date: 2026-09-23
 The Documents page groups filings (earnings-call transcripts, investor presentations, annual
 reports, announcements) and orders each group by period. Until now that was only inside the title.
 
-WHY A SECOND MIGRATION IN P9 (the project notes asks for one per phase): 0004 had already been applied, with
+WHY A SECOND MIGRATION IN P9 (the convention is one per phase): 0004 had already been applied, with
 real rows, to a working database when this was needed. Forward-only beats one-per-phase: editing an
 applied migration would leave that database with a schema no migration describes.
 

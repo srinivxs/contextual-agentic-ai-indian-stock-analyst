@@ -211,4 +211,3 @@ that no redirect parameter can alter it is proven by the two open-redirect tests
   (`COOKIE_SECURE`, https `PUBLIC_BASE_URL`), not on what the ALB hop looks like.
 - **P8 (deploy):** a second Google OAuth client whose redirect URI is the CloudFront URL, and
   `GOOGLE_CLIENT_SECRET` and `SESSION_SECRET` from SSM Parameter Store, never the local values.
-  (The CI trigger question is tracked in `the project notes`.)

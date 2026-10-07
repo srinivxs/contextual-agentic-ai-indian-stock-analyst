@@ -1,4 +1,4 @@
-"""A chat engine that never calls AWS or reads the database (the project notes: fakes in tests).
+"""A chat engine that never calls AWS or reads the database (project rule: fakes in tests).
 
 The api tests use it to decide exactly what "the engine" answers, and to see what the api handed
 it: the question, the earlier turns (oldest first) and whose question it was.

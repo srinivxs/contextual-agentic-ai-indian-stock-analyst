@@ -193,7 +193,7 @@ for one real apply.** All three bugs passed every offline gate.
 
 - **`minimum_protocol_version` is `TLSv1` and cannot be raised.** CloudFront forces it when using the
   default `*.cloudfront.net` certificate, so viewers may negotiate TLS 1.0 or 1.1. Raising it to
-  TLS 1.2 requires a custom domain with an ACM certificate in `us-east-1`, which the project notes rules out
+  TLS 1.2 requires a custom domain with an ACM certificate in `us-east-1`, which the project rules out
   until something proves it necessary. Recorded rather than hidden.
 - **Re-pointing the edge at a rebuilt ALB is not yet proven.** The distribution has only ever been
   pointed at its first real origin. That is the demo cold-start path; the next spin-up is the test.

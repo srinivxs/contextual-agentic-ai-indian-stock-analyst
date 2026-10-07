@@ -1,7 +1,7 @@
 # Local stack. Two ways to run it:
 #
-#   docker compose up -d --wait                       the database only (the API runs from the venv,
-#                                                     see the project notes "How to run")
+#   docker compose up -d --wait                       the database only (the API runs from the
+#                                                     backend's virtual environment)
 #   docker compose --profile app up --build --wait    the whole app in containers: database, one-off
 #                                                     migration, api, and the web container
 #                                                     (nginx) on http://localhost:${WEB_PORT:-3000}

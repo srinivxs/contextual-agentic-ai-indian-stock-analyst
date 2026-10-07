@@ -4,7 +4,7 @@ Revision ID: 0004
 Revises: 0003
 Create Date: 2026-09-23
 
-One migration for the whole phase, as the project notes asks. Every rule that makes ingestion idempotent is
+One migration for the whole phase, by convention. Every rule that makes ingestion idempotent is
 a constraint here, so concurrent writers converge on one row without any application-level lock:
 
 * ``documents.sha256`` is UNIQUE: one file, one document, however many times it is uploaded.

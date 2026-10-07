@@ -13,7 +13,7 @@ THE ORDER, AND WHY
   2. Register new revisions of the api and migrate task definitions: the current ones, with only the
      image replaced, named by digest.
   3. Migrate FIRST, as a one-off task, while the old version keeps serving. Migrations are
-     expand/contract (the project notes), so the old code still works on the new schema. If the migration
+     expand/contract (ADR 011), so the old code still works on the new schema. If the migration
      fails, stop: the running service was never touched.
   4. Move the service to the new api revision. ECS starts the new task, waits for the load balancer
      to call it healthy, then stops the old one. If it never becomes healthy, the circuit breaker

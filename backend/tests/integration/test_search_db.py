@@ -215,7 +215,7 @@ async def test_at_most_five_passages_and_two_per_filing(
 async def test_a_long_passage_is_shown_as_a_short_excerpt(
     db_config: DbConfig, make_user: MakeUser, session_factory: Factory, admin_engine: AsyncEngine
 ) -> None:
-    """The stored text is never handed out whole (the project notes: about 300 characters and a link)."""
+    """The stored text is never handed out whole (about 300 characters and a link)."""
     await add_filing(admin_engine, 1, {1: "DemoCo guidance " + "detail " * 200})
     _, cookie = await sign_in(make_user, session_factory)
 

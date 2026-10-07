@@ -1,6 +1,6 @@
 """Tiny synthetic PDFs, written byte by byte, for tests.
 
-Real company filings never enter the repository (the project notes), so the tests build their own documents
+Real company filings never enter the repository, so the tests build their own documents
 about the fictional DemoCo. Each page is a list of lines drawn in Helvetica; an empty list makes a
 page with no text at all, which is what a scanned page looks like to a text extractor.
 """
