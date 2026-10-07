@@ -471,6 +471,51 @@ describe('the layout', () => {
       panel().compareDocumentPosition(conversation) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
+
+  it('fills the window: the messages scroll, the question box stays at the bottom', async () => {
+    install();
+    render(<ChatView />);
+    const conversation = await screen.findByRole('region', { name: 'Conversation' });
+    expect(screen.getByRole('main')).toHaveClass('page-fill');
+    const scroller = thread().closest('.chat-scroll');
+    expect(scroller).not.toBeNull();
+    expect(conversation).toContainElement(scroller as HTMLElement);
+    // The question box is outside the scrolling part, so it never scrolls away.
+    expect(scroller).not.toContainElement(box());
+    expect(conversation).toContainElement(box());
+  });
+
+  it('keeps the newest message in view', async () => {
+    install();
+    render(<ChatView />);
+    const scroller = (await screen.findByRole('list', { name: 'Messages' })).closest(
+      '.chat-scroll',
+    ) as HTMLElement;
+    let top = 0;
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: () => 900 });
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => {
+        top = value;
+      },
+    });
+    await ask('How is TCS doing?');
+    await screen.findAllByText(/reported revenue of/);
+    expect(top).toBe(900);
+  });
+
+  it('shows each stock with its logo in the switcher, named as before', async () => {
+    install();
+    render(<ChatView />);
+    const group = await within(
+      await screen.findByRole('complementary', { name: 'Stock context' }),
+    ).findByRole('group', { name: 'Stock' });
+    for (const name of ['Reliance', 'TCS', 'HDFC Bank']) {
+      const button = within(group).getByRole('button', { name });
+      expect(button.querySelector('.monogram')).not.toBeNull();
+    }
+  });
 });
 
 describe('the key metrics card', () => {

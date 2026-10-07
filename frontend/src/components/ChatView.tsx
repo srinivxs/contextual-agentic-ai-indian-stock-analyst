@@ -115,6 +115,8 @@ export function ChatView() {
   // The conversation asked for last, so an older one that arrives late is ignored.
   const opening = useRef<string | null>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
+  // The part of the conversation that scrolls; the question box below it stays in place.
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const busy = pending !== null;
   const ready = draft.trim().length >= MIN_CHARS && !busy && thread.phase !== 'loading';
@@ -122,6 +124,12 @@ export function ChatView() {
   useEffect(() => {
     if (me.status === 'signed-out') router.replace('/');
   }, [me.status, router]);
+
+  // Keep the newest message in view: a question sent, an answer arrived, a conversation opened.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }, [thread.messages, pending]);
 
   useEffect(() => {
     if (!signedIn) return;
@@ -276,7 +284,7 @@ export function ChatView() {
   const choices = followable ? (thread.messages.at(-1)?.choices ?? []) : [];
 
   return (
-    <AppShell email={me.user.email} onSignOut={leave} active="chat">
+    <AppShell email={me.user.email} onSignOut={leave} active="chat" fill>
       {listFailed && (
         <p role="alert" className="alert">
           {LIST_FAILED}
@@ -291,7 +299,9 @@ export function ChatView() {
             </span>
             <div className="chat-card-title">
               <h1>Chat with your analyst</h1>
-              <p className="muted">{DESCRIPTION}</p>
+              <p className="muted" title={DESCRIPTION}>
+                {DESCRIPTION}
+              </p>
             </div>
             <span className="chat-pill">
               <span className="dot" aria-hidden="true" />
@@ -357,109 +367,123 @@ export function ChatView() {
               )}
             </div>
           </header>
-          {thread.phase === 'loading' && (
-            <p role="status" className="muted">
-              Loading the conversation…
-            </p>
-          )}
-          {thread.phase === 'problem' && (
-            <p role="alert" className="alert">
-              {OPEN_FAILED}
-            </p>
-          )}
-          {empty && (
-            <div className="chat-greeting">
-              <div className="chat-message assistant">
-                <span className="chat-avatar small" aria-hidden="true">
-                  <LeafIcon size={16} />
-                </span>
-                <div className="answer-body">
-                  <p className="chat-text">
-                    Hello! I can answer from the filings of RELIANCE, TCS and HDFC Bank. I can:
-                  </p>
-                  <ul className="chat-can">
-                    {CAPABILITIES.map((item) => (
-                      <li key={item}>{item}</li>
+          <div className="chat-scroll" ref={scrollRef}>
+            <div className="chat-column">
+              {thread.phase === 'loading' && (
+                <p role="status" className="muted">
+                  Loading the conversation…
+                </p>
+              )}
+              {thread.phase === 'problem' && (
+                <p role="alert" className="alert">
+                  {OPEN_FAILED}
+                </p>
+              )}
+              {empty && (
+                <div className="chat-greeting">
+                  <div className="chat-message assistant">
+                    <span className="chat-avatar small" aria-hidden="true">
+                      <LeafIcon size={16} />
+                    </span>
+                    <div className="answer-body">
+                      <p className="chat-text">
+                        Hello! I can answer from the filings of RELIANCE, TCS and HDFC Bank. I can:
+                      </p>
+                      <ul className="chat-can">
+                        {CAPABILITIES.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                  <div className="chat-suggestions" role="group" aria-label="Suggestions">
+                    {SUGGESTIONS.map((text) => (
+                      <button
+                        key={text}
+                        type="button"
+                        className="chat-chip"
+                        onClick={() => suggest(text)}
+                      >
+                        {text}
+                      </button>
                     ))}
-                  </ul>
+                  </div>
                 </div>
-              </div>
-              <div className="chat-suggestions" role="group" aria-label="Suggestions">
-                {SUGGESTIONS.map((text) => (
-                  <button
-                    key={text}
-                    type="button"
-                    className="chat-chip"
-                    onClick={() => suggest(text)}
-                  >
-                    {text}
-                  </button>
-                ))}
-              </div>
+              )}
+              <ChatThread
+                messages={thread.messages}
+                pending={pending}
+                initials={initials(me.user.email)}
+              />
+              {busy && (
+                <p role="status" className="chat-thinking">
+                  <span className="chat-avatar small" aria-hidden="true">
+                    <LeafIcon size={16} />
+                  </span>
+                  <span className="chat-typing" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  Thinking…
+                </p>
+              )}
+              {choices.length > 0 && (
+                <div className="chat-suggestions" role="group" aria-label="Choices">
+                  {choices.map((choice) => (
+                    <button
+                      key={choice.label}
+                      type="button"
+                      className="chat-chip"
+                      onClick={() => void send(choice.question)}
+                    >
+                      {choice.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {followable && choices.length === 0 && (
+                <div className="chat-suggestions" role="group" aria-label="Follow-up suggestions">
+                  {followUps(stock).map((text) => (
+                    <button
+                      key={text}
+                      type="button"
+                      className="chat-chip"
+                      onClick={() => suggest(text)}
+                    >
+                      {text}
+                      <ArrowRightIcon />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {problem && (
+                <p role="alert" className="alert">
+                  {problem}
+                </p>
+              )}
             </div>
-          )}
-          <ChatThread
-            messages={thread.messages}
-            pending={pending}
-            initials={initials(me.user.email)}
-          />
-          {busy && (
-            <p role="status" className="muted">
-              Thinking…
-            </p>
-          )}
-          {choices.length > 0 && (
-            <div className="chat-suggestions" role="group" aria-label="Choices">
-              {choices.map((choice) => (
-                <button
-                  key={choice.label}
-                  type="button"
-                  className="chat-chip"
-                  onClick={() => void send(choice.question)}
-                >
-                  {choice.label}
-                </button>
-              ))}
-            </div>
-          )}
-          {followable && choices.length === 0 && (
-            <div className="chat-suggestions" role="group" aria-label="Follow-up suggestions">
-              {followUps(stock).map((text) => (
-                <button
-                  key={text}
-                  type="button"
-                  className="chat-chip"
-                  onClick={() => suggest(text)}
-                >
-                  {text}
-                  <ArrowRightIcon />
-                </button>
-              ))}
-            </div>
-          )}
-          {problem && (
-            <p role="alert" className="alert">
-              {problem}
-            </p>
-          )}
-          <form className="chat-form" onSubmit={submit}>
-            <textarea
-              ref={boxRef}
-              aria-label="Your question"
-              placeholder={PLACEHOLDER}
-              rows={2}
-              maxLength={MAX_CHARS}
-              value={draft}
-              disabled={busy}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={onKeyDown}
-            />
-            <button type="submit" className="chat-send" aria-label="Send" disabled={!ready}>
-              <SendIcon />
-            </button>
-          </form>
-          {/* No disclaimer here: the menu's "Not investment advice" note is on every page. */}
-          <p className="chat-disclaimer muted">Enter sends, Shift+Enter adds a line.</p>
+          </div>
+          <div className="chat-column chat-compose">
+            <form className="chat-form" onSubmit={submit}>
+              <textarea
+                ref={boxRef}
+                aria-label="Your question"
+                placeholder={PLACEHOLDER}
+                rows={2}
+                maxLength={MAX_CHARS}
+                value={draft}
+                disabled={busy}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={onKeyDown}
+              />
+              <button type="submit" className="chat-send" aria-label="Send" disabled={!ready}>
+                <SendIcon />
+              </button>
+            </form>
+            {/* No disclaimer here: the menu's "Not investment advice" note is on every page. */}
+            <p className="chat-disclaimer muted">Enter sends, Shift+Enter adds a line.</p>
+          </div>
         </section>
       </div>
     </AppShell>

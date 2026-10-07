@@ -39,6 +39,25 @@ describe('the app shell', () => {
     expect(onSignOut).toHaveBeenCalledOnce();
   });
 
+  it('can fill the window below the top bar instead of growing with its content', () => {
+    const { unmount } = render(
+      <AppShell email="reader@example.test" onSignOut={() => {}} fill>
+        <p>content</p>
+      </AppShell>,
+    );
+    expect(screen.getByRole('main')).toHaveClass('page', 'page-fill');
+    expect(screen.getByRole('main').parentElement).toHaveClass('main', 'main-fill');
+    unmount();
+
+    render(
+      <AppShell email="reader@example.test" onSignOut={() => {}}>
+        <p>content</p>
+      </AppShell>,
+    );
+    expect(screen.getByRole('main')).not.toHaveClass('page-fill');
+    expect(screen.getByRole('main').parentElement).not.toHaveClass('main-fill');
+  });
+
   it('makes two letters for the avatar', () => {
     expect(initials('info@example.com')).toBe('IN');
     expect(initials('a.b@example.com')).toBe('AB');

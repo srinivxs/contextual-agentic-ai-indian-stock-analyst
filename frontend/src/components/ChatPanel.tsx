@@ -17,9 +17,10 @@ import { getPrices, hasPrices, priceLabel, signedPercent, type Prices } from '@/
 import { direction } from '@/lib/series';
 
 /**
- * The side panel of the chat page: the stock being discussed (its end-of-day price and its latest
- * full-year figures). It only shows what the
- * server stores; a missing figure is said to be missing, never filled in.
+ * The stock bar above the chat (the owner, 2026-10-08): one card of three zones, the stock
+ * switcher, the stock being discussed (its end-of-day price) and, to its right, its latest
+ * full-year figures. It only shows what the server stores; a missing figure is said to be
+ * missing, never filled in.
  */
 
 /** What one call to the server gave for one symbol: null while it is still loading. */
@@ -129,8 +130,9 @@ function Overview({ symbol, fetched }: { symbol: string; fetched: Fetched<Prices
   }
 
   return (
-    <section className="chat-card chat-overview" aria-label={title}>
-      <h2>{title}</h2>
+    <section className="chat-zone chat-overview" aria-label={title}>
+      {/* For screen readers: on screen, the name row under it already says which stock. */}
+      <h2 className="visually-hidden">{title}</h2>
       <div className="chat-stock-row">
         <Monogram symbol={symbol} size="lg" />
         <div>
@@ -147,7 +149,7 @@ function KeyMetrics({ insights }: { insights: Fetched<StockInsights> }) {
   const found = insights?.data ? keyMetrics(insights.data) : null;
   const title = found?.period ? `Key metrics (${found.period})` : 'Key metrics';
   return (
-    <section className="chat-card" aria-label={title}>
+    <section className="chat-zone chat-key-metrics" aria-label={title}>
       <h2>{title}</h2>
       {insights === null ? (
         <p className="muted">Loading…</p>
@@ -195,7 +197,8 @@ export function ChatPanel({
             aria-pressed={stock.symbol === symbol}
             onClick={() => onPick(stock.symbol)}
           >
-            {shortName(stock.symbol)}
+            <Monogram symbol={stock.symbol} size="sm" />
+            <span>{shortName(stock.symbol)}</span>
           </button>
         ))}
       </div>

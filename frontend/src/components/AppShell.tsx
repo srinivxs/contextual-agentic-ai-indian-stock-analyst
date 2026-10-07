@@ -24,6 +24,8 @@ type Props = {
   active?: Section;
   /** Called when an "Update data" run finishes, so the page can load its data again. */
   onDataUpdated?: () => void;
+  /** The page fills the window below the top bar (the chat) instead of growing with its content. */
+  fill?: boolean;
   children: ReactNode;
 };
 
@@ -46,7 +48,7 @@ export function initials(email: string): string {
  * The frame around every signed-in page: the menu, the stock search, "Update data", who you are,
  * and under the top bar the date the data is updated to (a disclaimer: it is not live).
  */
-export function AppShell({ email, onSignOut, active, onDataUpdated, children }: Props) {
+export function AppShell({ email, onSignOut, active, onDataUpdated, fill, children }: Props) {
   const freshness = useFreshness(onDataUpdated);
   return (
     <div className="shell">
@@ -77,7 +79,7 @@ export function AppShell({ email, onSignOut, active, onDataUpdated, children }: 
           Not investment advice. A personal research tool built for demonstration.
         </p>
       </aside>
-      <div className="main">
+      <div className={fill ? 'main main-fill' : 'main'}>
         <header className="topbar">
           <div className="topbar-find">
             <StockJump />
@@ -95,7 +97,7 @@ export function AppShell({ email, onSignOut, active, onDataUpdated, children }: 
           </div>
         </header>
         <DataNote freshness={freshness} />
-        <main className="page">{children}</main>
+        <main className={fill ? 'page page-fill' : 'page'}>{children}</main>
       </div>
     </div>
   );

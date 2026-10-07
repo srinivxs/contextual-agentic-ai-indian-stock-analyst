@@ -1327,13 +1327,14 @@ a.chip:hover {
   --ok-dot: #a1a1aa;
 }
 
-/* The chat page (the owner, 2026-10-08): the stock context in one row on top (the tabs, then the
-   overview and the key metrics side by side), and the conversation across the full width below. */
+/* The chat page (the owner, 2026-10-08): a workspace that fills the window. On top, one bar for
+   the stock being discussed (the switcher, its overview, and its key metrics to the right); below
+   it, the conversation, whose messages scroll while the question box stays at the bottom. */
 .chat {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1.25rem;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
 }
 
 .marker:focus-visible {
@@ -1342,11 +1343,77 @@ a.chip:hover {
 }
 
 .chat-main {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  padding: 1.25rem 1.5rem 1rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
+}
+
+/* The messages, in a column narrow enough to read comfortably however wide the window. */
+.chat-scroll {
+  padding: 0.25rem 1.25rem 1rem;
+  scrollbar-color: var(--border) transparent;
+  scrollbar-width: thin;
+}
+
+.chat-column {
+  width: 100%;
+  max-width: 52rem;
+  margin: 0 auto;
+}
+
+/* The question box, in the same column, under a soft fade from the messages. */
+.chat-compose {
+  position: relative;
+  max-width: calc(52rem + 2.5rem);
+  padding: 0 1.25rem 0.9rem;
+}
+
+.chat-compose::before {
+  position: absolute;
+  top: -1.5rem;
+  right: 1.25rem;
+  left: 1.25rem;
+  height: 1.5rem;
+  background: linear-gradient(to bottom, transparent, var(--surface));
+  content: '';
+  pointer-events: none;
+}
+
+/* Wide and tall enough: the page fills the window and only the messages scroll. A phone keeps
+   the ordinary page that grows with its content. */
+@media (min-width: 56.01rem) and (min-height: 34rem) {
+  .main-fill {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .page-fill {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    padding-bottom: 1.25rem;
+  }
+
+  .page-fill > .chat {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .page-fill .chat-main {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .page-fill .chat-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
 }
 
 /* The header: avatar, title, the honest pill, and the conversations menu. */
@@ -1356,7 +1423,7 @@ a.chip:hover {
   flex-wrap: wrap;
   gap: 0.75rem;
   align-items: center;
-  padding-bottom: 1rem;
+  padding: 0.85rem 1.25rem;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1365,14 +1432,22 @@ a.chip:hover {
   min-width: 12rem;
 }
 
+/* One line for the header: the subtitle is trimmed when the window is narrow (in full on hover). */
+.chat-card-title p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-card-title h1 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
 }
 
 .chat-card-title p {
   margin: 0.1rem 0 0;
-  font-size: 0.88rem;
+  font-size: 0.8rem;
 }
 
 .chat-avatar {
@@ -1788,7 +1863,6 @@ a.chip:hover {
   display: flex;
   gap: 0.6rem;
   align-items: flex-end;
-  margin-top: 1.25rem;
   padding: 0.6rem 0.6rem 0.6rem 1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -1837,49 +1911,124 @@ a.chip:hover {
 }
 
 .chat-disclaimer {
-  margin: 0.6rem 0 0;
-  font-size: 0.8rem;
+  margin: 0.45rem 0 0;
+  font-size: 0.74rem;
+  text-align: center;
 }
 
-/* The side panel: stock tabs, then cards. */
-
-.chat-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1rem;
-  align-items: start;
-  min-width: 0;
+/* Waiting for an answer: three soft dots where the answer will appear. */
+.chat-thinking {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  margin: 0.75rem 0;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
-.chat-panel > .chat-stock-tabs {
-  grid-column: 1 / -1;
-  max-width: 30rem;
+.chat-typing {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
 }
 
-@media (max-width: 56rem) {
-  .chat-panel {
-    grid-template-columns: minmax(0, 1fr);
+.chat-typing i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: typing 1.2s ease-in-out infinite;
+}
+
+.chat-typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: none;
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
   }
 }
 
-/* The three stock tabs share the panel's width equally. */
-.chat-stock-tabs {
+/* The stock bar: one card of three zones with a hairline between them. The switcher, the stock's
+   overview, and its key metrics to the right. */
+
+.chat-panel {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.25rem;
-  width: 100%;
-  padding: 0.25rem;
+  grid-template-columns: 11.5rem minmax(0, 1.2fr) minmax(0, 1fr);
+  min-width: 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-card);
+}
+
+.chat-panel > * {
+  min-width: 0;
+  padding: 0.95rem 1.2rem;
+}
+
+.chat-panel > * + * {
+  border-left: 1px solid var(--border);
+}
+
+/* The switcher: each company with its logo; the one being discussed is tinted. */
+.chat-stock-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  justify-content: center;
+}
+
+.chat-panel > .chat-stock-tabs {
+  padding: 0.6rem;
 }
 
 .chat-stock-tabs .chat-range {
-  padding: 0.4rem 0.5rem;
-  text-align: center;
-  white-space: nowrap;
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.chat-stock-tabs .chat-range > span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-stock-tabs .chat-range:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.chat-stock-tabs .chat-range[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 650;
+}
+
+.chat-stock-tabs .monogram.sm {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .chat-range {
@@ -1899,54 +2048,21 @@ a.chip:hover {
   color: var(--accent-strong);
 }
 
-.chat-card {
-  min-width: 0;
-  padding: 1rem 1.15rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
+/* A zone's title is a quiet label, not a heading that competes with the figures. */
+.chat-zone h2 {
+  margin: 0 0 0.7rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.chat-card h2 {
-  margin: 0 0 0.6rem;
-  font-size: 0.95rem;
-}
-
-.chat-card p {
+.chat-zone p {
   margin: 0;
 }
 
-.chat-stock-row {
-  display: flex;
-  gap: 0.7rem;
-  align-items: center;
-  margin-bottom: 0.7rem;
-}
-
-.chat-stock-row .muted {
-  font-size: 0.85rem;
-}
-
-.chat-price-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: baseline;
-  margin-bottom: 0.6rem;
-}
-
-.chat-price {
-  font-size: 1.6rem;
-}
-
-/* The price is written above the chart, so its callout shows only while the mouse is on it. */
-.chat-card .price-chart .home-chart-plot:not(.hovering) .home-callout,
-.chat-card .price-chart .home-chart-plot:not(.hovering) .home-chart-dot {
-  display: none;
-}
-
-/* The overview stays compact so the conversation starts high on the page: the stock and its
-   price on one line, and a short chart. */
+/* The overview: the company and its price on one line, a short chart, where the price is from. */
 .chat-overview {
   display: flex;
   flex-wrap: wrap;
@@ -1959,29 +2075,116 @@ a.chip:hover {
   min-width: 0;
 }
 
-/* Side by side when they fit; on a narrow screen the price moves under the name. */
-.chat-overview > .chat-stock-row,
+/* The name gives way first (trimmed with an ellipsis), so the name and the price share one line;
+   only on a phone does the price move under the name. */
+.chat-overview > .chat-stock-row {
+  flex: 1 1 0;
+  min-width: 8.5rem;
+}
+
 .chat-overview > .chat-price-row {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+}
+
+.chat-stock-row > div {
+  min-width: 0;
+}
+
+.chat-stock-row > div > * {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-stock-row > div > strong {
+  overflow: visible; /* the ticker is never trimmed, only the company's name */
+}
+
+.chat-stock-row {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.chat-stock-row strong {
+  font-size: 0.95rem;
+}
+
+.chat-stock-row .muted {
+  font-size: 0.8rem;
+}
+
+.chat-overview .monogram.lg {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+.chat-price-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: baseline;
+  margin-bottom: 0.6rem;
 }
 
 .chat-overview > .chat-price-row {
   margin-left: auto;
-  margin-bottom: 0.7rem;
 }
 
-.chat-card .home-chart-plot {
-  height: 7rem;
+.chat-price-row .muted {
+  font-size: 0.8rem;
+}
+
+.chat-price {
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.chat-zone .home-chart-plot {
+  height: 4.75rem;
+  margin-top: 0.15rem; /* no room kept for a callout: it shows only on hover, over the name */
+}
+
+.chat-zone .price-chart-dates {
+  margin-top: 0.3rem;
+  font-size: 0.7rem;
+}
+
+/* The price is written above the chart, so its callout shows only while the mouse is on it, and
+   opens below the point so it never covers the price. */
+.chat-zone .price-chart .home-chart-plot:not(.hovering) .home-callout,
+.chat-zone .price-chart .home-chart-plot:not(.hovering) .home-chart-dot {
+  display: none;
+}
+
+.chat-zone .home-callout {
+  z-index: 2;
+  transform: translate(-100%, 0.7rem);
+}
+
+.chat-zone .home-callout.side-mid {
+  transform: translate(-50%, 0.7rem);
+}
+
+.chat-zone .home-callout.side-start {
+  transform: translate(0, 0.7rem);
 }
 
 .chat-asof {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 0.4rem !important;
-  font-size: 0.78rem;
+  margin-top: 0.35rem !important;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
+/* The key metrics: one line per figure, its source beside its name, the figures right-aligned
+   in one column and the change in the next, so they read down like a statement. */
 .chat-metrics {
   list-style: none;
   margin: 0;
@@ -1990,20 +2193,34 @@ a.chip:hover {
 
 .chat-metrics li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 0.6rem;
+  grid-template-columns: minmax(0, 1fr) auto 3.6rem;
+  gap: 0.75rem;
   align-items: baseline;
   padding: 0.5rem 0;
   border-top: 1px solid var(--border);
-  font-size: 0.88rem;
+  font-size: 0.86rem;
 }
 
 .chat-metrics li:first-child {
+  padding-top: 0.1rem;
   border-top: 0;
 }
 
+.chat-metrics li > div {
+  min-width: 0;
+  color: var(--muted);
+}
+
+.chat-metrics li > strong {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .chat-metrics .chat-change {
-  min-width: 3.2rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
@@ -2014,7 +2231,7 @@ a.chip:hover {
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   text-decoration: none;
 }
 
@@ -2023,9 +2240,113 @@ a.chat-source-chip:hover {
   color: var(--accent-strong);
 }
 
-@media (max-width: 64rem) {
-  .chat {
+/* A laptop: the same three zones, with a slimmer switcher and tighter spacing. */
+@media (max-width: 90rem) {
+  .chat-panel {
+    grid-template-columns: 9.5rem minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+
+  .chat-panel > * {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  .chat-panel > .chat-stock-tabs {
+    padding: 0.5rem;
+  }
+
+  .chat-stock-tabs .chat-range {
+    gap: 0.5rem;
+    padding: 0.4rem 0.45rem;
+  }
+
+  .chat-stock-tabs .monogram.sm {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+
+  .chat-price {
+    font-size: 1.3rem;
+  }
+}
+
+/* Narrower: the switcher becomes a slim row across the top, the overview and metrics share the
+   rest. */
+@media (max-width: 72rem) {
+  .chat-panel {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .chat-panel > .chat-stock-tabs {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    padding: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .chat-panel > .chat-stock-tabs .chat-range {
+    flex: 1;
+    justify-content: center;
+    padding: 0.35rem 0.45rem;
+  }
+
+  .chat-panel > .chat-overview {
+    border-left: 0;
+  }
+
+  .chat-overview .monogram {
+    display: none; /* the switcher above already shows the logo */
+  }
+
+  .chat-overview {
+    column-gap: 0.75rem;
+  }
+
+  .chat-overview > .chat-stock-row {
+    min-width: 6rem;
+  }
+}
+
+/* A short laptop screen: a slimmer bar, so the conversation keeps most of the height. */
+@media (min-width: 56.01rem) and (max-height: 52rem) {
+  .chat-panel > * {
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
+  }
+
+  .chat-zone .home-chart-plot {
+    height: 3.25rem;
+  }
+
+  .chat-zone .price-chart-dates,
+  .chat-disclaimer {
+    display: none;
+  }
+}
+
+/* A phone: one column, and the switcher keeps just the names. */
+@media (max-width: 40rem) {
+  .chat-panel {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat-panel > .chat-key-metrics {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .chat-stock-tabs .monogram {
+    display: none;
+  }
+
+  .chat-scroll,
+  .chat-card-head {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  .chat-compose {
+    padding: 0 1rem 0.9rem;
   }
 }
 
