@@ -145,11 +145,6 @@ export const ChevronDownIcon = () => (
     <path d="m6 9 6 6 6-6" />
   </Icon>
 );
-export const ChevronRightIcon = () => (
-  <Icon size={14}>
-    <path d="m9 6 6 6-6 6" />
-  </Icon>
-);
 export const ArrowUpIcon = () => (
   <Icon>
     <path d="M12 19V5" />

@@ -1338,15 +1338,32 @@ a.chip:hover {
   --ok-dot: #a1a1aa;
 }
 
-/* The chat page (the owner, 2026-10-08): a workspace that fills the window. On top, one bar for
-   the stock being discussed (the switcher, its overview, and its key metrics to the right); below
-   it, the conversation, whose messages scroll while the question box stays at the bottom. */
+/* The chat page (the owner, 2026-10-08): a workspace that fills the window. The conversation on
+   the left, the main feature, in the larger column (3:2); beside it the stock being discussed (the
+   tabs, its overview, its key metrics). The messages scroll while the question box stays at the
+   bottom. A narrower window stacks them, the conversation first. */
 .chat {
   --chart-color: var(--brand);
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   gap: 1rem;
+  align-items: start;
   min-width: 0;
+}
+
+@media (max-width: 72rem) {
+  .chat {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch; /* each card as wide as the window, never as wide as its longest line */
+  }
+
+  /* Stacked: the messages still scroll in their own area, so the newest stays in view next to
+     the question box. */
+  .chat-scroll {
+    max-height: 65vh;
+    overflow-y: auto;
+  }
 }
 
 .marker:focus-visible {
@@ -1396,7 +1413,7 @@ a.chip:hover {
 
 /* Wide and tall enough: the page fills the window and only the messages scroll. A phone keeps
    the ordinary page that grows with its content. */
-@media (min-width: 56.01rem) and (min-height: 34rem) {
+@media (min-width: 72.01rem) and (min-height: 34rem) {
   .main-fill {
     height: 100vh;
     height: 100dvh;
@@ -1412,11 +1429,12 @@ a.chip:hover {
 
   .page-fill > .chat {
     flex: 1;
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
     min-height: 0;
   }
 
   .page-fill .chat-main {
-    flex: 1;
     min-height: 0;
   }
 
@@ -1425,6 +1443,14 @@ a.chip:hover {
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+
+  /* The stock column scrolls on its own when it is taller than the window. */
+  .page-fill .chat-panel {
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-color: var(--border) transparent;
+    scrollbar-width: thin;
   }
 }
 
@@ -1491,6 +1517,23 @@ a.chip:hover {
 
 .chat-pill svg {
   color: var(--brand);
+}
+
+/* A laptop's chat column: the pill keeps just its shield (the words on hover and for a screen
+   reader), so the header stays on one line. */
+@media (min-width: 72.01rem) and (max-width: 92rem) {
+  .chat-pill {
+    padding: 0.45rem;
+  }
+
+  .chat-pill-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
 .dot {
@@ -2010,18 +2053,25 @@ a.chip:hover {
   }
 }
 
-/* The stock (the owner's mockup): a row of tabs, then two cards, the overview and, to its right,
-   the key metrics. */
+/* The stock column: a row of tabs, then the overview card, then the key metrics card. Under the
+   conversation (a narrower window) the two cards sit side by side. */
 
 .chat-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
   min-width: 0;
 }
 
-.chat-panel > .chat-stock-tabs {
-  grid-column: 1 / -1;
+@media (max-width: 72rem) {
+  .chat-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+
+  .chat-panel > .chat-stock-tabs {
+    grid-column: 1 / -1;
+  }
 }
 
 /* The tabs: plain names, the chosen one bold with a green line under it. */
@@ -2103,26 +2153,8 @@ a.chip:hover {
   min-width: 0;
 }
 
-.chat-crumbs {
-  display: flex;
-  gap: 0.35rem;
-  align-items: center;
-  margin-bottom: 0.85rem;
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-
-.chat-crumbs a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.chat-crumbs a:last-child {
-  color: var(--text);
-}
-
-.chat-crumbs a:hover {
-  text-decoration: underline;
+.chat-overview > .chat-zone-head {
+  margin-bottom: 0.8rem;
 }
 
 /* The name gives way first (trimmed with an ellipsis), so the name and the price share one line;
@@ -2188,7 +2220,7 @@ a.chip:hover {
 
 /* The chart: just the line; a faint grid and a point on every close appear on hover. */
 .chat-zone .home-chart-plot {
-  height: 5.75rem;
+  height: 7rem;
   margin-top: 1rem;
 }
 
@@ -2388,7 +2420,6 @@ a.chip:hover {
     padding-bottom: 0.8rem;
   }
 
-  .chat-crumbs,
   .chat-disclaimer {
     display: none;
   }
@@ -2410,10 +2441,6 @@ a.chip:hover {
 
 /* A narrow window beside the menu: the same two cards, tighter, so the conversation keeps room. */
 @media (min-width: 56.01rem) and (max-width: 72rem) {
-  .chat-crumbs {
-    display: none;
-  }
-
   .chat-overview {
     column-gap: 0.75rem;
   }

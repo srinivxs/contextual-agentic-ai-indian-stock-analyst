@@ -5,7 +5,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   ArrowRightIcon,
   BarsIcon,
-  ChevronRightIcon,
   CoinsIcon,
   ExternalIcon,
   PercentIcon,
@@ -28,10 +27,10 @@ import { getPrices, hasPrices, priceLabel, signedPercent, type Prices } from '@/
 import { direction } from '@/lib/series';
 
 /**
- * The stock above the chat (the owner's mockup, 2026-10-08): a row of tabs to switch stock, then
- * two cards, the stock being discussed (its end-of-day price) and, to its right, its latest
- * full-year figures. It only shows what the server stores; a missing figure is said to be
- * missing, never filled in.
+ * The stock beside the chat (the owner's layout, 2026-10-08: the chat is the main feature, 3:2):
+ * a row of tabs to switch stock, then two cards, the stock being discussed (its end-of-day price)
+ * and its latest full-year figures. It only shows what the server stores; a missing figure is said
+ * to be missing, never filled in.
  */
 
 /** What one call to the server gave for one symbol: null while it is still loading. */
@@ -156,13 +155,9 @@ function Overview({ symbol, fetched }: { symbol: string; fetched: Fetched<Prices
 
   return (
     <section className="chat-zone chat-overview" aria-label={title}>
-      {/* For screen readers: on screen, the name row under it already says which stock. */}
-      <h2 className="visually-hidden">{title}</h2>
-      <nav className="chat-crumbs" aria-label="Breadcrumb">
-        <a href="/stocks/">Stocks</a>
-        <ChevronRightIcon />
-        <a href={stockPageHref(symbol)}>{stock?.name ?? symbol}</a>
-      </nav>
+      <div className="chat-zone-head">
+        <h2>{title}</h2>
+      </div>
       <div className="chat-stock-row">
         <Monogram symbol={symbol} size="lg" />
         <div>

@@ -292,7 +292,6 @@ export function ChatView() {
         </p>
       )}
       <div className="chat">
-        <ChatPanel symbol={stock} onPick={setStock} />
         <section className="chat-main" aria-label="Conversation">
           <header className="chat-card-head">
             <span className="chat-avatar" aria-hidden="true">
@@ -304,9 +303,9 @@ export function ChatView() {
                 {DESCRIPTION}
               </p>
             </div>
-            <span className="chat-pill">
+            <span className="chat-pill" title={PILL}>
               <ShieldCheckIcon />
-              {PILL}
+              <span className="chat-pill-text">{PILL}</span>
             </span>
             <div
               className="chat-menu-wrap"
@@ -493,6 +492,7 @@ export function ChatView() {
             </p>
           </div>
         </section>
+        <ChatPanel symbol={stock} onPick={setStock} />
       </div>
     </AppShell>
   );

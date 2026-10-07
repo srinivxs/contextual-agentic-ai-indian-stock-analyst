@@ -396,16 +396,12 @@ describe('the overview card', () => {
     expect(await within(overview).findAllByText('₹101.50')).not.toHaveLength(0);
     expect(within(overview).getByText('+1.5%')).toHaveClass('rise');
     expect(within(overview).getByText('RELIANCE')).toBeInTheDocument();
-    // the name twice: in the breadcrumb (a link to the stock's page) and under the ticker
-    expect(within(overview).getAllByText('Reliance Industries')).toHaveLength(2);
-    expect(within(overview).getByRole('link', { name: 'Stocks' })).toHaveAttribute(
-      'href',
-      '/stocks/',
+    expect(within(overview).getByText('Reliance Industries')).toBeInTheDocument();
+    // The card's title is on screen, as in the owner's layout (no breadcrumb).
+    expect(within(overview).getByRole('heading', { name: 'Reliance overview' })).not.toHaveClass(
+      'visually-hidden',
     );
-    expect(within(overview).getByRole('link', { name: 'Reliance Industries' })).toHaveAttribute(
-      'href',
-      '/stock/?symbol=RELIANCE',
-    );
+    expect(within(overview).queryByRole('navigation', { name: 'Breadcrumb' })).toBeNull();
     expect(within(overview).getByText('As of 28 Sep 2026, BSE end of day')).toBeInTheDocument();
     expect(within(overview).getByRole('img', { name: /Share price of/ })).toBeInTheDocument();
     // a marker on every stored close
@@ -473,13 +469,13 @@ describe('the overview card', () => {
 });
 
 describe('the layout', () => {
-  it('puts the stock context above the conversation, which takes the full width', async () => {
+  it('puts the conversation first (the left, larger column) and the stock beside it', async () => {
     install();
     render(<ChatView />);
     const conversation = await screen.findByRole('region', { name: 'Conversation' });
-    // The panel comes first: the stock tabs, the overview and the key metrics side by side.
+    // The chat is the main feature (the owner, 3:2): it comes first, the stock panel after it.
     expect(
-      panel().compareDocumentPosition(conversation) & Node.DOCUMENT_POSITION_FOLLOWING,
+      conversation.compareDocumentPosition(panel()) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
@@ -516,7 +512,7 @@ describe('the layout', () => {
     expect(top).toBe(900);
   });
 
-  it('has the stock tabs on top, then the overview and, to its right, the key metrics', async () => {
+  it('has the stock tabs on top of the panel, then the overview, then the key metrics', async () => {
     install();
     render(<ChatView />);
     const group = await within(
