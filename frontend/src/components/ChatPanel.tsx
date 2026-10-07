@@ -7,13 +7,14 @@ import {
   BarsIcon,
   ChevronRightIcon,
   CoinsIcon,
+  ExternalIcon,
   PercentIcon,
   TrendIcon,
 } from '@/components/Icons';
 import { Monogram, preloadLogos } from '@/components/Monogram';
 import { PriceChart } from '@/components/PriceChart';
 import { STOCKS } from '@/components/StockJump';
-import { historyStillFilling, keyMetrics, shortName } from '@/lib/chatContext';
+import { keyMetrics, shortName } from '@/lib/chatContext';
 import {
   citationLink,
   eventDateLabel,
@@ -77,7 +78,11 @@ function metricIcon(metric: Metric): { kind: string; icon: ReactNode } {
   }
 }
 
-/** A short name for where a figure is from, linking to it when the address is safe. */
+/**
+ * Where a figure is from: just the link icon (the owner, 2026-10-08, as on the stock page), named
+ * for a screen reader ("screener.in", "Filing p.44") and showing the full source on hover. A source
+ * with no safe address shows the same icon, still named and still on hover, but not as a link.
+ */
 function SourceChip({ citation }: { citation: Citation }) {
   const page = /p\.(\d+)/.exec(citation.label)?.[1];
   const short =
@@ -91,17 +96,18 @@ function SourceChip({ citation }: { citation: Citation }) {
   const link = citationLink(citation);
   return link ? (
     <a
-      className="chat-source-chip"
+      className="chat-source-icon"
       href={link}
       target="_blank"
       rel="noopener noreferrer"
+      aria-label={short}
       title={citation.label}
     >
-      {short}
+      <ExternalIcon />
     </a>
   ) : (
-    <span className="chat-source-chip" title={citation.label}>
-      {short}
+    <span className="chat-source-icon" role="img" aria-label={short} title={citation.label}>
+      <ExternalIcon />
     </span>
   );
 }
@@ -123,7 +129,6 @@ function Overview({ symbol, fetched }: { symbol: string; fetched: Fetched<Prices
     const percent = signedPercent(latest?.change_pct ?? null);
     const tone = direction(latest?.change_pct == null ? null : Number(latest.change_pct));
     const link = latest ? citationLink(latest.citation) : null;
-    const since = prices.history[0]?.date;
     body = (
       <>
         <div className="chat-price-row">
@@ -137,11 +142,6 @@ function Overview({ symbol, fetched }: { symbol: string; fetched: Fetched<Prices
           changePct={latest?.change_pct ?? null}
           markers
         />
-        {since && historyStillFilling(prices.history) && (
-          <p className="chat-asof muted">
-            {`Prices from ${eventDateLabel(since)}: BSE keeps about a month of daily files, so the history grows by a day each trading day.`}
-          </p>
-        )}
         <p className="chat-asof muted">
           <span>{`As of ${eventDateLabel(latest?.date ?? '')}, BSE end of day`}</span>
           {link && (

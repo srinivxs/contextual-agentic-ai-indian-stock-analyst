@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
@@ -177,6 +180,19 @@ describe('PriceChart', () => {
     unmount();
     const plain = render(<PriceChart history={history} name="DemoCo Alpha" changePct="1.5" />);
     expect(plain.container.querySelectorAll('.chart-marker')).toHaveLength(0);
+  });
+
+  it('shows the points and the grid only while the mouse is on the chart (the owner)', () => {
+    const css = readFileSync(resolve(__dirname, '../../src/app/globals.css'), 'utf-8');
+    const rule = (selector: string) => {
+      const at = css.indexOf(`${selector} {`);
+      expect(at, selector).toBeGreaterThan(-1);
+      return css.slice(at, css.indexOf('}', at));
+    };
+    expect(rule('.chart-marker')).toMatch(/opacity:\s*0;/);
+    expect(rule('.home-chart-plot.hovering .chart-marker')).toMatch(/opacity:\s*1;/);
+    expect(rule('.chat-zone .home-chart-plot')).not.toMatch(/background-image/);
+    expect(rule('.chat-zone .home-chart-plot.hovering')).toMatch(/background-image/);
   });
 
   it('leaves the change out when the server sent none', () => {

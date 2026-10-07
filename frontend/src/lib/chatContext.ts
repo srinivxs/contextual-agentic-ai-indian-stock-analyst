@@ -13,7 +13,6 @@ import {
   type Metric,
   type StockInsights,
 } from '@/lib/insights';
-import type { PricePoint } from '@/lib/prices';
 
 export type ChatStock = { symbol: string; short: string; pattern: RegExp };
 
@@ -48,19 +47,6 @@ export function followUps(symbol: string): string[] {
     `Latest news on ${name}`,
     `How does ${name} fit my profile?`,
   ];
-}
-
-/** The date ``months`` before the newest close ("YYYY-MM-DD"). */
-function monthsBefore(newest: string, months: number): string {
-  const [year = 0, month = 1, day = 1] = newest.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1 - months, day)).toISOString().slice(0, 10);
-}
-
-/** True while the history does not reach back a full year yet. */
-export function historyStillFilling(history: PricePoint[]): boolean {
-  const oldest = history[0]?.date;
-  const newest = history.at(-1)?.date;
-  return oldest !== undefined && newest !== undefined && oldest > monthsBefore(newest, 12);
 }
 
 export type MetricRow = {

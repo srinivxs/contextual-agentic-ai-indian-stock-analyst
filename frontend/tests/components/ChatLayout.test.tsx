@@ -442,15 +442,15 @@ describe('the overview card', () => {
     expect(within(overview).queryByRole('group', { name: 'Chart range' })).toBeNull();
   });
 
-  it('says how far back the prices go while there is less than a year', async () => {
+  it('says how far back the prices go with just the first and last dates (the owner)', async () => {
     install({ prices: { RELIANCE: demoPrices('RELIANCE') } }); // five days: 22 to 28 Sep 2026
     render(<ChatView />);
     const overview = await screen.findByRole('region', { name: 'Reliance overview' });
-    expect(
-      await within(overview).findByText(
-        'Prices from 22 Sep 2026: BSE keeps about a month of daily files, so the history grows by a day each trading day.',
-      ),
-    ).toBeInTheDocument();
+    await within(overview).findByRole('img', { name: /Share price of/ });
+    const dates = overview.querySelector('.price-chart-dates');
+    expect(dates).toHaveTextContent('22 Sep 2026');
+    expect(dates).toHaveTextContent('28 Sep 2026');
+    expect(within(overview).queryByText(/BSE keeps about a month/)).toBeNull();
   });
 
   it('says prices are not loaded yet, with no chart', async () => {
@@ -572,10 +572,13 @@ describe('the key metrics card', () => {
     expect(within(rows[0] as HTMLElement).getByText('+12.5%')).toHaveClass('rise');
     expect(rows[1]).toHaveTextContent('₹12,345.5 crore');
     expect(rows[2]).toHaveTextContent('₹45.60 per share');
-    // Each figure names its source; the screener one links to its page.
-    expect(
-      within(rows[1] as HTMLElement).getByRole('link', { name: 'screener.in' }),
-    ).toHaveAttribute('href', 'https://www.screener.in/company/DEMOA/consolidated/');
+    // Each figure links to its source with just the link icon (the owner), named for a screen
+    // reader and on hover.
+    const screener = within(rows[1] as HTMLElement).getByRole('link', { name: 'screener.in' });
+    expect(screener).toHaveAttribute('href', 'https://www.screener.in/company/DEMOA/consolidated/');
+    expect(screener).toHaveTextContent(/^$/);
+    expect(screener.querySelector('svg')).not.toBeNull();
+    expect(screener).toHaveAttribute('title');
     expect(within(rows[0] as HTMLElement).getByRole('link', { name: 'Filing p.44' })).toBeVisible();
   });
 
@@ -585,6 +588,21 @@ describe('the key metrics card', () => {
     const card = await screen.findByRole('region', { name: 'Key metrics' });
     expect(await within(card).findByText('No key figures stored yet.')).toBeInTheDocument();
     expect(within(card).queryByRole('listitem')).toBeNull();
+  });
+
+  it('shows a source without an address as the same icon, named, but not a link', async () => {
+    install({
+      insights: {
+        RELIANCE: demoInsights({
+          key_facts: [demoFact({ citation: { ...demoScreenerCitation(), url: null } })],
+        }),
+      },
+    });
+    render(<ChatView />);
+    const card = await screen.findByRole('region', { name: /^Key metrics/ });
+    await within(card).findAllByRole('listitem');
+    expect(within(card).getByRole('img', { name: 'screener.in' })).toHaveTextContent(/^$/);
+    expect(within(card).queryByRole('link', { name: 'screener.in' })).toBeNull();
   });
 
   it('has no operating margin', async () => {

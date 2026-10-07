@@ -2186,10 +2186,13 @@ a.chip:hover {
   letter-spacing: -0.01em;
 }
 
-/* The chart: a faint grid behind the line, a point on every close. */
+/* The chart: just the line; a faint grid and a point on every close appear on hover. */
 .chat-zone .home-chart-plot {
   height: 5.75rem;
   margin-top: 1rem;
+}
+
+.chat-zone .home-chart-plot.hovering {
   background-image: linear-gradient(
     to right,
     color-mix(in srgb, var(--border) 70%, transparent) 1px,
@@ -2349,18 +2352,21 @@ a.chip:hover {
   --icon: #fb9a4b;
 }
 
-.chat-source-chip {
-  display: inline-block;
-  margin-left: 0.45rem;
-  padding: 0.02rem 0.45rem;
-  border-radius: 999px;
-  background: var(--surface-2);
+/* A figure's source as just the link icon (the owner, as on the stock page). */
+.chat-source-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-left: 0.3rem;
+  border-radius: 7px;
   color: var(--muted);
-  font-size: 0.7rem;
-  text-decoration: none;
+  vertical-align: middle;
 }
 
-a.chat-source-chip:hover {
+.chat-source-icon:hover,
+.chat-source-icon:focus-visible {
+  background: var(--surface-2);
   color: var(--brand);
 }
 
@@ -2383,7 +2389,6 @@ a.chat-source-chip:hover {
   }
 
   .chat-crumbs,
-  .chat-zone .price-chart-dates,
   .chat-disclaimer {
     display: none;
   }
@@ -3131,14 +3136,21 @@ a.chat-source-chip:hover {
   stop-opacity: 0;
 }
 
+/* The points show only while the mouse is on the chart (the owner, 2026-10-08). */
 .chart-marker {
   position: absolute;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--chart-color, var(--accent));
+  opacity: 0;
   transform: translate(-50%, -50%);
+  transition: opacity 0.15s ease;
   pointer-events: none;
+}
+
+.home-chart-plot.hovering .chart-marker {
+  opacity: 1;
 }
 
 .home-chart-line {
