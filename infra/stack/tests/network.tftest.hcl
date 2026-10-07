@@ -105,6 +105,7 @@ variables {
   allowed_account_id   = "123456789012"
   google_client_id     = "mock-client-id.apps.googleusercontent.com"
   google_client_secret = "mock-google-client-secret"
+  allowed_emails       = "owner@example.com,friend@example.org"
 }
 
 # --- the VPC itself ------------------------------------------------------------------------------

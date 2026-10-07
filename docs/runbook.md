@@ -37,6 +37,7 @@ $env:TF_VAR_allowed_account_id = "<the 12-digit account id>"
 Get-Content "C:\Contextual Agentic AI Indian Stock Analyst\.env" | ForEach-Object {
   if ($_ -match '^GOOGLE_CLIENT_ID=(.+)$')     { $env:TF_VAR_google_client_id = $Matches[1].Trim() }
   if ($_ -match '^GOOGLE_CLIENT_SECRET=(.+)$') { $env:TF_VAR_google_client_secret = $Matches[1].Trim() }
+  if ($_ -match '^ALLOWED_EMAILS=(.+)$')       { $env:TF_VAR_allowed_emails = $Matches[1].Trim() }
 }
 ```
 

@@ -6,6 +6,7 @@ startup with a clear error instead of misbehaving later. Only variables the code
 are declared; each milestone adds its own (see ``.env.example`` for the full planned list).
 """
 
+import re
 from datetime import timedelta
 from decimal import Decimal
 from functools import lru_cache
@@ -19,6 +20,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+# An email for the sign-in allow list: something@domain.tld, with no spaces.
+_EMAIL = re.compile(r"^[^@\s,]+@[^@\s,]+\.[^@\s,]+$")
 
 
 class CommonSettings(BaseSettings):
@@ -175,6 +179,11 @@ class Settings(CommonSettings):
     oauth_login_ttl_seconds: int = Field(default=600, ge=60, le=3600)
     # Timeout for our server-to-server calls to Google, so a slow Google cannot hang a login.
     google_timeout_seconds: float = Field(default=5.0, ge=1, le=120)
+    # Who may sign in: a comma-separated list of Google account emails (the owner, 2026-10-07).
+    # Google lets ANY account through when an app asks only for basic sign-in, even in its
+    # "Testing" mode, so the list is ours. Empty means everyone (local development and tests);
+    # the AWS deployment always sets one (infra/stack/variables.tf refuses an empty list).
+    allowed_emails: str = ""
 
     @field_validator("google_client_id")
     @classmethod
@@ -183,6 +192,17 @@ class Settings(CommonSettings):
             raise ValueError("google_client_id must not be blank")
         return value
 
+    @field_validator("allowed_emails")
+    @classmethod
+    def _normalise_the_allow_list(cls, value: str) -> str:
+        emails = [item.strip().lower() for item in value.split(",") if item.strip()]
+        bad = [email for email in emails if not _EMAIL.match(email)]
+        if bad:
+            # A typo here would silently lock someone out, so it stops the start instead. The
+            # message counts the bad entries rather than echoing them into the logs.
+            raise ValueError(f"allowed_emails has {len(bad)} entry(ies) that are not emails")
+        return ",".join(emails)
+
     @field_validator("google_client_secret")
     @classmethod
     def _require_a_non_blank_client_secret(cls, value: SecretStr) -> SecretStr:
@@ -190,6 +210,13 @@ class Settings(CommonSettings):
             # The message names the field, never the value.
             raise ValueError("google_client_secret must not be blank")
         return value
+
+    def may_sign_in(self, email: str) -> bool:
+        """True if this verified Google email may sign in: anyone without a list, else only the
+        listed addresses (compared whole and case-insensitively)."""
+        if not self.allowed_emails:
+            return True
+        return email.strip().lower() in set(self.allowed_emails.split(","))
 
     @property
     def public_origin(self) -> str:

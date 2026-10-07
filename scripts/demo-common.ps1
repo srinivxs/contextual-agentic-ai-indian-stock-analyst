@@ -48,9 +48,14 @@ function Initialize-DemoSession {
     foreach ($line in Get-Content $dotenv) {
         if ($line -match '^GOOGLE_CLIENT_ID=(.+)$') { $env:TF_VAR_google_client_id = $Matches[1].Trim() }
         if ($line -match '^GOOGLE_CLIENT_SECRET=(.+)$') { $env:TF_VAR_google_client_secret = $Matches[1].Trim() }
+        if ($line -match '^ALLOWED_EMAILS=(.+)$') { $env:TF_VAR_allowed_emails = $Matches[1].Trim() }
     }
     if (-not $env:TF_VAR_google_client_id -or -not $env:TF_VAR_google_client_secret) {
         throw 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in .env.'
+    }
+    # Who may sign in. Google alone would let any account in, so the stack is never started without it.
+    if (-not $env:TF_VAR_allowed_emails) {
+        throw 'ALLOWED_EMAILS must be set in .env: the Google emails allowed to sign in, comma-separated.'
     }
 
     $script:DemoUrl = Invoke-Aws -Arguments @('ssm', 'get-parameter', '--name',

@@ -117,3 +117,12 @@ def test_it_runs_in_windows_powershell_5(name: str) -> None:
     code = _code(name)
     for token in (" && ", " || ", " ?? ", "?."):
         assert token not in code
+
+
+def test_the_sign_in_allow_list_comes_from_env_and_is_required() -> None:
+    """ALLOWED_EMAILS goes from the git-ignored .env to Terraform, never into the repository, and
+    the scripts refuse to start a stack that anyone with a Google account could sign in to."""
+    common = (SCRIPTS / "demo-common.ps1").read_text(encoding="utf-8")
+    assert "^ALLOWED_EMAILS=" in common
+    assert "$env:TF_VAR_allowed_emails" in common
+    assert "ALLOWED_EMAILS must be set in .env" in common

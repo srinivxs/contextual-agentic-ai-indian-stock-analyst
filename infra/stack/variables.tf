@@ -87,6 +87,24 @@ variable "google_client_id" {
   description = "Google OAuth client ID. Not a secret: it travels in the browser's address bar."
 }
 
+variable "allowed_emails" {
+  type        = string
+  description = "Comma-separated Google account emails allowed to sign in. Read from ALLOWED_EMAILS in .env."
+
+  # Required, never empty: Google lets any account through when an app asks only for basic sign-in,
+  # so without this list anyone with the address could sign in and use the chat.
+  validation {
+    condition = (
+      length(compact(split(",", replace(var.allowed_emails, " ", "")))) > 0 &&
+      alltrue([
+        for email in compact(split(",", replace(var.allowed_emails, " ", ""))) :
+        can(regex("^[^@,]+@[^@,]+\\.[^@,]+$", email))
+      ])
+    )
+    error_message = "allowed_emails must list at least one valid email, comma-separated."
+  }
+}
+
 variable "google_client_secret" {
   type        = string
   description = "Google OAuth client secret, supplied as TF_VAR_google_client_secret."

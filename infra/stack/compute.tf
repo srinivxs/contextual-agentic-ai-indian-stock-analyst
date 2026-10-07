@@ -138,6 +138,9 @@ resource "aws_ecs_task_definition" "api" {
         # contradict; a separate variable would just be another thing to forget, which is exactly
         # how the first production apply failed.
         { name = "COOKIE_SECURE", value = tostring(var.app_env == "production") },
+
+        # Who may sign in (the owner's list from .env; ADR 012 amendment).
+        { name = "ALLOWED_EMAILS", value = var.allowed_emails },
       ], local.feature_environment)
 
       # Fetched from SSM by the EXECUTION role at start and injected as environment variables. The

@@ -114,6 +114,7 @@ variables {
   allowed_account_id   = "123456789012"
   google_client_id     = "mock-client-id.apps.googleusercontent.com"
   google_client_secret = "mock-client-secret"
+  allowed_emails       = "owner@example.com,friend@example.org"
 }
 
 run "production_without_an_https_base_url_is_refused_before_anything_is_built" {

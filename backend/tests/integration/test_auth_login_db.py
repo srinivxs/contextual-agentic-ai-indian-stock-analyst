@@ -36,10 +36,10 @@ pytestmark = pytest.mark.usefixtures("clean_auth_tables")
 
 @asynccontextmanager
 async def logging_in(
-    db_config: DbConfig, google: FakeGoogle
+    db_config: DbConfig, google: FakeGoogle, **overrides: Any
 ) -> AsyncIterator[tuple[FastAPI, httpx.AsyncClient]]:
     """A real app whose only fake is Google."""
-    settings = db_config.settings()
+    settings = db_config.settings(**overrides)
     app = create_app(settings)
     app.state.http_client = google.client()
     app.state.jwks = JwksCache(client=google.client())
@@ -375,3 +375,38 @@ async def test_a_SUCCESSFUL_login_still_ignores_any_redirect_the_caller_suggests
     assert response.headers["location"] == "http://localhost:8000/"
     assert "evil.example" not in response.headers["location"]
     assert "javascript" not in response.headers["location"]
+
+
+# --- invite only (ALLOWED_EMAILS) -----------------------------------------------------------------
+
+
+async def test_an_invited_account_signs_in_as_usual(
+    db_config: DbConfig, google: FakeGoogle, admin_engine: AsyncEngine
+) -> None:
+    settings = db_config.settings(allowed_emails=EMAIL.upper())
+    async with logging_in(db_config, google, allowed_emails=EMAIL.upper()) as (_, client):
+        signed, attempt = await start_login(client, settings)
+        google.id_token = mint_id_token(nonce=attempt.nonce)
+        response = await finish_login(client, signed, attempt)
+
+    assert cookie_from(response, "session") is not None
+    assert await count_sessions(admin_engine) == 1
+
+
+async def test_an_uninvited_account_leaves_no_user_and_no_session(
+    db_config: DbConfig, google: FakeGoogle, admin_engine: AsyncEngine
+) -> None:
+    settings = db_config.settings(allowed_emails="someone-else@example.com")
+    async with logging_in(db_config, google, allowed_emails="someone-else@example.com") as (
+        _,
+        client,
+    ):
+        signed, attempt = await start_login(client, settings)
+        google.id_token = mint_id_token(nonce=attempt.nonce)
+        response = await finish_login(client, signed, attempt)
+
+    assert parse_qs(urlparse(response.headers["location"]).query)["login_error"] == ["not_invited"]
+    async with admin_engine.connect() as connection:
+        users = (await connection.execute(text("SELECT count(*) FROM users"))).scalar_one()
+    assert users == 0
+    assert await count_sessions(admin_engine) == 0

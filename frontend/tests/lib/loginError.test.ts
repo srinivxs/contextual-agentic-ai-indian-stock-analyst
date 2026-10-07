@@ -11,6 +11,10 @@ describe('loginErrorMessage', () => {
     expect(loginErrorMessage('cancelled')).toMatch(/cancel/i);
   });
 
+  it('says the demo is invite-only when the account is not on the list', () => {
+    expect(loginErrorMessage('not_invited')).toMatch(/invite-only/i);
+  });
+
   it('has a generic message for a failed login', () => {
     expect(loginErrorMessage('login_failed')).toMatch(/couldn.t sign you in/i);
   });

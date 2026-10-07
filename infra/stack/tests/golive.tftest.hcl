@@ -124,6 +124,7 @@ variables {
   allowed_account_id   = "123456789012"
   google_client_id     = "mock-client-id.apps.googleusercontent.com"
   google_client_secret = "mock-google-client-secret"
+  allowed_emails       = "owner@example.com,friend@example.org"
 }
 
 # --- 1. the documents bucket ------------------------------------------------------------------------
@@ -433,4 +434,47 @@ run "a_negative_cap_is_refused" {
   }
 
   expect_failures = [var.extraction_budget_usd]
+}
+
+# --- invite only (the owner, 2026-10-07) -------------------------------------------------------------
+
+run "only_the_listed_google_accounts_may_sign_in" {
+  # Google lets ANY account through when an app asks only for basic sign-in, even in its
+  # "Testing" mode, so the app keeps its own list. The api is the one that signs people in.
+  assert {
+    condition = anytrue([
+      for env in jsondecode(aws_ecs_task_definition.api.container_definitions)[0].environment :
+      env.name == "ALLOWED_EMAILS" && env.value == "owner@example.com,friend@example.org"
+    ])
+    error_message = "The api container must receive ALLOWED_EMAILS from var.allowed_emails."
+  }
+
+  assert {
+    condition = !anytrue([
+      for env in jsondecode(aws_ecs_task_definition.api.container_definitions)[1].environment :
+      env.name == "ALLOWED_EMAILS"
+    ])
+    error_message = "The worker signs nobody in; it does not need the list."
+  }
+}
+
+run "an_empty_allow_list_is_refused" {
+  command = plan
+
+  # An empty list would mean "everyone": never on AWS.
+  variables {
+    allowed_emails = ""
+  }
+
+  expect_failures = [var.allowed_emails]
+}
+
+run "a_malformed_email_in_the_list_is_refused" {
+  command = plan
+
+  variables {
+    allowed_emails = "owner@example.com,not-an-email"
+  }
+
+  expect_failures = [var.allowed_emails]
 }

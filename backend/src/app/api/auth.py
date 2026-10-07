@@ -43,6 +43,7 @@ router = APIRouter(prefix="/api/v1", tags=["auth"])
 # What the browser is told. Never which check failed, and never anything Google said.
 GENERIC_FAILURE = "login_failed"
 CANCELLED = "cancelled"
+NOT_INVITED = "not_invited"
 
 
 class MeResponse(BaseModel):
@@ -114,6 +115,11 @@ async def google_callback(request: Request) -> Response:
         return _failed(settings, failure.reason, failure.shown)
     except InvalidIdToken:
         return _failed(settings, "invalid_id_token")
+
+    # Google has proved who this is; is this person invited? Checked before the database is touched,
+    # so an uninvited account leaves no user row and no session behind.
+    if not settings.may_sign_in(identity.email):
+        return _failed(settings, "not_invited", NOT_INVITED)
 
     # Authentication has succeeded. Only now is a transaction opened, and it makes no network call:
     # everything that could reach out has already finished.

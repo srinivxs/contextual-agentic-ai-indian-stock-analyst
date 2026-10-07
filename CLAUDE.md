@@ -78,7 +78,8 @@ without explaining why and updating this file plus the relevant ADR. Keep this f
   `/api/healthz` (liveness) and, from P3, `/api/readyz` (database).
 - **Auth:** Google OIDC authorisation-code flow with PKCE, `state`, `nonce`; the backend issues its own
   server-side session (opaque token, hashed in the DB, HttpOnly Secure SameSite=Lax cookie). Identity is
-  Google `sub`. Same-origin via CloudFront, so no CORS. Details, the invariant → test map and the
+  Google `sub`. Sign-in is invite-only: `ALLOWED_EMAILS` (from `.env`; required on AWS) is checked
+  after Google verifies the account and before anything is stored. Same-origin via CloudFront, so no CORS. Details, the invariant → test map and the
   known limitations are in [ADR 012](docs/decisions/012-authentication-and-sessions.md).
 - **Database:** PostgreSQL 16 + pgvector (ADR 001) for everything: users, sessions, stocks, follows,
   documents, chunks and embeddings, extracted facts, events, investor profiles, conversations, and the

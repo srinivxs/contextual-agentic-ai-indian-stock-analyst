@@ -211,3 +211,21 @@ that no redirect parameter can alter it is proven by the two open-redirect tests
   (`COOKIE_SECURE`, https `PUBLIC_BASE_URL`), not on what the ALB hop looks like.
 - **P8 (deploy):** a second Google OAuth client whose redirect URI is the CloudFront URL, and
   `GOOGLE_CLIENT_SECRET` and `SESSION_SECRET` from SSM Parameter Store, never the local values.
+
+## Amendment (2026-10-07): sign-in is invite-only
+
+Google lets **any** Google account sign in when an app asks only for basic identity (`openid`,
+`email`), even while its consent screen is in "Testing" mode: the test-user list applies only to
+apps that request more. So the app keeps its own list.
+
+- `ALLOWED_EMAILS` (comma-separated, compared whole and case-insensitively). After the ID token is
+  verified and **before the database is touched**, an email not on the list ends the login with
+  `login_error=not_invited` ("This demo is invite-only"): no user row, no session.
+- Empty means everyone, which is only for localhost and tests. On AWS the list is required:
+  `scripts/demo-common.ps1` reads it from the git-ignored `.env` (so the addresses never enter the
+  repository) and refuses to start without it, and the Terraform variable `allowed_emails` refuses
+  an empty or malformed list. Only the api container receives it.
+- A malformed entry stops the api at startup rather than silently locking someone out.
+- Tests: the refusal never reaches the database (unit, with a database that fails the test if
+  touched), a listed account signs in and an unlisted one leaves no rows (integration), the
+  Terraform checks, and the demo script requirement.

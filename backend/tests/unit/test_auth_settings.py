@@ -94,3 +94,29 @@ def test_only_production_uses_the_host_prefixed_cookie_name() -> None:
     assert production_settings().session_cookie_name == "__Host-session"
     assert build_settings(app_env="local").session_cookie_name == "session"
     assert build_settings(app_env="test").session_cookie_name == "session"
+
+
+# --- who may sign in (the owner, 2026-10-07) -----------------------------------------------------
+
+
+def test_everyone_may_sign_in_when_no_allow_list_is_set() -> None:
+    """Local development and tests: an empty list means no restriction (AWS always sets one)."""
+    settings = build_settings()
+    assert settings.allowed_emails == ""
+    assert settings.may_sign_in("anyone@example.com")
+
+
+def test_only_listed_emails_may_sign_in_whatever_the_case_or_spacing() -> None:
+    settings = build_settings(allowed_emails=" Owner@Example.com, friend@example.org,")
+    assert settings.may_sign_in("owner@example.com")
+    assert settings.may_sign_in("FRIEND@example.org")
+    assert not settings.may_sign_in("stranger@example.com")
+    assert not settings.may_sign_in("owner@example.com.evil.example")
+
+
+@pytest.mark.parametrize(
+    "bad", ["not-an-email", "owner@localhost", "@example.com", "a b@example.com"]
+)
+def test_a_malformed_allow_list_is_refused_at_startup(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        build_settings(allowed_emails=f"owner@example.com,{bad}")

@@ -324,6 +324,8 @@ table, is [docs/runbook.md](docs/runbook.md).
   carrying a shared secret header; the tasks accept traffic only from the load balancer; RDS sits
   in isolated subnets with no route out. The documents bucket is private, TLS-only and never
   served to users.
+- **Invite-only sign-in.** Google confirms who someone is; the app then admits only the emails on
+  its allow-list, before anything is stored.
 - **Sessions.** Opaque 256-bit tokens, stored only as SHA-256 hashes; `__Host-` cookies that are
   HttpOnly, Secure and SameSite=Lax, plus an Origin check on state-changing requests.
 - **Untrusted input.** Retrieved text is treated as data, never as instructions. SQL is always

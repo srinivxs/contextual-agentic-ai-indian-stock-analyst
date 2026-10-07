@@ -98,6 +98,8 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
+      # Who may sign in; empty means anyone (fine on localhost).
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
       # The same switches as the worker's: a follow or the "Update data" button queues only what the
       # worker can run (filings: ADR 018; prices: ADR 025; the RBI feed's mode, for the page).
       FILINGS_DISCOVERY: ${FILINGS_DISCOVERY:-false}

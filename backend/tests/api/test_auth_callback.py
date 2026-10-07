@@ -347,3 +347,37 @@ async def test_nothing_sensitive_reaches_the_logs(
     ):
         assert secret not in logs  # ...and none of it carries any of this
     assert "code=" not in logs  # the query string is never logged
+
+
+# --- invite only (ALLOWED_EMAILS) -----------------------------------------------------------------
+
+
+async def test_an_account_not_on_the_allow_list_is_turned_away_before_the_database(
+    google: FakeGoogle,
+) -> None:
+    """A real, valid Google login for someone who is not invited: told so, and nothing is created
+    (the NoDatabase factory fails the test if the database is touched)."""
+    from app.auth.jwks import JwksCache
+    from app.auth.login_state import LoginAttempt
+    from app.auth.pkce import generate_code_verifier
+
+    settings = build_settings(allowed_emails="owner@example.com")
+    application = create_app(settings)
+    application.state.session_factory = NoDatabase()
+    application.state.http_client = google.client()
+    application.state.jwks = JwksCache(client=google.client())
+    attempt = LoginAttempt(
+        state="the-state", nonce="the-expected-nonce", code_verifier=generate_code_verifier()
+    )
+    signed = sign_login_attempt(attempt, settings)
+    google.id_token = mint_id_token(email="stranger@example.com")
+
+    transport = httpx.ASGITransport(app=application, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        response = await http.get(
+            CALLBACK,
+            params={"code": CODE, "state": "the-state"},
+            headers={"Cookie": f"{LOGIN_COOKIE}={signed}"},
+        )
+
+    assert_login_failed(response, "not_invited")
