@@ -105,7 +105,8 @@ terraform plan "-out=tfplan"
 terraform apply tfplan
 ```
 
-49 resources (51 before P8a moved the registry to `infra/cicd`). RDS takes about 6 minutes of it; the load balancer about 2, in parallel.
+59 resources since go-live added the worker, the documents bucket and Bedrock access (49 before
+it; 51 before P8a moved the registry to `infra/cicd`). RDS takes about 6 minutes of it; the load balancer about 2, in parallel.
 
 **Delete `tfplan` afterwards — a plan file contains the Google client secret in plaintext.**
 
@@ -222,7 +223,7 @@ terraform destroy
 ```
 
 **Only in `infra\stack`.** Destroying `infra\edge` throws away the permanent domain and the Google
-registration with it. The plan should say **49 to destroy**; if it says 11 (the edge) or 6 (the build
+registration with it. The plan should say **59 to destroy**; if it says 11 (the edge) or 6 (the build
 machinery), you are in the wrong directory — stop.
 
 About 8 to 10 minutes: saving the database adds a few. By hand, without demo-up's name, nothing

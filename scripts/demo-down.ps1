@@ -9,7 +9,7 @@
 
   It destroys ONLY infra/stack. The edge (the permanent URL registered with Google), the registry
   and the state bucket are never touched: no script can reach them (see Invoke-Terraform).
-  Terraform shows the plan and waits for `yes`; the plan should say about 49 to destroy.
+  Terraform shows the plan and waits for `yes`; the plan should say about 59 to destroy.
 
   The destroy first saves the database as a snapshot (the name demo-up chose; a few minutes more),
   so the next demo-up restores it instead of starting empty. The newest two saves are kept.
@@ -24,7 +24,7 @@ $ErrorActionPreference = 'Stop'
 
 Initialize-DemoSession
 
-Write-Step '1/3  Save the database, then destroy the application stack (type yes: about 49 to destroy)'
+Write-Step '1/3  Save the database, then destroy the application stack (type yes: about 59 to destroy)'
 Invoke-Terraform -Root 'stack' -Arguments @('destroy')
 
 Write-Step '2/3  Keep the newest two saved databases'

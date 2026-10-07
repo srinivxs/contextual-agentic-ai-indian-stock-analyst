@@ -46,7 +46,7 @@ if (Test-DemoDatabaseRunning) {
     Write-Host 'No saved database yet: it starts empty and the worker fills it (30 to 45 minutes).'
 }
 
-Write-Step '1/5  Apply the application stack (type yes when the plan looks right: about 57 to add)'
+Write-Step '1/5  Apply the application stack (type yes when the plan looks right: about 59 to add)'
 $stackArgs = @('apply', "-var=db_final_snapshot_identifier=$saveAs")
 if ($restoreFrom) { $stackArgs += "-var=db_snapshot_identifier=$restoreFrom" }
 if ($ImageTag) { $stackArgs += "-var=image_tag=$ImageTag" }
