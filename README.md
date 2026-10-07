@@ -113,7 +113,9 @@ flowchart LR
 
 **Ingestion pipeline (worker jobs).** Jobs live in a Postgres table and are claimed with
 `FOR UPDATE SKIP LOCKED`. Each claim carries a lease and an attempt number that acts as a fencing
-token, and failures retry with exponential backoff.
+token, and failures retry with exponential backoff. The worker runs lanes side by side: one
+web lane for the jobs that reach BSE and screener.in (one request at a time) and two AI lanes for
+reading, fingerprinting and the RBI feed.
 
 ```mermaid
 flowchart LR

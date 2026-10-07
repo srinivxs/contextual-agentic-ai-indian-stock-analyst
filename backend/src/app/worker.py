@@ -39,7 +39,7 @@ from app.feed_jobs import enqueue_poll, poll_feed
 from app.feeds.tagging import ALIASES
 from app.ingest import DocumentRejected, JobCannotSucceed, document_id_of, ingest_document
 from app.ingest import mark_document as _mark_document
-from app.jobs import ClaimedJob, claim_next, fail, retry_or_fail, still_mine
+from app.jobs import AI_KINDS, WEB_KINDS, ClaimedJob, claim_next, fail, retry_or_fail, still_mine
 from app.llm import BedrockLlm, StructuredLlm, bedrock_llm_client
 from app.price_jobs import LEASE_SHARE, enqueue_sync, sync_prices
 
@@ -86,7 +86,7 @@ class WorkerContext:
     extraction_budget_usd: Decimal = Decimal("2.00")
     llm_input_usd_per_mtok: Decimal = Decimal("0.35")
     llm_output_usd_per_mtok: Decimal = Decimal("2.95")
-    extraction_concurrency: int = 2
+    extraction_concurrency: int = 4
     # The RBI feed (P15). "fixture" reads the synthetic items and never needs a client; "live"
     # needs ``feed_http``, a client made only in that mode, so an offline worker cannot reach RBI.
     feed_mode: Literal["live", "fixture"] = "fixture"
@@ -211,10 +211,10 @@ async def handle(context: WorkerContext, job: ClaimedJob) -> None:
         logger.info("job_finished", extra=extra)
 
 
-async def run_once(context: WorkerContext) -> bool:
-    """Claim and run one job. False if there was nothing to do."""
+async def run_once(context: WorkerContext, kinds: tuple[str, ...] = WEB_KINDS + AI_KINDS) -> bool:
+    """Claim and run one job of ``kinds`` (a lane's; by default any). False if there was none."""
     async with context.session_factory() as db:
-        job = await claim_next(db, lease_seconds=context.lease_seconds)
+        job = await claim_next(db, lease_seconds=context.lease_seconds, kinds=kinds)
         await db.commit()
     if job is None:
         return False
@@ -295,6 +295,7 @@ async def run_forever(
     feed_check_seconds: float = FEED_CHECK_SECONDS,
     prices_run_minutes: int | None = None,
     prices_check_seconds: float = PRICES_CHECK_SECONDS,
+    ai_lanes: int = 0,
 ) -> None:
     """Work through the queue until ``stop`` is set. The worker's small timers (ADR 008):
 
@@ -308,6 +309,11 @@ async def run_forever(
     - with ``prices_run_minutes``, every ``prices_check_seconds`` make sure this time slot's price
       sync is queued when days are left to fetch (ADR 025; app/price_jobs.py).
     """
+    # With AI lanes, this loop is the WEB lane (and the timers); each AI lane is its own task.
+    lanes = [
+        asyncio.create_task(_lane(context, stop, AI_KINDS, poll_seconds)) for _ in range(ai_lanes)
+    ]
+    own_kinds = WEB_KINDS if ai_lanes else WEB_KINDS + AI_KINDS
     next_discovery_check = 0.0
     next_embed_check = 0.0
     next_extract_check = 0.0
@@ -331,15 +337,30 @@ async def run_forever(
             next_prices_check = time.monotonic() + prices_check_seconds
         if stop.is_set():
             break
-        try:
-            worked = await run_once(context)
-        except Exception:
-            # The database is down, say. Log it, wait, and try again rather than exiting.
-            logger.exception("worker_loop_error")
-            worked = False
-        if not worked:
-            with contextlib.suppress(TimeoutError):  # the normal case: nothing arrived to stop us
-                await asyncio.wait_for(stop.wait(), timeout=poll_seconds)
+        await _one_turn(context, stop, own_kinds, poll_seconds)
+    await asyncio.gather(*lanes)  # each lane finishes the job it holds, then stops
+
+
+async def _lane(
+    context: WorkerContext, stop: asyncio.Event, kinds: tuple[str, ...], poll_seconds: float
+) -> None:
+    """An AI lane: claim and run jobs of ``kinds`` until told to stop."""
+    while not stop.is_set():
+        await _one_turn(context, stop, kinds, poll_seconds)
+
+
+async def _one_turn(
+    context: WorkerContext, stop: asyncio.Event, kinds: tuple[str, ...], poll_seconds: float
+) -> None:
+    try:
+        worked = await run_once(context, kinds)
+    except Exception:
+        # The database is down, say. Log it, wait, and try again rather than exiting.
+        logger.exception("worker_loop_error")
+        worked = False
+    if not worked:
+        with contextlib.suppress(TimeoutError):  # the normal case: nothing arrived to stop us
+            await asyncio.wait_for(stop.wait(), timeout=poll_seconds)
 
 
 async def _main() -> None:  # pragma: no cover - process wiring; the container tests run it (P9c)
@@ -400,6 +421,7 @@ async def _main() -> None:  # pragma: no cover - process wiring; the container t
             embed_model=embedder.model if embedder else None,
             feed_poll_minutes=settings.feed_poll_minutes,
             prices_run_minutes=settings.prices_run_minutes if prices_http else None,
+            ai_lanes=settings.worker_ai_lanes,
         )
     finally:
         if http is not None:

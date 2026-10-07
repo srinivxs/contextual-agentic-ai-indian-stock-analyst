@@ -118,7 +118,8 @@ without explaining why and updating this file plus the relevant ADR. Keep this f
   validator** requires the quote to appear on the cited page and the number in the quote).
 - **Jobs (ADR 005):** Postgres table; types `ingest_document`, `discover_filings`, `fetch_filing`,
   `embed_document`, `extract_document`, `poll_feed` (P15; one per time slot); statuses pending,
-  processing, completed, failed; `SKIP LOCKED` claims, leases, retries with backoff. Concurrency safety
+  processing, completed, failed; `SKIP LOCKED` claims, leases, retries with backoff. Lanes (2026-10-07):
+  one web lane (BSE/screener jobs, one at a time) + `WORKER_AI_LANES` (2) AI lanes; `claim_next(kinds=...)`. Concurrency safety
   comes from unique constraints, `ON CONFLICT`, and a partial unique index on the job dedupe key.
 - **Derived values are computed on read (ADR 009):** rolling sentiment, debt-to-equity, and growth are
   pure functions over stored facts and events, never stored. Debt/equity is "not applicable" for banks

@@ -23,6 +23,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 ERROR_LIMIT = 500  # characters of an error kept on the job row; the full text is in the log
 
+# THE LANES (the owner, 2026-10-07). The worker runs one WEB lane for the jobs that reach BSE and
+# screener.in, one request at a time so it stays polite, and AI lanes for everything else, side by
+# side. Every kind of job belongs to exactly one lane (tests/integration/test_worker_lanes_db.py).
+WEB_KINDS: tuple[str, ...] = ("discover_filings", "fetch_filing", "sync_prices")
+AI_KINDS: tuple[str, ...] = ("ingest_document", "embed_document", "extract_document", "poll_feed")
+
 
 @dataclass(frozen=True)
 class ClaimedJob:
@@ -42,8 +48,9 @@ _CLAIM = text(
         updated_at = now()
     WHERE id = (
         SELECT id FROM jobs
-        WHERE (status = 'pending' AND run_after <= now())
-           OR (status = 'processing' AND locked_until < now())
+        WHERE ((status = 'pending' AND run_after <= now())
+               OR (status = 'processing' AND locked_until < now()))
+          AND kind = ANY(CAST(:kinds AS text[]))
         ORDER BY run_after, id
         FOR UPDATE SKIP LOCKED
         LIMIT 1
@@ -92,8 +99,11 @@ async def _changed_one_row(db: AsyncSession, statement: Any, params: dict[str, A
     return result.rowcount == 1
 
 
-async def claim_next(db: AsyncSession, *, lease_seconds: int) -> ClaimedJob | None:
-    row = (await db.execute(_CLAIM, {"lease": lease_seconds})).one_or_none()
+async def claim_next(
+    db: AsyncSession, *, lease_seconds: int, kinds: tuple[str, ...] = WEB_KINDS + AI_KINDS
+) -> ClaimedJob | None:
+    """The oldest runnable job among ``kinds`` (a lane's kinds; by default any), claimed."""
+    row = (await db.execute(_CLAIM, {"lease": lease_seconds, "kinds": list(kinds)})).one_or_none()
     return None if row is None else ClaimedJob(**row._mapping)
 
 

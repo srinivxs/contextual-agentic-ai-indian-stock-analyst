@@ -68,3 +68,16 @@ Implement a queue as a **`ingestion_jobs` table in PostgreSQL**.
   advisory lock "around derived-state recomputation" is no longer needed. Ingestion writes only base
   records, protected by unique constraints and `ON CONFLICT`.
 - The `JobQueue` interface, the four statuses, retries, leases and `SKIP LOCKED` claims are unchanged.
+
+## Amendment (2026-10-07): lanes, so the first fill finishes within the hour
+
+One worker ran one job at a time, so after a `demo-up` the AI reading waited behind slow, polite
+downloads and the database took about an hour to fill. The worker now runs **lanes** inside one
+process: one **web lane** for the jobs that reach BSE and screener.in (`discover_filings`,
+`fetch_filing`, `sync_prices`; still one request at a time, so the politeness rules hold) and
+`WORKER_AI_LANES` (default 2) **AI lanes** for `ingest_document`, `embed_document`,
+`extract_document` and `poll_feed`. Each lane claims only its kinds (`claim_next(kinds=...)`),
+SKIP LOCKED keeps two lanes off one job exactly as it does for two workers, and a test fails if a
+kind of job belongs to no lane. Reading filings also makes 4 model calls at once instead of 2.
+Trade-off: two AI jobs can now check the spending cap at the same moment, so it can be overshot by
+at most one batch of calls per lane.

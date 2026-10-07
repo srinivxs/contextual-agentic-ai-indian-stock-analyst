@@ -31,6 +31,14 @@ def test_filing_discovery_is_off_unless_switched_on() -> None:
     assert build(filings_discovery=True).filings_discovery is True
 
 
+def test_the_worker_runs_two_ai_lanes_beside_the_web_lane_by_default() -> None:
+    """One lane reaches BSE and screener.in, one request at a time; two lanes do everything else."""
+    assert build().worker_ai_lanes == 2
+    assert build(worker_ai_lanes=0).worker_ai_lanes == 0  # one job at a time, as before
+    with pytest.raises(ValidationError):
+        build(worker_ai_lanes=9)
+
+
 def test_the_worker_settings_hold_no_login_secrets() -> None:
     for field in ("google_client_secret", "google_client_id", "session_secret", "public_base_url"):
         assert field not in CommonSettings.model_fields

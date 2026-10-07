@@ -70,6 +70,10 @@ class CommonSettings(BaseSettings):
     # How long a claimed job is reserved. A worker that dies mid-job loses it after this, and the
     # job is claimed again. Far longer than ingesting one document takes (a few seconds).
     job_lease_seconds: int = Field(default=300, ge=30, le=3600)
+    # Lanes beside the web lane (the owner, 2026-10-07: everything ready within an hour of
+    # demo-up). The web lane alone reaches BSE and screener.in; these do the reading, the
+    # fingerprints and the RBI feed at the same time. 0 = one job at a time, as before.
+    worker_ai_lanes: int = Field(default=2, ge=0, le=8)
 
     # --- automatic filings (ADR 018) ---------------------------------------------------------
     # Off unless switched on: only then does the worker reach screener.in and www.bseindia.com.
@@ -105,7 +109,7 @@ class CommonSettings(BaseSettings):
     # The spending cap for extraction, in US$ (the owner approved $2; a full run is about $0.70).
     extraction_budget_usd: Decimal = Field(default=Decimal("2.00"), ge=0, le=100)
     # How many LLM calls one job makes at the same time.
-    extraction_concurrency: int = Field(default=2, ge=1, le=8)
+    extraction_concurrency: int = Field(default=4, ge=1, le=8)
 
     # --- the grounded chat (P12, ADR 003) -----------------------------------------------------
     # Off unless switched on: only then does the api answer chat questions (with the LLM above and

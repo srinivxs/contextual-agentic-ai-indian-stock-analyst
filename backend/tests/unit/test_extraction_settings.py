@@ -29,7 +29,8 @@ def test_the_spending_cap_is_the_two_dollars_the_owner_approved() -> None:
 
 
 def test_two_calls_at_a_time() -> None:
-    assert build_settings().extraction_concurrency == 2
+    # 4 calls at once (from 2): reading filings must finish within the hour after demo-up
+    assert build_settings().extraction_concurrency == 4
 
 
 @pytest.mark.parametrize(
