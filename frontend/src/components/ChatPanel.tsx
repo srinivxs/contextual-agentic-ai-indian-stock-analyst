@@ -129,7 +129,7 @@ function Overview({ symbol, fetched }: { symbol: string; fetched: Fetched<Prices
   }
 
   return (
-    <section className="chat-card" aria-label={title}>
+    <section className="chat-card chat-overview" aria-label={title}>
       <h2>{title}</h2>
       <div className="chat-stock-row">
         <Monogram symbol={symbol} size="lg" />

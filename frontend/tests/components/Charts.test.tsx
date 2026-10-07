@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { PriceChart } from '@/components/PriceChart';
@@ -74,6 +74,21 @@ describe('ProfitChart', () => {
     expect(table.closest('.visually-hidden')).not.toBeNull();
   });
 
+  it('follows the mouse: the hovered year, its figure and its change on the year before', () => {
+    render(<ProfitChart points={POINTS} name="DemoCo Alpha" label="Net profit" />);
+    const plot = screen.getByTestId('chart-plot');
+    plot.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 600, height: 200, right: 600, bottom: 200 }) as DOMRect;
+    const callout = () => screen.getByTestId('chart-callout');
+
+    fireEvent.mouseMove(plot, { clientX: 290 }); // FY2025: 100 against 80
+    expect(callout()).toHaveTextContent('FY2025');
+    expect(callout()).toHaveTextContent('+25.0% on FY2024');
+
+    fireEvent.mouseLeave(plot); // back to the latest year
+    expect(callout()).toHaveTextContent('FY2026');
+  });
+
   it('shows the callout with the latest year, its figure and the change on the year before', () => {
     render(<ProfitChart points={POINTS} name="DemoCo Alpha" label="Net profit" />);
     const callout = screen.getByTestId('chart-callout');
@@ -128,6 +143,30 @@ describe('PriceChart', () => {
     expect(callout).toHaveTextContent('28 Sep 2026');
     expect(callout).toHaveTextContent('₹101.50');
     expect(callout).toHaveTextContent('−0.6% on the day');
+  });
+
+  it('follows the mouse: the hovered day, its close and its change on the day before', () => {
+    render(<PriceChart history={history} name="DemoCo Alpha" changePct="1.5" />);
+    const plot = screen.getByTestId('chart-plot');
+    plot.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 600, height: 200, right: 600, bottom: 200 }) as DOMRect;
+    const callout = () => screen.getByTestId('chart-callout');
+
+    expect(plot).not.toHaveClass('hovering');
+    fireEvent.mouseMove(plot, { clientX: 300 }); // the middle point
+    expect(plot).toHaveClass('hovering'); // the chat card shows its callout only then
+    expect(callout()).toHaveTextContent('25 Sep 2026');
+    expect(callout()).toHaveTextContent('₹100.00');
+    expect(callout()).toHaveTextContent('+1.0% on the day'); // 100 against 99 the day before
+
+    fireEvent.mouseMove(plot, { clientX: 20 }); // the first point has no day before it
+    expect(callout()).toHaveTextContent('24 Sep 2026');
+    expect(callout()).not.toHaveTextContent('on the day');
+
+    fireEvent.mouseLeave(plot); // back to the latest close and the server's change
+    expect(plot).not.toHaveClass('hovering');
+    expect(callout()).toHaveTextContent('28 Sep 2026');
+    expect(callout()).toHaveTextContent('+1.5% on the day');
   });
 
   it('leaves the change out when the server sent none', () => {

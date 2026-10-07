@@ -283,6 +283,7 @@ export function ChatView() {
         </p>
       )}
       <div className="chat">
+        <ChatPanel symbol={stock} onPick={setStock} />
         <section className="chat-main" aria-label="Conversation">
           <header className="chat-card-head">
             <span className="chat-avatar" aria-hidden="true">
@@ -460,7 +461,6 @@ export function ChatView() {
           {/* No disclaimer here: the menu's "Not investment advice" note is on every page. */}
           <p className="chat-disclaimer muted">Enter sends, Shift+Enter adds a line.</p>
         </section>
-        <ChatPanel symbol={stock} onPick={setStock} />
       </div>
     </AppShell>
   );

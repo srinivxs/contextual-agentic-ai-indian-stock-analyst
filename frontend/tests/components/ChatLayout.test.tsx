@@ -461,6 +461,18 @@ describe('the overview card', () => {
   });
 });
 
+describe('the layout', () => {
+  it('puts the stock context above the conversation, which takes the full width', async () => {
+    install();
+    render(<ChatView />);
+    const conversation = await screen.findByRole('region', { name: 'Conversation' });
+    // The panel comes first: the stock tabs, the overview and the key metrics side by side.
+    expect(
+      panel().compareDocumentPosition(conversation) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
 describe('the key metrics card', () => {
   const insights = demoInsights({
     symbol: 'RELIANCE',
