@@ -85,3 +85,17 @@ an undated RBI item) now comes from one function, `app/clock.py`'s `india_today(
 India has no daylight saving), and a guard test fails if any other code reads the date from the
 server's clock. The day's own file is still not asked for until the next day: BSE publishes it
 after the close, and asking early would earn "slow down" strikes.
+
+## Amendment (2026-10-07): declared holidays are skipped, and 8 files per run
+
+On AWS every session starts with an empty database, and the month of prices took 1.5 to 2 hours:
+each market holiday answers like "slow down", so it cost three 20-minute cool-downs before it was
+believed (2 Oct and 14 Sep did exactly that). Two changes:
+
+- **A holiday list** (`app/prices/holidays.py`): BSE's declared 2026 equity holidays are never
+  asked for. Source: BSE's 2026 list as reproduced by brokers' pages (BSE's own page refuses
+  automated reads; two copies agree on all 16 dates). It only skips days, so an omission falls
+  back to the 406 rule and costs time, never data. The next year's list is added when published.
+- **8 files per run** instead of 5, still 30 s apart: BSE refused only quick runs (seconds
+  apart), and 8 files fit in 80 % of the job's 5-minute lease. A month now fills in about
+  15 minutes instead of hours.

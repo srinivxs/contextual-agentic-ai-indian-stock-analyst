@@ -534,7 +534,7 @@ same way. Watch with `docker compose --profile app logs worker --tail 20`; spend
 `$env:CHAT_BUDGET_USD = '0.05'`; default cap $1), then the same `up` and `restart web`.
 
 **Prices (ADR 025)** need no AWS pass: `$env:PRICES_ENABLED = 'true'` before the `up`; the worker
-then fetches the last month of daily prices (BSE keeps only about a month; 5 files 30 s apart
+then fetches the last month of daily prices (BSE keeps only about a month; 8 files 30 s apart
 per run, a 20-minute cool-down after any 406) and one new file each trading day; the stored
 history grows from there. Watch with `SELECT count(*) FROM prices`.
 

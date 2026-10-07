@@ -173,6 +173,12 @@ async def todo(factory: Factory, today: date, history_days: int) -> list[date]:
         return await days_to_fetch(db, today=today, history_days=history_days)
 
 
+async def test_a_declared_bse_holiday_is_never_asked_for(session_factory: Factory) -> None:
+    # Tue 6 Oct 2026, 7 days back: Mon 5, (Fri 2 = Gandhi Jayanti), Thu 1, Wed 30 Sep, Tue 29 Sep
+    days = await todo(session_factory, date(2026, 10, 6), 7)
+    assert days == [date(2026, 10, 5), date(2026, 10, 1), date(2026, 9, 30), date(2026, 9, 29)]
+
+
 async def test_weekdays_come_newest_first_and_today_is_left_for_tomorrow(
     session_factory: Factory,
 ) -> None:

@@ -130,7 +130,7 @@ class CommonSettings(BaseSettings):
     # history starts there and grows by one stored day per trading day from then on.
     prices_history_days: int = Field(default=30, ge=30, le=1100)
     # BSE answers 406 to requests a few seconds apart, so a run fetches a few files, slowly.
-    prices_per_run: int = Field(default=5, ge=1, le=50)
+    prices_per_run: int = Field(default=8, ge=1, le=50)
     prices_pause_seconds: float = Field(default=30, ge=0, le=120)
     # After BSE answers "slow down" (406), no run asks it again for this long (the first real run
     # asked again 0.2 s later and three quick refusals made a trading day look like a holiday).

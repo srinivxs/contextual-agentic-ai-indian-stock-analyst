@@ -22,6 +22,8 @@ has no file and answers 404 or 406 too. From outside, "too fast" and "no file" l
     full cool-down, is marked ``no_file`` and never asked for again. (A day that was only
     rate-limited three times that far apart is lost the same way; the trade is accepted, a
     missing day in a price history is harmless.)
+  * DECLARED HOLIDAYS ARE NEVER ASKED FOR (app/prices/holidays.py), so the strike rule only has
+    to deal with closures nobody announced; before the list, each holiday cost about an hour.
   * Days already fetched are never asked for again: the month fills in within a few hours, and
     then the timer has one file a day to fetch.
 

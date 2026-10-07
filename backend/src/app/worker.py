@@ -96,7 +96,7 @@ class WorkerContext:
     # pause and clock are injectable so tests never wait.
     prices_http: httpx.AsyncClient | None = None
     prices_history_days: int = 30
-    prices_per_run: int = 5
+    prices_per_run: int = 8
     prices_pause_seconds: float = 30.0
     prices_cooldown_minutes: int = 20
     prices_sleep: Callable[[float], Awaitable[None]] = asyncio.sleep

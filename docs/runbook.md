@@ -177,7 +177,7 @@ With the defaults (`data_sources_enabled` and `ai_enabled` both true) the worker
 
 1. reads each stock's screener.in page and fetches about 85 filings from BSE into the documents
    bucket (2 s apart), with the fundamentals table and top ratios;
-2. fetches the last month of BSE daily price files (5 per run, 30 s apart) and the RBI feed;
+2. fetches the last month of BSE daily price files (8 per run, 30 s apart; declared BSE holidays are skipped) and the RBI feed;
 3. turns each filing into page text and passages, then fingerprints them with Titan (about $0.07)
    and reads them for facts and events with Nova 2 Lite (about $0.49, capped by
    `extraction_budget_usd`, default $2).

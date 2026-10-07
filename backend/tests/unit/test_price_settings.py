@@ -11,8 +11,9 @@ def test_prices_are_off_and_paced_gently_by_default() -> None:
     assert settings.prices_enabled is False
     # BSE serves only about the last month of daily files (found 2026-09-29): ask for no more
     assert settings.prices_history_days == 30
-    # gentler after the first real run: BSE refused the 7th file of a quick run
-    assert settings.prices_per_run == 5
+    # 8 files 30 s apart fit in 80 % of the 5-minute lease; BSE refused only QUICK runs (seconds
+    # apart), and known holidays are no longer asked for (2026-10-07)
+    assert settings.prices_per_run == 8
     assert settings.prices_pause_seconds == 30
     assert settings.prices_run_minutes == 5
     assert settings.prices_cooldown_minutes == 20
