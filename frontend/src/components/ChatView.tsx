@@ -31,8 +31,6 @@ import { signOut, useMe } from '@/lib/session';
 const MIN_CHARS = 3; // the server refuses shorter questions
 const MAX_CHARS = 1000; // and longer ones
 
-const DESCRIPTION =
-  'Grounded in official filings, screener.in and BSE end-of-day prices · TCS, HDFC Bank, Reliance';
 const PILL = 'Answers only from stored data';
 const PLACEHOLDER = 'Ask anything about TCS, HDFC Bank or Reliance…';
 const CAPABILITIES = [
@@ -299,9 +297,6 @@ export function ChatView() {
             </span>
             <div className="chat-card-title">
               <h1>Chat with your analyst</h1>
-              <p className="muted" title={DESCRIPTION}>
-                {DESCRIPTION}
-              </p>
             </div>
             <span className="chat-pill" title={PILL}>
               <ShieldCheckIcon />

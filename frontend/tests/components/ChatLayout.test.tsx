@@ -42,17 +42,14 @@ async function ask(question: string): Promise<void> {
 }
 
 describe('the header', () => {
-  it('has the title, the honest subtitle, the pill and the conversations button', async () => {
+  it('has the title, the pill and the conversations button, and no subtitle', async () => {
     install();
     render(<ChatView />);
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Chat with your analyst' }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Grounded in official filings, screener.in and BSE end-of-day prices · TCS, HDFC Bank, Reliance',
-      ),
-    ).toBeInTheDocument();
+    // The owner, 2026-10-08: the subtitle under the title is gone.
+    expect(screen.queryByText(/Grounded in official filings/)).toBeNull();
     expect(screen.getByText('Answers only from stored data')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Conversations' })).toBeInTheDocument();
   });

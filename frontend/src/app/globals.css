@@ -1470,22 +1470,11 @@ a.chip:hover {
   min-width: 12rem;
 }
 
-/* One line for the header: the subtitle is trimmed when the window is narrow (in full on hover). */
-.chat-card-title p {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .chat-card-title h1 {
   margin: 0;
   font-size: 1.05rem;
   letter-spacing: -0.01em;
-}
-
-.chat-card-title p {
-  margin: 0.1rem 0 0;
-  font-size: 0.8rem;
 }
 
 .chat-avatar {
