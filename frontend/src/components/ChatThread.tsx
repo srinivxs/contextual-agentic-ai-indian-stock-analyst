@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { ExternalIcon, LeafIcon } from '@/components/Icons';
+import { ExternalIcon, SparkleIcon } from '@/components/Icons';
 import {
   boldFigures,
   changeTone,
@@ -292,7 +292,7 @@ export function ChatThread({
         ) : (
           <li key={message.id} className="chat-message assistant">
             <span className="chat-avatar small" aria-hidden="true">
-              <LeafIcon size={16} />
+              <SparkleIcon size={16} />
             </span>
             <div className="answer-body">
               <Answer message={message} />

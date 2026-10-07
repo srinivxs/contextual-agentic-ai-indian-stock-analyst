@@ -1,7 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
+import {
+  ArrowRightIcon,
+  BarsIcon,
+  ChevronRightIcon,
+  CoinsIcon,
+  PercentIcon,
+  TrendIcon,
+} from '@/components/Icons';
 import { Monogram, preloadLogos } from '@/components/Monogram';
 import { PriceChart } from '@/components/PriceChart';
 import { STOCKS } from '@/components/StockJump';
@@ -10,15 +18,17 @@ import {
   citationLink,
   eventDateLabel,
   getInsights,
+  stockPageHref,
   type Citation,
+  type Metric,
   type StockInsights,
 } from '@/lib/insights';
 import { getPrices, hasPrices, priceLabel, signedPercent, type Prices } from '@/lib/prices';
 import { direction } from '@/lib/series';
 
 /**
- * The stock bar above the chat (the owner, 2026-10-08): one card of three zones, the stock
- * switcher, the stock being discussed (its end-of-day price) and, to its right, its latest
+ * The stock above the chat (the owner's mockup, 2026-10-08): a row of tabs to switch stock, then
+ * two cards, the stock being discussed (its end-of-day price) and, to its right, its latest
  * full-year figures. It only shows what the server stores; a missing figure is said to be
  * missing, never filled in.
  */
@@ -52,6 +62,20 @@ function useForEveryStock<T>(load: (symbol: string) => Promise<T>): Record<strin
 }
 
 const TONE_CLASS = { rise: 'rise', fall: 'fall', flat: 'flat' } as const;
+
+/** A small tinted icon for each kind of figure, so the list reads at a glance. */
+function metricIcon(metric: Metric): { kind: string; icon: ReactNode } {
+  switch (metric) {
+    case 'net_profit':
+      return { kind: 'profit', icon: <CoinsIcon /> };
+    case 'eps_basic':
+      return { kind: 'eps', icon: <TrendIcon /> };
+    case 'return_on_equity':
+      return { kind: 'roe', icon: <PercentIcon /> };
+    default:
+      return { kind: 'revenue', icon: <BarsIcon /> };
+  }
+}
 
 /** A short name for where a figure is from, linking to it when the address is safe. */
 function SourceChip({ citation }: { citation: Citation }) {
@@ -111,6 +135,7 @@ function Overview({ symbol, fetched }: { symbol: string; fetched: Fetched<Prices
           history={prices.history}
           name={stock?.name ?? symbol}
           changePct={latest?.change_pct ?? null}
+          markers
         />
         {since && historyStillFilling(prices.history) && (
           <p className="chat-asof muted">
@@ -133,6 +158,11 @@ function Overview({ symbol, fetched }: { symbol: string; fetched: Fetched<Prices
     <section className="chat-zone chat-overview" aria-label={title}>
       {/* For screen readers: on screen, the name row under it already says which stock. */}
       <h2 className="visually-hidden">{title}</h2>
+      <nav className="chat-crumbs" aria-label="Breadcrumb">
+        <a href="/stocks/">Stocks</a>
+        <ChevronRightIcon />
+        <a href={stockPageHref(symbol)}>{stock?.name ?? symbol}</a>
+      </nav>
       <div className="chat-stock-row">
         <Monogram symbol={symbol} size="lg" />
         <div>
@@ -145,12 +175,18 @@ function Overview({ symbol, fetched }: { symbol: string; fetched: Fetched<Prices
   );
 }
 
-function KeyMetrics({ insights }: { insights: Fetched<StockInsights> }) {
+function KeyMetrics({ symbol, insights }: { symbol: string; insights: Fetched<StockInsights> }) {
   const found = insights?.data ? keyMetrics(insights.data) : null;
   const title = found?.period ? `Key metrics (${found.period})` : 'Key metrics';
   return (
     <section className="chat-zone chat-key-metrics" aria-label={title}>
-      <h2>{title}</h2>
+      <div className="chat-zone-head">
+        <h2>{title}</h2>
+        <a className="chat-zone-link" href={stockPageHref(symbol)}>
+          View details
+          <ArrowRightIcon />
+        </a>
+      </div>
       {insights === null ? (
         <p className="muted">Loading…</p>
       ) : insights.failed ? (
@@ -159,17 +195,23 @@ function KeyMetrics({ insights }: { insights: Fetched<StockInsights> }) {
         <p className="muted">No key figures stored yet.</p>
       ) : (
         <ul className="chat-metrics">
-          {found.rows.map((row) => (
-            <li key={row.metric}>
-              <div>
-                <span>{row.label}</span>
-                {row.period !== found.period && <span className="muted"> ({row.period})</span>}
-                <SourceChip citation={row.fact.citation} />
-              </div>
-              <strong className="num">{row.value}</strong>
-              <span className={`chat-change ${TONE_CLASS[row.tone]}`}>{row.change}</span>
-            </li>
-          ))}
+          {found.rows.map((row) => {
+            const { kind, icon } = metricIcon(row.metric);
+            return (
+              <li key={row.metric}>
+                <span className={`chat-metric-icon ${kind}`} aria-hidden="true">
+                  {icon}
+                </span>
+                <div>
+                  <span>{row.label}</span>
+                  {row.period !== found.period && <span className="muted"> ({row.period})</span>}
+                  <SourceChip citation={row.fact.citation} />
+                </div>
+                <strong className="num">{row.value}</strong>
+                <span className={`chat-change ${TONE_CLASS[row.tone]}`}>{row.change}</span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
@@ -197,13 +239,12 @@ export function ChatPanel({
             aria-pressed={stock.symbol === symbol}
             onClick={() => onPick(stock.symbol)}
           >
-            <Monogram symbol={stock.symbol} size="sm" />
-            <span>{shortName(stock.symbol)}</span>
+            {shortName(stock.symbol)}
           </button>
         ))}
       </div>
       <Overview symbol={symbol} fetched={prices[symbol] ?? null} />
-      <KeyMetrics insights={insights[symbol] ?? null} />
+      <KeyMetrics symbol={symbol} insights={insights[symbol] ?? null} />
     </aside>
   );
 }

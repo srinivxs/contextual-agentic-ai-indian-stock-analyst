@@ -1,5 +1,7 @@
 'use client';
 
+import { useId } from 'react';
+
 import { acrossPercent, calloutSide, useChartHover } from '@/components/chartHover';
 import { linePoints } from '@/components/Sparkline';
 import { eventDateLabel } from '@/lib/insights';
@@ -17,6 +19,8 @@ type Props = {
   name: string;
   /** The latest day's change in percent, as the server sends it; null when unknown. */
   changePct: string | null;
+  /** A point on every close (the chat page). */
+  markers?: boolean;
 };
 
 /**
@@ -25,8 +29,10 @@ type Props = {
  * assistive technology behind one name; a visually hidden table holds every close. Nothing is
  * drawn for a missing day.
  */
-export function PriceChart({ history, name, changePct }: Props) {
+export function PriceChart({ history, name, changePct, markers = false }: Props) {
   const hover = useChartHover(history.length);
+  // An id for this chart's gradient; React's ids carry characters a url(#...) should not.
+  const gradient = `price-fill-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   const last = history.at(-1);
   if (!last) {
     return <p className="muted home-chart-empty">No share prices stored yet for {name}.</p>;
@@ -81,10 +87,28 @@ export function PriceChart({ history, name, changePct }: Props) {
             aria-label={spoken}
             focusable="false"
           >
-            <polygon className="home-chart-fill" points={area} />
+            <defs>
+              <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" className="chart-fill-top" />
+                <stop offset="100%" className="chart-fill-bottom" />
+              </linearGradient>
+            </defs>
+            <polygon
+              className="home-chart-fill price-fill"
+              points={area}
+              style={{ fill: `url(#${gradient})` }}
+            />
             <polyline className="home-chart-line price-line" points={line} fill="none" />
           </svg>
         )}
+        {markers &&
+          spots.map(([x, y], i) => (
+            <span
+              key={history[i]?.date ?? i}
+              className="chart-marker"
+              style={{ left: `${(x / WIDTH) * 100}%`, top: `${(y / HEIGHT) * 100}%` }}
+            />
+          ))}
         {hover.hovered !== null && <span className="chart-guide" style={{ left: `${across}%` }} />}
         <div
           className={`home-callout ${calloutSide(across)}`}

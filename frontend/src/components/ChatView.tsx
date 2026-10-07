@@ -8,10 +8,11 @@ import { ChatPanel } from '@/components/ChatPanel';
 import { ChatThread } from '@/components/ChatThread';
 import {
   ArrowRightIcon,
+  ArrowUpIcon,
   ChevronDownIcon,
-  LeafIcon,
   PlusIcon,
-  SendIcon,
+  ShieldCheckIcon,
+  SparkleIcon,
   TrashIcon,
 } from '@/components/Icons';
 import { STOCKS } from '@/components/StockJump';
@@ -295,7 +296,7 @@ export function ChatView() {
         <section className="chat-main" aria-label="Conversation">
           <header className="chat-card-head">
             <span className="chat-avatar" aria-hidden="true">
-              <LeafIcon />
+              <SparkleIcon />
             </span>
             <div className="chat-card-title">
               <h1>Chat with your analyst</h1>
@@ -304,7 +305,7 @@ export function ChatView() {
               </p>
             </div>
             <span className="chat-pill">
-              <span className="dot" aria-hidden="true" />
+              <ShieldCheckIcon />
               {PILL}
             </span>
             <div
@@ -383,7 +384,7 @@ export function ChatView() {
                 <div className="chat-greeting">
                   <div className="chat-message assistant">
                     <span className="chat-avatar small" aria-hidden="true">
-                      <LeafIcon size={16} />
+                      <SparkleIcon size={16} />
                     </span>
                     <div className="answer-body">
                       <p className="chat-text">
@@ -418,14 +419,16 @@ export function ChatView() {
               {busy && (
                 <p role="status" className="chat-thinking">
                   <span className="chat-avatar small" aria-hidden="true">
-                    <LeafIcon size={16} />
+                    <SparkleIcon size={16} />
                   </span>
-                  <span className="chat-typing" aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
+                  <span className="chat-thinking-bubble">
+                    <span className="chat-typing" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    Thinking…
                   </span>
-                  Thinking…
                 </p>
               )}
               {choices.length > 0 && (
@@ -470,19 +473,24 @@ export function ChatView() {
                 ref={boxRef}
                 aria-label="Your question"
                 placeholder={PLACEHOLDER}
-                rows={2}
+                rows={1}
                 maxLength={MAX_CHARS}
                 value={draft}
                 disabled={busy}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={onKeyDown}
               />
+              <kbd className="chat-kbd" aria-hidden="true">
+                Enter ↵
+              </kbd>
               <button type="submit" className="chat-send" aria-label="Send" disabled={!ready}>
-                <SendIcon />
+                <ArrowUpIcon />
               </button>
             </form>
             {/* No disclaimer here: the menu's "Not investment advice" note is on every page. */}
-            <p className="chat-disclaimer muted">Enter sends, Shift+Enter adds a line.</p>
+            <p className="chat-disclaimer muted">
+              Press <strong>Enter</strong> to send · <strong>Shift + Enter</strong> for a new line
+            </p>
           </div>
         </section>
       </div>

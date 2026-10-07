@@ -169,6 +169,16 @@ describe('PriceChart', () => {
     expect(callout()).toHaveTextContent('+1.5% on the day');
   });
 
+  it('marks every close with a point only when asked (the chat page)', () => {
+    const { container, unmount } = render(
+      <PriceChart history={history} name="DemoCo Alpha" changePct="1.5" markers />,
+    );
+    expect(container.querySelectorAll('.chart-marker')).toHaveLength(history.length);
+    unmount();
+    const plain = render(<PriceChart history={history} name="DemoCo Alpha" changePct="1.5" />);
+    expect(plain.container.querySelectorAll('.chart-marker')).toHaveLength(0);
+  });
+
   it('leaves the change out when the server sent none', () => {
     render(<PriceChart history={history} name="DemoCo Alpha" changePct={null} />);
     expect(screen.getByTestId('chart-callout')).not.toHaveTextContent('on the day');

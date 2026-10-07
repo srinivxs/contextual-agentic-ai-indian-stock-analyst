@@ -145,3 +145,52 @@ export const ChevronDownIcon = () => (
     <path d="m6 9 6 6 6-6" />
   </Icon>
 );
+export const ChevronRightIcon = () => (
+  <Icon size={14}>
+    <path d="m9 6 6 6-6 6" />
+  </Icon>
+);
+export const ArrowUpIcon = () => (
+  <Icon>
+    <path d="M12 19V5" />
+    <path d="m6 11 6-6 6 6" />
+  </Icon>
+);
+/** The assistant's mark: a four-pointed spark, filled. */
+export const SparkleIcon = ({ size = 18 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      fill="currentColor"
+      d="M12 2.5c.5 4.6 2.9 7 7.5 7.5-4.6.5-7 2.9-7.5 7.5-.5-4.6-2.9-7-7.5-7.5 4.6-.5 7-2.9 7.5-7.5Z"
+    />
+    <path
+      fill="currentColor"
+      d="M18.5 15c.2 1.7 1 2.6 2.8 2.8-1.7.2-2.6 1-2.8 2.8-.2-1.7-1-2.6-2.8-2.8 1.7-.2 2.6-1 2.8-2.8Z"
+    />
+  </svg>
+);
+export const ShieldCheckIcon = () => (
+  <Icon size={14}>
+    <path d="M12 3 5 6v6c0 4 3 7 7 9 4-2 7-5 7-9V6l-7-3Z" />
+    <path d="m9 12 2 2 4-4" />
+  </Icon>
+);
+export const BarsIcon = () => (
+  <Icon size={16}>
+    <path d="M6 20v-6M12 20V9M18 20V4" />
+  </Icon>
+);
+export const CoinsIcon = () => (
+  <Icon size={16}>
+    <ellipse cx="12" cy="6" rx="7" ry="3" />
+    <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" />
+    <path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+  </Icon>
+);
+export const PercentIcon = () => (
+  <Icon size={16}>
+    <path d="M19 5 5 19" />
+    <circle cx="7" cy="7" r="2.5" />
+    <circle cx="17" cy="17" r="2.5" />
+  </Icon>
+);

@@ -8,6 +8,7 @@
  *   canvas #F7F7F8 / #0E0E10   surface #FFFFFF / #17171A   text #18181B / #F4F4F5
  *   muted #6B6B76 / #A1A1AA    line #E4E4E7 / #2A2A2F      accent = the text colour
  *   rise / fall: green and red, only for a figure that went up or down
+ *   brand #1B7A52 / #35B07A: the chat page's green (the owner's mockup, 2026-10-08)
  * Radii: 20px for the hero, 14px for cards, 10px for controls, 999px for chips.
  * Every figure shown carries its source.
  */
@@ -25,6 +26,11 @@
   --accent-text: #ffffff;
   --rise: #15803d;
   --fall: #b91c1c;
+  --brand: #1b7a52;
+  --brand-strong: #14603f;
+  --brand-soft: #e4f3eb;
+  --brand-mint: #dcf1e6;
+  --brand-text: #ffffff;
   --danger-bg: #fdecec;
   --danger-text: #8e1c1c;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
@@ -48,6 +54,11 @@
   --accent-text: #17171a;
   --rise: #4ade80;
   --fall: #f87171;
+  --brand: #35b07a;
+  --brand-strong: #1f7a52;
+  --brand-soft: rgba(53, 176, 122, 0.16);
+  --brand-mint: #1d3a2d;
+  --brand-text: #08130d;
   --danger-bg: #3a1c1c;
   --danger-text: #ffb4b4;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -1331,6 +1342,7 @@ a.chip:hover {
    the stock being discussed (the switcher, its overview, and its key metrics to the right); below
    it, the conversation, whose messages scroll while the question box stays at the bottom. */
 .chat {
+  --chart-color: var(--brand);
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -1457,8 +1469,8 @@ a.chip:hover {
   width: 2.6rem;
   height: 2.6rem;
   border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+  background: var(--brand);
+  color: var(--brand-text);
 }
 
 .chat-avatar.small {
@@ -1468,13 +1480,17 @@ a.chip:hover {
 
 .chat-pill {
   display: inline-flex;
-  gap: 0.45rem;
+  gap: 0.4rem;
   align-items: center;
-  padding: 0.3rem 0.75rem;
-  border: 1px solid var(--border);
+  padding: 0.35rem 0.8rem;
   border-radius: 999px;
+  background: var(--surface-2);
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+}
+
+.chat-pill svg {
+  color: var(--brand);
 }
 
 .dot {
@@ -1585,8 +1601,13 @@ a.chip:hover {
   min-width: 0;
   max-width: 92%;
   padding: 0.85rem 1rem 0.6rem;
-  border: 1px solid var(--border);
   border-radius: var(--radius-card);
+  background: var(--chat-bubble);
+}
+
+/* Inside a grey answer, its table and its sources sit on white. */
+.answer-body .chat-table,
+.answer-body .chat-sources-box {
   background: var(--surface);
 }
 
@@ -1612,7 +1633,7 @@ a.chip:hover {
   margin: 0;
   padding: 0.6rem 1rem;
   border-radius: var(--radius-card);
-  background: var(--chat-mine);
+  background: var(--brand-mint);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1624,8 +1645,8 @@ a.chip:hover {
   width: 2rem;
   height: 2rem;
   border-radius: 999px;
-  background: var(--chat-bubble);
-  border: 1px solid var(--border);
+  background: var(--brand-strong);
+  color: #ffffff;
   font-size: 0.72rem;
   font-weight: 700;
 }
@@ -1853,8 +1874,8 @@ a.chip:hover {
 }
 
 .chat-chip:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--brand);
+  background: var(--brand-soft);
 }
 
 /* The input card: a large field and a round send button. */
@@ -1862,21 +1883,25 @@ a.chip:hover {
 .chat-form {
   display: flex;
   gap: 0.6rem;
-  align-items: flex-end;
-  padding: 0.6rem 0.6rem 0.6rem 1rem;
+  align-items: center;
+  padding: 0.45rem 0.5rem 0.45rem 1.15rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: var(--surface-2);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
 }
 
 .chat-form:focus-within {
-  border-color: var(--accent);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
 }
 
 .chat-form textarea {
   flex: 1;
   min-width: 0;
-  padding: 0.35rem 0;
+  max-height: 9rem;
+  padding: 0.5rem 0;
+  field-sizing: content; /* grows with the question where the browser supports it */
   border: 0;
   background: transparent;
   color: inherit;
@@ -1892,17 +1917,28 @@ a.chip:hover {
   display: inline-grid;
   flex: none;
   place-items: center;
-  width: 2.6rem;
-  height: 2.6rem;
+  width: 2.5rem;
+  height: 2.5rem;
   border: 0;
   border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--brand);
+  color: var(--brand-text);
   cursor: pointer;
 }
 
 .chat-send:hover {
-  background: var(--accent-strong);
+  background: var(--brand-strong);
+}
+
+.chat-kbd {
+  flex: none;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
 }
 
 .chat-send:disabled {
@@ -1911,9 +1947,13 @@ a.chip:hover {
 }
 
 .chat-disclaimer {
-  margin: 0.45rem 0 0;
-  font-size: 0.74rem;
-  text-align: center;
+  margin: 0.45rem 0 0 0.3rem;
+  font-size: 0.76rem;
+}
+
+.chat-disclaimer strong {
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* Waiting for an answer: three soft dots where the answer will appear. */
@@ -1926,20 +1966,25 @@ a.chip:hover {
   font-size: 0.85rem;
 }
 
+.chat-thinking-bubble {
+  display: inline-flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.6rem 0.95rem;
+  border-radius: var(--radius-card);
+  background: var(--chat-bubble);
+}
+
 .chat-typing {
   display: inline-flex;
   gap: 0.25rem;
-  padding: 0.6rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
 }
 
 .chat-typing i {
   width: 0.4rem;
   height: 0.4rem;
   border-radius: 50%;
-  background: var(--muted);
+  background: var(--brand);
   animation: typing 1.2s ease-in-out infinite;
 }
 
@@ -1965,70 +2010,26 @@ a.chip:hover {
   }
 }
 
-/* The stock bar: one card of three zones with a hairline between them. The switcher, the stock's
-   overview, and its key metrics to the right. */
+/* The stock (the owner's mockup): a row of tabs, then two cards, the overview and, to its right,
+   the key metrics. */
 
 .chat-panel {
   display: grid;
-  grid-template-columns: 11.5rem minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 1rem;
   min-width: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-}
-
-.chat-panel > * {
-  min-width: 0;
-  padding: 0.95rem 1.2rem;
-}
-
-.chat-panel > * + * {
-  border-left: 1px solid var(--border);
-}
-
-/* The switcher: each company with its logo; the one being discussed is tinted. */
-.chat-stock-tabs {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  justify-content: center;
 }
 
 .chat-panel > .chat-stock-tabs {
-  padding: 0.6rem;
+  grid-column: 1 / -1;
 }
 
-.chat-stock-tabs .chat-range {
+/* The tabs: plain names, the chosen one bold with a green line under it. */
+.chat-stock-tabs {
   display: flex;
-  gap: 0.6rem;
-  align-items: center;
-  width: 100%;
-  padding: 0.45rem 0.55rem;
-  border-radius: 10px;
-  font-size: 0.9rem;
-  text-align: left;
-}
-
-.chat-stock-tabs .chat-range > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-stock-tabs .chat-range:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-
-.chat-stock-tabs .chat-range[aria-pressed='true'] {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  font-weight: 650;
-}
-
-.chat-stock-tabs .monogram.sm {
-  width: 1.75rem;
-  height: 1.75rem;
+  gap: 1.75rem;
+  padding: 0 0.15rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .chat-range {
@@ -2048,21 +2049,48 @@ a.chip:hover {
   color: var(--accent-strong);
 }
 
-/* A zone's title is a quiet label, not a heading that competes with the figures. */
-.chat-zone h2 {
-  margin: 0 0 0.7rem;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.chat-stock-tabs .chat-range {
+  position: relative;
+  padding: 0.45rem 0 0.65rem;
+  border-radius: 0;
+  font-size: 0.95rem;
+}
+
+.chat-stock-tabs .chat-range:hover {
+  color: var(--text);
+}
+
+.chat-stock-tabs .chat-range[aria-pressed='true'] {
+  background: none;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.chat-stock-tabs .chat-range[aria-pressed='true']::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--brand);
+  content: '';
+}
+
+.chat-zone {
+  min-width: 0;
+  padding: 1.1rem 1.3rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
 }
 
 .chat-zone p {
   margin: 0;
 }
 
-/* The overview: the company and its price on one line, a short chart, where the price is from. */
+/* The overview: where you are, the company and its price, the chart, where the price is from. */
 .chat-overview {
   display: flex;
   flex-wrap: wrap;
@@ -2075,15 +2103,44 @@ a.chip:hover {
   min-width: 0;
 }
 
+.chat-crumbs {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  margin-bottom: 0.85rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.chat-crumbs a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.chat-crumbs a:last-child {
+  color: var(--text);
+}
+
+.chat-crumbs a:hover {
+  text-decoration: underline;
+}
+
 /* The name gives way first (trimmed with an ellipsis), so the name and the price share one line;
-   only on a phone does the price move under the name. */
+   only on a narrow card does the price move under the name. */
 .chat-overview > .chat-stock-row {
   flex: 1 1 0;
-  min-width: 8.5rem;
+  min-width: 9rem;
 }
 
 .chat-overview > .chat-price-row {
   flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.chat-stock-row {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
 }
 
 .chat-stock-row > div {
@@ -2099,58 +2156,59 @@ a.chip:hover {
 
 .chat-stock-row > div > strong {
   overflow: visible; /* the ticker is never trimmed, only the company's name */
-}
-
-.chat-stock-row {
-  display: flex;
-  gap: 0.65rem;
-  align-items: center;
-  margin-bottom: 0.6rem;
-}
-
-.chat-stock-row strong {
-  font-size: 0.95rem;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
 }
 
 .chat-stock-row .muted {
-  font-size: 0.8rem;
-}
-
-.chat-overview .monogram.lg {
-  width: 2.4rem;
-  height: 2.4rem;
+  margin: 0.05rem 0 0;
+  font-size: 0.9rem;
 }
 
 .chat-price-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.5rem;
   align-items: baseline;
-  margin-bottom: 0.6rem;
 }
 
-.chat-overview > .chat-price-row {
-  margin-left: auto;
+.chat-price-row .chat-change {
+  font-weight: 600;
 }
 
 .chat-price-row .muted {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
 }
 
 .chat-price {
-  font-size: 1.45rem;
+  font-size: 1.65rem;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
+/* The chart: a faint grid behind the line, a point on every close. */
 .chat-zone .home-chart-plot {
-  height: 4.75rem;
-  margin-top: 0.15rem; /* no room kept for a callout: it shows only on hover, over the name */
+  height: 5.75rem;
+  margin-top: 1rem;
+  background-image: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--border) 70%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: calc(100% / 8) 100%;
+}
+
+.chat-zone .home-chart-line {
+  stroke-width: 2;
+}
+
+.chat-zone .home-chart-dot {
+  border-color: var(--brand);
 }
 
 .chat-zone .price-chart-dates {
-  margin-top: 0.3rem;
-  font-size: 0.7rem;
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
 }
 
 /* The price is written above the chart, so its callout shows only while the mouse is on it, and
@@ -2177,14 +2235,41 @@ a.chip:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 0.35rem !important;
+  margin-top: 0.4rem !important;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 
-/* The key metrics: one line per figure, its source beside its name, the figures right-aligned
-   in one column and the change in the next, so they read down like a statement. */
+/* The key metrics: a tinted icon, the figure's name and source, the figure and its change. */
+.chat-zone-head {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+
+.chat-zone-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.chat-zone-link {
+  display: inline-flex;
+  flex: none;
+  gap: 0.3rem;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+
+.chat-zone-link:hover {
+  color: var(--brand);
+}
+
 .chat-metrics {
   list-style: none;
   margin: 0;
@@ -2193,22 +2278,20 @@ a.chip:hover {
 
 .chat-metrics li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 3.6rem;
-  gap: 0.75rem;
-  align-items: baseline;
-  padding: 0.5rem 0;
+  grid-template-columns: 2.1rem minmax(0, 1fr) auto 3.6rem;
+  gap: 0.8rem;
+  align-items: center;
+  padding: 0.7rem 0;
   border-top: 1px solid var(--border);
-  font-size: 0.86rem;
+  font-size: 0.88rem;
 }
 
 .chat-metrics li:first-child {
-  padding-top: 0.1rem;
   border-top: 0;
 }
 
 .chat-metrics li > div {
   min-width: 0;
-  color: var(--muted);
 }
 
 .chat-metrics li > strong {
@@ -2218,125 +2301,153 @@ a.chip:hover {
 }
 
 .chat-metrics .chat-change {
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
+.chat-metric-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--icon) 14%, transparent);
+  color: var(--icon);
+}
+
+.chat-metric-icon.revenue {
+  --icon: #1b7a52;
+}
+
+.chat-metric-icon.profit {
+  --icon: #2563eb;
+}
+
+.chat-metric-icon.eps {
+  --icon: #7c3aed;
+}
+
+.chat-metric-icon.roe {
+  --icon: #e8730c;
+}
+
+:root[data-theme='dark'] .chat-metric-icon.revenue {
+  --icon: #4cc28d;
+}
+
+:root[data-theme='dark'] .chat-metric-icon.profit {
+  --icon: #7aa7f7;
+}
+
+:root[data-theme='dark'] .chat-metric-icon.eps {
+  --icon: #a78bfa;
+}
+
+:root[data-theme='dark'] .chat-metric-icon.roe {
+  --icon: #fb9a4b;
+}
+
 .chat-source-chip {
   display: inline-block;
-  margin-left: 0.4rem;
-  padding: 0 0.45rem;
-  border: 1px solid var(--border);
+  margin-left: 0.45rem;
+  padding: 0.02rem 0.45rem;
   border-radius: 999px;
+  background: var(--surface-2);
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   text-decoration: none;
 }
 
 a.chat-source-chip:hover {
-  border-color: var(--accent);
-  color: var(--accent-strong);
+  color: var(--brand);
 }
 
-/* A laptop: the same three zones, with a slimmer switcher and tighter spacing. */
+/* A laptop: slightly smaller figures. */
 @media (max-width: 90rem) {
-  .chat-panel {
-    grid-template-columns: 9.5rem minmax(0, 1.2fr) minmax(0, 1fr);
-  }
-
-  .chat-panel > * {
-    padding-right: 1rem;
-    padding-left: 1rem;
-  }
-
-  .chat-panel > .chat-stock-tabs {
-    padding: 0.5rem;
-  }
-
-  .chat-stock-tabs .chat-range {
-    gap: 0.5rem;
-    padding: 0.4rem 0.45rem;
-  }
-
-  .chat-stock-tabs .monogram.sm {
-    width: 1.5rem;
-    height: 1.5rem;
-  }
-
   .chat-price {
-    font-size: 1.3rem;
+    font-size: 1.4rem;
+  }
+
+  .chat-zone {
+    padding: 1rem 1.1rem;
   }
 }
 
-/* Narrower: the switcher becomes a slim row across the top, the overview and metrics share the
-   rest. */
-@media (max-width: 72rem) {
-  .chat-panel {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+/* A short laptop screen: a slimmer top, so the conversation keeps most of the height. */
+@media (min-width: 56.01rem) and (max-height: 52rem) {
+  .chat-zone {
+    padding-top: 0.8rem;
+    padding-bottom: 0.8rem;
   }
 
-  .chat-panel > .chat-stock-tabs {
-    grid-column: 1 / -1;
-    flex-direction: row;
-    padding: 0.4rem;
-    border-bottom: 1px solid var(--border);
+  .chat-crumbs,
+  .chat-zone .price-chart-dates,
+  .chat-disclaimer {
+    display: none;
   }
 
-  .chat-panel > .chat-stock-tabs .chat-range {
-    flex: 1;
-    justify-content: center;
-    padding: 0.35rem 0.45rem;
+  .chat-zone .home-chart-plot {
+    height: 3.5rem;
+    margin-top: 0.6rem;
   }
 
-  .chat-panel > .chat-overview {
-    border-left: 0;
+  .chat-metrics li {
+    padding: 0.45rem 0;
   }
 
-  .chat-overview .monogram {
-    display: none; /* the switcher above already shows the logo */
+  .chat-metric-icon {
+    width: 1.8rem;
+    height: 1.8rem;
+  }
+}
+
+/* A narrow window beside the menu: the same two cards, tighter, so the conversation keeps room. */
+@media (min-width: 56.01rem) and (max-width: 72rem) {
+  .chat-crumbs {
+    display: none;
   }
 
   .chat-overview {
     column-gap: 0.75rem;
   }
 
-  .chat-overview > .chat-stock-row {
-    min-width: 6rem;
+  .chat-overview .monogram.lg {
+    width: 2.4rem;
+    height: 2.4rem;
   }
-}
 
-/* A short laptop screen: a slimmer bar, so the conversation keeps most of the height. */
-@media (min-width: 56.01rem) and (max-height: 52rem) {
-  .chat-panel > * {
-    padding-top: 0.7rem;
-    padding-bottom: 0.7rem;
+  .chat-price {
+    font-size: 1.2rem;
   }
 
   .chat-zone .home-chart-plot {
-    height: 3.25rem;
+    height: 4rem;
+    margin-top: 0.75rem;
   }
 
-  .chat-zone .price-chart-dates,
-  .chat-disclaimer {
-    display: none;
+  .chat-metrics li {
+    padding: 0.45rem 0;
+  }
+
+  .chat-metric-icon {
+    width: 1.8rem;
+    height: 1.8rem;
   }
 }
 
-/* A phone: one column, and the switcher keeps just the names. */
-@media (max-width: 40rem) {
+/* Narrow: the two cards stack. */
+@media (max-width: 56rem) {
   .chat-panel {
     grid-template-columns: minmax(0, 1fr);
   }
+}
 
-  .chat-panel > .chat-key-metrics {
-    border-top: 1px solid var(--border);
-    border-left: 0;
-  }
-
-  .chat-stock-tabs .monogram {
-    display: none;
+/* A phone: closer tabs, tighter edges, no keyboard hint. */
+@media (max-width: 40rem) {
+  .chat-stock-tabs {
+    gap: 1.25rem;
   }
 
   .chat-scroll,
@@ -2347,6 +2458,10 @@ a.chat-source-chip:hover {
 
   .chat-compose {
     padding: 0 1rem 0.9rem;
+  }
+
+  .chat-kbd {
+    display: none;
   }
 }
 
@@ -3001,8 +3116,33 @@ a.chat-source-chip:hover {
   fill-opacity: 0.08;
 }
 
+/* The share price: the fill fades from the line down (a gradient in components/PriceChart.tsx). */
+.home-chart-fill.price-fill {
+  fill-opacity: 1;
+}
+
+.chart-fill-top {
+  stop-color: var(--chart-color, var(--accent));
+  stop-opacity: 0.16;
+}
+
+.chart-fill-bottom {
+  stop-color: var(--chart-color, var(--accent));
+  stop-opacity: 0;
+}
+
+.chart-marker {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--chart-color, var(--accent));
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
 .home-chart-line {
-  stroke: var(--accent);
+  stroke: var(--chart-color, var(--accent));
   stroke-width: 2;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;

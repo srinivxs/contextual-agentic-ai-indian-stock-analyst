@@ -396,9 +396,20 @@ describe('the overview card', () => {
     expect(await within(overview).findAllByText('₹101.50')).not.toHaveLength(0);
     expect(within(overview).getByText('+1.5%')).toHaveClass('rise');
     expect(within(overview).getByText('RELIANCE')).toBeInTheDocument();
-    expect(within(overview).getByText('Reliance Industries')).toBeInTheDocument();
+    // the name twice: in the breadcrumb (a link to the stock's page) and under the ticker
+    expect(within(overview).getAllByText('Reliance Industries')).toHaveLength(2);
+    expect(within(overview).getByRole('link', { name: 'Stocks' })).toHaveAttribute(
+      'href',
+      '/stocks/',
+    );
+    expect(within(overview).getByRole('link', { name: 'Reliance Industries' })).toHaveAttribute(
+      'href',
+      '/stock/?symbol=RELIANCE',
+    );
     expect(within(overview).getByText('As of 28 Sep 2026, BSE end of day')).toBeInTheDocument();
     expect(within(overview).getByRole('img', { name: /Share price of/ })).toBeInTheDocument();
+    // a marker on every stored close
+    expect(overview.querySelectorAll('.chart-marker')).toHaveLength(history.length);
     expect(within(overview).getByRole('link', { name: 'Source' })).toHaveAttribute(
       'href',
       demoPrices('RELIANCE').latest?.citation.url,
@@ -505,16 +516,23 @@ describe('the layout', () => {
     expect(top).toBe(900);
   });
 
-  it('shows each stock with its logo in the switcher, named as before', async () => {
+  it('has the stock tabs on top, then the overview and, to its right, the key metrics', async () => {
     install();
     render(<ChatView />);
     const group = await within(
       await screen.findByRole('complementary', { name: 'Stock context' }),
     ).findByRole('group', { name: 'Stock' });
-    for (const name of ['Reliance', 'TCS', 'HDFC Bank']) {
-      const button = within(group).getByRole('button', { name });
-      expect(button.querySelector('.monogram')).not.toBeNull();
-    }
+    expect(
+      within(group)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Reliance', 'TCS', 'HDFC Bank']);
+    const overview = screen.getByRole('region', { name: 'Reliance overview' });
+    const metrics = await screen.findByRole('region', { name: /^Key metrics/ });
+    const follows = (a: Node, b: Node) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(follows(group, overview)).toBeTruthy();
+    expect(follows(overview, metrics)).toBeTruthy();
   });
 });
 
@@ -540,6 +558,15 @@ describe('the key metrics card', () => {
     const card = await screen.findByRole('region', { name: 'Key metrics (FY2026)' });
     const rows = within(card).getAllByRole('listitem');
     expect(rows).toHaveLength(3);
+    expect(within(card).getByRole('link', { name: /View details/ })).toHaveAttribute(
+      'href',
+      '/stock/?symbol=RELIANCE',
+    );
+    expect(rows.map((row) => row.querySelector('.chat-metric-icon')?.classList[1])).toEqual([
+      'revenue',
+      'profit',
+      'eps',
+    ]);
     expect(rows[0]).toHaveTextContent('Revenue from operations');
     expect(rows[0]).toHaveTextContent('₹1,23,456 crore');
     expect(within(rows[0] as HTMLElement).getByText('+12.5%')).toHaveClass('rise');

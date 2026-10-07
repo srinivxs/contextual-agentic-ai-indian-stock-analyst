@@ -146,7 +146,9 @@ describe('the chat page', () => {
     install({ profileFields: [demoProfileField()] });
     render(<ChatView />);
 
-    expect(await screen.findByText('Enter sends, Shift+Enter adds a line.')).toBeInTheDocument();
+    expect(await screen.findByText(/to send/)).toHaveTextContent(
+      'Press Enter to send · Shift + Enter for a new line',
+    );
     // the owner: one disclaimer is enough, the menu's note on every page
     expect(screen.getAllByText(/Not investment advice/)).toHaveLength(1);
     expect(screen.queryByText(/Answers come only from stored filings/)).toBeNull();
