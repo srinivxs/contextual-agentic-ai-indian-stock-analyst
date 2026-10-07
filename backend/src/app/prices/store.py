@@ -126,8 +126,9 @@ async def cooling_down(db: AsyncSession, *, minutes: int) -> bool:
 
 async def days_to_fetch(db: AsyncSession, *, today: date, history_days: int) -> list[date]:
     """Trading days (weekdays that are not declared BSE holidays) from ``history_days`` ago to
-    YESTERDAY that are not fetched and not no_file, newest first. Today is left out: BSE publishes a day's file only after the close, and a
-    strike earned before it exists must not turn a real trading day into a "holiday"."""
+    YESTERDAY that are not fetched and not no_file, newest first. Today is left out: BSE
+    publishes a day's file only after the close, and a strike earned before it exists must not
+    turn a real trading day into a "holiday"."""
     result = await db.execute(
         _TO_FETCH,
         {"first": today - timedelta(days=history_days), "last": today - timedelta(days=1)},
