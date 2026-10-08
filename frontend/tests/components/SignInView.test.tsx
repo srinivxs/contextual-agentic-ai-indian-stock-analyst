@@ -51,7 +51,7 @@ describe('the sign-in page', () => {
       await screen.findByRole('heading', { name: 'Indian Stock Analyst' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('Research on RELIANCE, TCS and HDFC Bank from their official filings'),
+      screen.getByText('Research on Indian stocks from their official filings'),
     ).toBeInTheDocument();
     expect(screen.getByText(/not investment advice/i)).toBeInTheDocument();
     expect(container.querySelector('.signin-mark svg')).not.toBeNull();

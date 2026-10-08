@@ -42,7 +42,7 @@ export function SignInView() {
           <LeafIcon size={26} />
         </div>
         <h1>Indian Stock Analyst</h1>
-        <p className="muted">Research on RELIANCE, TCS and HDFC Bank from their official filings</p>
+        <p className="muted">Research on Indian stocks from their official filings</p>
         {me.status === 'error' && me.offline && <DemoOffline />}
         {me.status === 'error' && !me.offline && (
           <p role="alert" className="alert">
