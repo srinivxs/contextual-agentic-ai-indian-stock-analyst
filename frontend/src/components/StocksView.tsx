@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
 import { AppShell } from '@/components/AppShell';
+import { DemoOffline } from '@/components/DemoOffline';
 import { StockCard } from '@/components/StockCard';
 import { ApiError } from '@/lib/api';
 import { signOut, useMe } from '@/lib/session';
@@ -104,9 +105,13 @@ export function StocksView() {
   if (me.status === 'error') {
     return (
       <main className="page centered">
-        <p role="alert" className="alert">
-          {LOAD_FAILED}
-        </p>
+        {me.offline ? (
+          <DemoOffline />
+        ) : (
+          <p role="alert" className="alert">
+            {LOAD_FAILED}
+          </p>
+        )}
       </main>
     );
   }

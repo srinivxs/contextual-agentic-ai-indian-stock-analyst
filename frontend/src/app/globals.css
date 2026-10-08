@@ -3879,6 +3879,37 @@ a.chip:hover {
   }
 }
 
+/* The demo is switched off between sessions on purpose (the owner, 2026-10-09): a calm note, not
+   an error. On the sign-in card it sits in place of the sign-in button. */
+.demo-offline {
+  max-width: 30rem;
+  margin: 0 auto;
+  padding: 1.25rem 1.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  text-align: left;
+}
+
+.demo-offline h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.demo-offline p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.signin-card .demo-offline {
+  margin: 1.1rem 0 0.6rem;
+  padding: 1rem 1.1rem;
+  border: 0;
+  background: var(--surface-2);
+}
+
 /* --- motion (the owner, 2026-10-08): short, quiet, and off for anyone who asks for less ------- */
 
 @keyframes rise-in {

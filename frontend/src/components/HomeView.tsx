@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { AppShell } from '@/components/AppShell';
+import { DemoOffline } from '@/components/DemoOffline';
 import { PlusIcon } from '@/components/Icons';
 import { Monogram } from '@/components/Monogram';
 import { ProfitChart } from '@/components/ProfitChart';
@@ -458,9 +459,13 @@ export function HomeView() {
   if (me.status === 'error') {
     return (
       <main className="page centered">
-        <p role="alert" className="alert">
-          {LOAD_FAILED}
-        </p>
+        {me.offline ? (
+          <DemoOffline />
+        ) : (
+          <p role="alert" className="alert">
+            {LOAD_FAILED}
+          </p>
+        )}
       </main>
     );
   }

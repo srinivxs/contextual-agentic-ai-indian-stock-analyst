@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { AppShell, initials } from '@/components/AppShell';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ChatThread } from '@/components/ChatThread';
+import { DemoOffline } from '@/components/DemoOffline';
 import {
   ArrowRightIcon,
   ArrowUpIcon,
@@ -260,9 +261,13 @@ export function ChatView() {
   if (me.status === 'error') {
     return (
       <main className="page centered">
-        <p role="alert" className="alert">
-          {LOAD_FAILED}
-        </p>
+        {me.offline ? (
+          <DemoOffline />
+        ) : (
+          <p role="alert" className="alert">
+            {LOAD_FAILED}
+          </p>
+        )}
       </main>
     );
   }

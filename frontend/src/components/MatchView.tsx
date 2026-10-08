@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { AppShell } from '@/components/AppShell';
+import { DemoOffline } from '@/components/DemoOffline';
 import { MemoryPanel } from '@/components/MemoryPanel';
 import { Monogram } from '@/components/Monogram';
 import { Citations } from '@/components/InsightSections';
@@ -195,9 +196,13 @@ export function MatchView() {
   if (me.status === 'error') {
     return (
       <main className="page centered">
-        <p role="alert" className="alert">
-          {LOAD_FAILED}
-        </p>
+        {me.offline ? (
+          <DemoOffline />
+        ) : (
+          <p role="alert" className="alert">
+            {LOAD_FAILED}
+          </p>
+        )}
       </main>
     );
   }

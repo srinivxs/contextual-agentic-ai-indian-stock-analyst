@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 
 import { AppShell } from '@/components/AppShell';
+import { DemoOffline } from '@/components/DemoOffline';
 import { Monogram } from '@/components/Monogram';
 import { STOCKS } from '@/components/StockJump';
 import { rbiUrl } from '@/lib/documents';
@@ -209,9 +210,13 @@ export function NewsView() {
   if (me.status === 'error') {
     return (
       <main className="page centered">
-        <p role="alert" className="alert">
-          We couldn&apos;t load the news. Reload the page to try again.
-        </p>
+        {me.offline ? (
+          <DemoOffline />
+        ) : (
+          <p role="alert" className="alert">
+            We couldn&apos;t load the news. Reload the page to try again.
+          </p>
+        )}
       </main>
     );
   }

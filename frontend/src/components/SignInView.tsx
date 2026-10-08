@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
+import { DemoOffline } from '@/components/DemoOffline';
 import { LeafIcon } from '@/components/Icons';
 import { loginErrorMessage } from '@/lib/loginError';
 import { useMe } from '@/lib/session';
@@ -42,7 +43,8 @@ export function SignInView() {
         </div>
         <h1>Indian Stock Analyst</h1>
         <p className="muted">Research on RELIANCE, TCS and HDFC Bank from their official filings</p>
-        {me.status === 'error' && (
+        {me.status === 'error' && me.offline && <DemoOffline />}
+        {me.status === 'error' && !me.offline && (
           <p role="alert" className="alert">
             Something went wrong reaching the server. Reload the page to try again.
           </p>

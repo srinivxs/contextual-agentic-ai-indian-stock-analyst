@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { AppShell } from '@/components/AppShell';
+import { DemoOffline } from '@/components/DemoOffline';
 import { Monogram } from '@/components/Monogram';
 import {
   DerivedValues,
@@ -138,9 +139,13 @@ export function StockView() {
   if (me.status === 'error') {
     return (
       <main className="page centered">
-        <p role="alert" className="alert">
-          {LOAD_FAILED}
-        </p>
+        {me.offline ? (
+          <DemoOffline />
+        ) : (
+          <p role="alert" className="alert">
+            {LOAD_FAILED}
+          </p>
+        )}
       </main>
     );
   }

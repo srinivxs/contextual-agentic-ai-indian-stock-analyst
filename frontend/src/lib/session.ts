@@ -12,8 +12,17 @@ export type Me = { id: string; email: string };
 export type MeState =
   | { status: 'loading'; user?: undefined }
   | { status: 'signed-out'; user?: undefined }
-  | { status: 'error'; user?: undefined }
+  | { status: 'error'; user?: undefined; offline: boolean }
   | { status: 'signed-in'; user: Me };
+
+/**
+ * Nothing behind /api at all: CloudFront's 502 or 504, or no answer (status 0). The AWS stack is
+ * switched off between sessions on purpose (the owner, 2026-10-09), so the pages say so instead of
+ * reporting a fault. A 500 is a real fault and stays one.
+ */
+export function backendIsOff(error: unknown): boolean {
+  return error instanceof ApiError && [0, 502, 504].includes(error.status);
+}
 
 function isMe(value: unknown): value is Me {
   const candidate = value as Partial<Me> | null;
@@ -28,7 +37,9 @@ export function useMe(): MeState {
     apiFetch('/api/v1/me')
       .then((body) => {
         if (!cancelled)
-          setState(isMe(body) ? { status: 'signed-in', user: body } : { status: 'error' });
+          setState(
+            isMe(body) ? { status: 'signed-in', user: body } : { status: 'error', offline: false },
+          );
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -37,7 +48,7 @@ export function useMe(): MeState {
         setState(
           error instanceof ApiError && error.status === 401
             ? { status: 'signed-out' }
-            : { status: 'error' },
+            : { status: 'error', offline: backendIsOff(error) },
         );
       });
     return () => {

@@ -1,5 +1,5 @@
 import { renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { signOut, useMe } from '@/lib/session';
 import { installFakeApi } from '../helpers/fakeApi';
@@ -29,6 +29,31 @@ describe('useMe', () => {
     const { result } = renderHook(() => useMe());
 
     await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current).toMatchObject({ status: 'error', offline: false });
+  });
+
+  it.each([502, 504])(
+    'reports the backend as off (not a fault) when CloudFront answers %i',
+    async (status) => {
+      // The AWS stack is switched off between sessions: nothing stands behind /api.
+      const api = installFakeApi();
+      api.failWith('GET /api/v1/me', status);
+      const { result } = renderHook(() => useMe());
+
+      await waitFor(() => expect(result.current.status).toBe('error'));
+      expect(result.current).toMatchObject({ status: 'error', offline: true });
+    },
+  );
+
+  it('reports the backend as off when the network cannot reach it at all', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    try {
+      const { result } = renderHook(() => useMe());
+      await waitFor(() => expect(result.current.status).toBe('error'));
+      expect(result.current).toMatchObject({ status: 'error', offline: true });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
