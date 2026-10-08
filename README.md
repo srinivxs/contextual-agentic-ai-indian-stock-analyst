@@ -294,8 +294,8 @@ checks that nothing billable is left.
 |---|---|---|
 | `data_sources_enabled` | `true` | Filings from BSE, daily prices, the live RBI feed |
 | `ai_enabled` | `true` | Bedrock: search fingerprints, reading filings, the chat |
-| `extraction_budget_usd` | `2` | Spending cap for reading filings |
-| `chat_budget_usd` | `1` | Spending cap for the chat |
+| `extraction_budget_usd` | `10` | Spending cap for reading filings |
+| `chat_budget_usd` | `5` | Spending cap for the chat |
 
 Both caps are enforced by the application against the spend it records in the database.
 

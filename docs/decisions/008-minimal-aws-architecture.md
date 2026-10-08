@@ -139,7 +139,8 @@ providers, the deploy script's tests); nothing has been applied. The owner appli
 - **Bedrock** for the task role: `bedrock:InvokeModel` on Titan V2 and on Nova 2 Lite through
   the global inference profile, in the shape ADR 010 recorded.
 - **Feature switches** are two Terraform variables, `data_sources_enabled` and `ai_enabled`
-  (both default true), plus `extraction_budget_usd` ($2) and `chat_budget_usd` ($1); both
+  (both default true), plus `extraction_budget_usd` ($2, raised to $10 on 2026-10-09) and `chat_budget_usd` ($1,
+  raised to $5 the same day: running totals since the database is kept); both
   containers get the same environment, as in Compose.
 - **Data between sessions:** none is kept. Every session starts with an empty database and the
   worker refills it (about 20 to 30 minutes and $0.56 of Bedrock). Keeping a snapshot instead

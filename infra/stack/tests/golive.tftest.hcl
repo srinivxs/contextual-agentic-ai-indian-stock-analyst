@@ -376,10 +376,10 @@ run "by_default_everything_is_on_in_both_containers" {
   assert {
     condition = alltrue([
       for c in jsondecode(aws_ecs_task_definition.api.container_definitions) :
-      anytrue([for env in c.environment : env.name == "CHAT_BUDGET_USD" && env.value == "1"]) &&
-      anytrue([for env in c.environment : env.name == "EXTRACTION_BUDGET_USD" && env.value == "2"])
+      anytrue([for env in c.environment : env.name == "CHAT_BUDGET_USD" && env.value == "5"]) &&
+      anytrue([for env in c.environment : env.name == "EXTRACTION_BUDGET_USD" && env.value == "10"])
     ])
-    error_message = "The caps the owner approved: $1 for chat, $2 for extraction."
+    error_message = "The caps the owner approved (2026-10-09): $5 for chat, $10 for extraction."
   }
 }
 

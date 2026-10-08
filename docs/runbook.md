@@ -185,7 +185,7 @@ session, or after the saves were deleted) it starts empty and the worker refills
 2. fetches the last month of BSE daily price files (8 per run, 30 s apart; declared BSE holidays are skipped) and the RBI feed;
 3. turns each filing into page text and passages, then fingerprints them with Titan (about $0.07)
    and reads them for facts and events with Nova 2 Lite (about $0.49, capped by
-   `extraction_budget_usd`, default $2).
+   `extraction_budget_usd`, default $10).
 
 Watch it with:
 
@@ -270,5 +270,5 @@ Tagging API, which lags. Trust the six commands above instead.
 
 Each session also pays once for Bedrock as the worker reads the filings into the fresh database:
 about **$0.56** (fingerprints $0.07, reading $0.49), plus a fraction of a cent per chat question
-(capped by `chat_budget_usd`, default $1). A 12-hour session is therefore about **$1.70**. Nothing in
+(capped by `chat_budget_usd`, default $5). A 12-hour session is therefore about **$1.70**. Nothing in
 the persistent tiers has an hourly rate.

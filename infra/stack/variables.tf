@@ -182,10 +182,12 @@ variable "ai_enabled" {
 
 # The spending caps, in US$. Each is checked by the application against the spend recorded in the
 # database, so on a fresh database (every session) it is a cap per session.
+# The two caps the owner approved (2026-10-09, raised from $2 and $1). They are running totals
+# across sessions now that the database is kept (ADR 008 amendment): ceilings, not spending.
 variable "extraction_budget_usd" {
   type        = number
   description = "The most reading filings may spend (a full read is about $0.50)."
-  default     = 2
+  default     = 10
 
   validation {
     condition     = var.extraction_budget_usd >= 0 && var.extraction_budget_usd <= 10
@@ -196,7 +198,7 @@ variable "extraction_budget_usd" {
 variable "chat_budget_usd" {
   type        = number
   description = "The most the chat may spend (a question costs a fraction of a cent)."
-  default     = 1
+  default     = 5
 
   validation {
     condition     = var.chat_budget_usd >= 0 && var.chat_budget_usd <= 10
